@@ -1,114 +1,74 @@
 <x-layouts.app :title="'Setup STO'">
 
-<div style="max-width: 480px; margin: 0 auto; padding: 12px 0;">
-    <div style="margin-bottom: 20px;">
-        <h2 style="font-size: 18px; font-weight: 700; color: var(--text); margin-bottom: 4px; display: flex; align-items: center; gap: 8px;">
-            <svg fill="none" stroke="var(--primary)" stroke-width="2" viewBox="0 0 24 24" style="width:22px;height:22px;"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
-            Setup Sesi Scan
-        </h2>
-        <p style="color: var(--text-muted); font-size: 12px;">Lengkapi informasi berikut sebelum memulai scan.</p>
-    </div>
-
-    @if($activeSession)
-    <div class="card" style="margin-bottom: 16px; border-left: 3px solid var(--success);">
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; border-bottom: 1px solid var(--border-light); padding-bottom: 8px;">
-            <div style="display: flex; align-items: center; gap: 6px;">
-                <span style="display:block;width:8px;height:8px;background:var(--success);border-radius:50%;"></span>
-                <span style="font-size: 12px; font-weight: 700; color: var(--text); text-transform:uppercase;">Sesi Aktif</span>
-            </div>
-            <form action="{{ route('scan.end-session') }}" method="POST" onsubmit="return confirm('Yakin ingin mengakhiri sesi ini?');">
-                @csrf
-                <button type="submit" class="btn btn-danger" style="padding: 2px 8px; font-size: 11px;">Akhiri Sesi</button>
-            </form>
+<div style="max-width: 560px; margin: 0 auto;">
+    @if(!$activeSto)
+        <div class="card" style="border-left: 3px solid var(--danger);">
+            <div class="card-title">STO Tidak Tersedia</div>
+            <p style="color: var(--text-secondary); line-height: 1.6;">
+                Tidak ada STO aktif yang tersedia. Silakan hubungi Admin.
+            </p>
         </div>
-        <div style="font-size: 12px; color: var(--text-secondary); line-height: 1.6;">
-            <div style="display:flex; justify-content:space-between;">
-                <span>STO Code</span>
-                <strong class="mono" style="color:var(--primary);">{{ $activeSession->sto_code }}</strong>
-            </div>
-            <div style="display:flex; justify-content:space-between;">
-                <span>Plant</span>
-                <strong>{{ $activeSession->plant->name }}</strong>
-            </div>
-            <div style="display:flex; justify-content:space-between;">
-                <span>PIC</span>
-                <strong>{{ $activeSession->pic }}</strong>
-            </div>
-        </div>
-        <a href="{{ route('scan.index') }}" class="btn btn-primary" style="margin-top: 12px; width: 100%; justify-content: center; height: 36px;">
-            Lanjutkan Scan →
-        </a>
-    </div>
-    @endif
+    @else
+        <form action="{{ route('scan.setup.store') }}" method="POST" id="setupForm">
+            @csrf
+            <div class="card">
+                <div class="card-title">Setup Scan Material</div>
 
-    <form action="{{ route('scan.store-setup') }}" method="POST" id="setupForm">
-        @csrf
-
-        <div class="card" style="margin-bottom: 16px;">
-            <div class="card-title">Sesi STO Baru</div>
-
-            <div class="form-group" style="margin-top: 12px;">
-                <label class="form-label">PIC (Person In Charge)</label>
-                <div class="form-control" style="background: #f4f5f7; height: 36px; display:flex; align-items:center;">
-                    {{ auth()->user()->name }} ({{ auth()->user()->role }})
+                <div class="form-group">
+                    <label class="form-label">PIC</label>
+                    <input class="form-control" value="{{ auth()->user()->name }}" readonly>
                 </div>
-            </div>
 
-            <div class="form-group">
-                <label class="form-label" for="plant_id">Plant</label>
-                <select id="plant_id" name="plant_id" class="form-control" required style="height: 36px;">
-                    <option value="">-- Pilih Plant --</option>
-                    @foreach($plants as $plant)
-                    <option value="{{ $plant->id }}" {{ old('plant_id') == $plant->id ? 'selected' : '' }}>
-                        {{ $plant->name }}
-                    </option>
-                    @endforeach
-                </select>
-                @error('plant_id')<p style="color:var(--danger);font-size:11px;margin-top:4px;">{{ $message }}</p>@enderror
-            </div>
-
-            <div class="form-group">
-                <label class="form-label">Kode STO</label>
-                <div class="form-control mono" style="background: #f4f5f7; color: var(--primary); font-weight: 600; cursor: default; height: 36px; display:flex; align-items:center;">
-                    STO{{ now()->format('dm') }}
+                <div class="form-group">
+                    <label class="form-label">STO Code</label>
+                    <input class="form-control mono" value="{{ $activeSto->code }}" readonly>
                 </div>
-            </div>
 
-            <div class="form-group">
-                <label class="form-label" for="location_id">Lokasi / Rack</label>
-                <div style="display: flex; gap: 8px;">
-                    <select id="location_id" name="location_id" class="form-control" required style="flex:1; height: 36px;">
-                        <option value="">-- Pilih Plant terlebih dahulu --</option>
+                <div class="form-group">
+                    <label class="form-label" for="plant_id">Plant</label>
+                    <select id="plant_id" name="plant_id" class="form-control" required>
+                        <option value="">Pilih Plant</option>
+                        @foreach($plants as $plant)
+                            <option value="{{ $plant->id }}" @selected(old('plant_id', $scanContext['plant_id'] ?? null) == $plant->id)>{{ $plant->name }}</option>
+                        @endforeach
                     </select>
-                    <button type="button" class="btn" onclick="openAddLocation()" title="Tambah Lokasi Baru" style="height: 36px; white-space:nowrap;">
-                        + Baru
-                    </button>
+                    @error('plant_id')<div style="color:var(--danger);font-size:11px;margin-top:4px;">{{ $message }}</div>@enderror
+                    <div id="error-plant_id" class="ajax-error" style="color:var(--danger);font-size:11px;margin-top:4px;display:none;"></div>
                 </div>
-                @error('location_id')<p style="color:var(--danger);font-size:11px;margin-top:4px;">{{ $message }}</p>@enderror
-            </div>
-        </div>
 
-        <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center; height: 42px; font-size: 13px; text-transform:uppercase; letter-spacing:0.5px; font-weight:700;" id="startScanBtn">
-            Mulai Scan
-        </button>
-    </form>
+                <div class="form-group">
+                    <label class="form-label" for="location_id">Location / Rack</label>
+                    <div style="display:flex;gap:6px;">
+                        <select id="location_id" name="location_id" class="form-control" required data-selected="{{ old('location_id', $scanContext['location_id'] ?? '') }}">
+                            <option value="">Pilih Plant terlebih dahulu</option>
+                        </select>
+                        <button class="btn" type="button" onclick="openLocationModal()" style="min-width:64px;">+ Baru</button>
+                    </div>
+                    @error('location_id')<div style="color:var(--danger);font-size:11px;margin-top:4px;">{{ $message }}</div>@enderror
+                    <div id="error-location_id" class="ajax-error" style="color:var(--danger);font-size:11px;margin-top:4px;display:none;"></div>
+                </div>
+            </div>
+
+            <button type="submit" class="btn btn-primary" style="width:100%;height:38px;margin-top:10px;">Start Scan</button>
+        </form>
+    @endif
 </div>
 
-{{-- Add Location Modal --}}
-<div class="modal-overlay" id="addLocationModal">
-    <div class="modal-content" style="border-radius:0;">
+<div class="modal-overlay" id="locationModal">
+    <div class="modal-content">
         <div class="modal-header">
-            <span>Tambah Lokasi Baru</span>
-            <button class="btn-icon" onclick="closeAddLocation()" style="border:none;background:none;font-size:16px;">×</button>
+            <strong>Tambah Location / Rack</strong>
+            <button class="btn-icon" type="button" onclick="closeLocationModal()">X</button>
         </div>
         <div class="modal-body">
             <div class="form-group">
-                <label class="form-label">Nama Lokasi / Rack</label>
-                <input type="text" id="newLocationName" class="form-control" placeholder="Contoh: RACK-A1" style="height: 36px; text-transform:uppercase;">
+                <label class="form-label" for="newLocationName">Nama Location / Rack</label>
+                <input id="newLocationName" class="form-control" maxlength="100" autocomplete="off" placeholder="Contoh: CT01 / Rack A1">
             </div>
         </div>
         <div class="modal-footer">
-            <button class="btn btn-primary" onclick="saveNewLocation()" style="width:100%;justify-content:center;height:36px;">Simpan</button>
+            <button class="btn" type="button" onclick="closeLocationModal()">Batal</button>
+            <button class="btn btn-primary" type="button" onclick="saveNewLocation()">Simpan</button>
         </div>
     </div>
 </div>
@@ -117,85 +77,182 @@
 <script>
     const plantSelect = document.getElementById('plant_id');
     const locationSelect = document.getElementById('location_id');
+    const locationModal = document.getElementById('locationModal');
+    const newLocationName = document.getElementById('newLocationName');
 
-    plantSelect.addEventListener('change', function() {
-        const plantId = this.value;
+    function loadLocations() {
+        const plantId = plantSelect.value;
+        const selected = locationSelect.dataset.selected;
         locationSelect.innerHTML = '<option value="">Memuat...</option>';
 
         if (!plantId) {
-            locationSelect.innerHTML = '<option value="">-- Pilih Plant --</option>';
+            locationSelect.innerHTML = '<option value="">Pilih Plant terlebih dahulu</option>';
             return;
         }
 
-        fetch(`/api/locations/${plantId}`)
-            .then(r => r.json())
-            .then(locations => {
-                locationSelect.innerHTML = '<option value="">-- Pilih Lokasi --</option>';
-                locations.forEach(loc => {
-                    locationSelect.innerHTML += `<option value="${loc.id}">${loc.name}</option>`;
-                });
-                if (locations.length === 0) {
-                    locationSelect.innerHTML = '<option value="">(Belum ada, klik "Baru")</option>';
-                }
+        fetch(`/api/locations?plant_id=${plantId}`, { headers: { Accept: 'application/json' } })
+            .then(response => response.json())
+            .then(payload => {
+                locationSelect.innerHTML = '<option value="">Pilih Location / Rack</option>';
+                payload.data.forEach(location => appendLocationOption(location, String(location.id) === String(selected)));
             })
             .catch(() => {
-                locationSelect.innerHTML = '<option value="">Error memuat lokasi</option>';
+                locationSelect.innerHTML = '<option value="">Gagal memuat location</option>';
             });
-    });
-
-    if (plantSelect.value) {
-        plantSelect.dispatchEvent(new Event('change'));
     }
 
-    function openAddLocation() {
+    function appendLocationOption(location, selected = true) {
+        const option = new Option(location.name, location.id);
+        option.selected = selected;
+        locationSelect.appendChild(option);
+    }
+
+    function openLocationModal() {
         if (!plantSelect.value) {
-            showToast('Pilih Plant terlebih dahulu!', 'error');
+            showToast('Pilih Plant terlebih dahulu.', 'error');
             return;
         }
-        document.getElementById('addLocationModal').classList.add('active');
-        document.getElementById('newLocationName').focus();
+
+        newLocationName.value = '';
+        locationModal.classList.add('active');
+        setTimeout(() => newLocationName.focus(), 50);
     }
 
-    function closeAddLocation() {
-        document.getElementById('addLocationModal').classList.remove('active');
+    function closeLocationModal() {
+        locationModal.classList.remove('active');
     }
 
     function saveNewLocation() {
-        const name = document.getElementById('newLocationName').value.trim().toUpperCase();
+        const name = newLocationName.value.trim();
         if (!name) {
-            showToast('Nama lokasi wajib diisi', 'error');
+            showToast('Nama Location / Rack wajib diisi.', 'error');
             return;
         }
 
-        fetch('/api/locations', {
+        fetch('{{ route("api.locations.store") }}', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
-            },
-            body: JSON.stringify({
-                plant_id: plantSelect.value,
-                name: name
-            })
+            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+            body: JSON.stringify({ plant_id: plantSelect.value, name })
         })
-        .then(r => r.json())
-        .then(data => {
-            if (data.success) {
-                const option = new Option(data.data.name, data.data.id, true, true);
-                locationSelect.appendChild(option);
-                closeAddLocation();
-                document.getElementById('newLocationName').value = '';
-                showToast('Lokasi berhasil ditambah');
-            } else {
-                showToast(data.message || 'Gagal', 'error');
-            }
+        .then(async response => {
+            const payload = await response.json();
+            if (!response.ok) throw payload;
+            return payload;
         })
-        .catch(() => showToast('Terjadi kesalahan', 'error'));
+        .then(payload => {
+            appendLocationOption(payload.data, true);
+            locationSelect.value = payload.data.id;
+            locationSelect.dataset.selected = payload.data.id;
+            closeLocationModal();
+            showToast(payload.message);
+        })
+        .catch(error => {
+            const message = error.message || Object.values(error.errors || {})[0]?.[0] || 'Gagal menambah Location / Rack.';
+            showToast(message, 'error');
+        });
     }
 
-    document.getElementById('newLocationName').addEventListener('keydown', function(e) {
-        if (e.key === 'Enter') { e.preventDefault(); saveNewLocation(); }
+    plantSelect?.addEventListener('change', () => {
+        locationSelect.dataset.selected = '';
+        loadLocations();
     });
+    if (plantSelect?.value) loadLocations();
+
+    const setupForm = document.getElementById('setupForm');
+    if (setupForm) {
+        setupForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            // Hide previous errors
+            document.querySelectorAll('.ajax-error').forEach(el => {
+                el.style.display = 'none';
+                el.textContent = '';
+            });
+
+            const formData = new FormData(this);
+            const submitBtn = this.querySelector('button[type="submit"]');
+            const originalText = submitBtn.textContent;
+            submitBtn.textContent = 'Menyimpan...';
+            submitBtn.disabled = true;
+
+            fetch(this.action, {
+                method: this.method,
+                body: formData,
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            })
+            .then(async response => {
+                submitBtn.textContent = originalText;
+                submitBtn.disabled = false;
+
+                if (response.ok || response.redirected) {
+                    if (window.top && window.top.tabManager) {
+                        const scannerUrl = '{{ route("scan.scanner") }}';
+                        const currentUrl = '{{ request()->url() }}';
+                        
+                        // Determine the exact ID generated by tabManager
+                        let safeIdStr = scannerUrl.replace(/[^a-zA-Z0-9]/g, '');
+                        if (safeIdStr.length > 20) safeIdStr = safeIdStr.substring(safeIdStr.length - 20);
+                        const scannerTabId = 'tab-' + safeIdStr;
+                        
+                        const scannerIframeExists = !!window.top.document.getElementById('pane-' + scannerTabId);
+                        
+                        // Open scanner tab using the global function
+                        if (typeof window.top.openWorkspaceTab === 'function') {
+                            window.top.openWorkspaceTab(scannerUrl, 'Scanner');
+                        } else {
+                            window.top.tabManager.openTab('tab-scanscanner', 'Scanner', scannerUrl);
+                        }
+                        
+                        // Force reload the iframe if it already existed so it gets the new STO/Location session
+                        if (scannerIframeExists) {
+                            const scannerIframe = window.top.document.getElementById('pane-' + scannerTabId);
+                            if (scannerIframe && scannerIframe.tagName === 'IFRAME') {
+                                try {
+                                    scannerIframe.contentWindow.location.reload(true);
+                                } catch (e) {
+                                    scannerIframe.src = scannerUrl;
+                                }
+                            }
+                        }
+
+                        // Determine the current setup tab ID generated by tabManager
+                        let currentSafeId = currentUrl.replace(/[^a-zA-Z0-9]/g, '');
+                        if (currentSafeId.length > 20) currentSafeId = currentSafeId.substring(currentSafeId.length - 20);
+                        const currentTabId = 'tab-' + currentSafeId;
+                        
+                        // Close the setup tab
+                        if (currentTabId && currentTabId !== scannerTabId) {
+                            window.top.tabManager.closeTab(currentTabId);
+                        }
+                    } else {
+                        window.location.href = '{{ route("scan.scanner") }}';
+                    }
+                } else if (response.status === 422) {
+                    const data = await response.json();
+                    if (data.errors) {
+                        for (const [key, messages] of Object.entries(data.errors)) {
+                            const errorEl = document.getElementById('error-' + key);
+                            if (errorEl) {
+                                errorEl.textContent = messages[0];
+                                errorEl.style.display = 'block';
+                            }
+                        }
+                    }
+                } else {
+                    const payload = await response.json().catch(() => ({}));
+                    showToast(payload.message || 'Terjadi kesalahan saat menyimpan.', 'error');
+                }
+            })
+            .catch(error => {
+                submitBtn.textContent = originalText;
+                submitBtn.disabled = false;
+                showToast('Gagal terhubung ke server.', 'error');
+            });
+        });
+    }
 </script>
 @endpush
 

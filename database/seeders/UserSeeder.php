@@ -10,28 +10,24 @@ class UserSeeder extends Seeder
 {
     public function run(): void
     {
-        User::create([
+        User::updateOrCreate(['username' => 'admin'], [
             'name' => 'Admin STO',
-            'username' => 'admin',
             'password' => Hash::make('password'),
             'role' => 'admin',
             'is_active' => true,
         ]);
 
-        User::create([
+        User::updateOrCreate(['username' => 'operator1'], [
             'name' => 'Operator 1',
-            'username' => 'operator1',
             'password' => Hash::make('password'),
-            'role' => 'user',
+            'role' => 'scanner',
             'is_active' => true,
         ]);
 
-        User::create([
+        User::updateOrCreate(['username' => 'operator2'], [
             'name' => 'Operator 2',
-            'username' => 'operator2',
-
             'password' => Hash::make('password'),
-            'role' => 'user',
+            'role' => 'scanner',
             'is_active' => true,
         ]);
     }

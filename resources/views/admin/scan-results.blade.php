@@ -1,347 +1,722 @@
-<x-layouts.app :title="'Monitoring Hasil Scan'">
+<x-layouts.app :title="'All Scan Results'">
 
-@push('styles')
-<style>
-    .table-enterprise.nowrap th,
-    .table-enterprise.nowrap td {
-        white-space: nowrap;
-    }
-</style>
-@endpush
-
-{{-- Toolbar --}}
 <div class="enterprise-toolbar">
-    <button class="btn btn-icon" onclick="reloadTable()" title="Refresh">
-        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-    </button>
-    <button class="btn btn-icon" onclick="resetFilters()" title="Reset Filters">
-        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-    </button>
-    
+    <button class="btn btn-primary" type="button" onclick="openCreate()">Add Scan</button>
+    <button class="btn btn-icon" type="button" onclick="reloadTable()" title="Refresh">Refresh</button>
+    <button class="btn btn-icon" type="button" onclick="resetFilters()" title="Reset">Reset</button>
     <div class="toolbar-sep"></div>
-    
-    <a href="{{ route('admin.scan-results.export') }}" id="exportBtn" class="btn btn-success">
-        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-        Export Excel
-    </a>
+    <a href="{{ route('admin.export.scan-results.excel') }}" id="exportExcel" class="btn btn-success">Export Excel</a>
+    <a href="{{ route('admin.export.scan-results.pdf') }}" id="exportPdf" class="btn">Export PDF</a>
 </div>
 
-{{-- Filters (Infor style: under toolbar, above table) --}}
-<div style="background: var(--surface); border: 1px solid var(--border); border-top: none; padding: 10px; display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end;">
-    <div style="width: 140px;">
-        <label class="form-label">Plant</label>
-        <select id="filterPlant" class="form-control">
-            <option value="">Semua</option>
-            @foreach($plants as $plant)
-            <option value="{{ $plant->id }}">{{ $plant->name }}</option>
-            @endforeach
-        </select>
-    </div>
-    <div style="width: 140px;">
-        <label class="form-label">User</label>
-        <select id="filterUser" class="form-control">
-            <option value="">Semua</option>
-            @foreach($users as $user)
-            <option value="{{ $user->id }}">{{ $user->name }}</option>
-            @endforeach
-        </select>
-    </div>
-    <div style="width: 140px;">
-        <label class="form-label">STO Code</label>
-        <select id="filterSto" class="form-control">
-            <option value="">Semua</option>
-            @foreach($stoCodes as $code)
-            <option value="{{ $code }}">{{ $code }}</option>
-            @endforeach
-        </select>
-    </div>
-    <div style="width: 140px;">
-        <label class="form-label">Keterangan</label>
-        <select id="filterKeterangan" class="form-control">
-            <option value="">Semua</option>
-            @foreach($keteranganList as $ket)
-            <option value="{{ $ket }}">{{ $ket }}</option>
-            @endforeach
-        </select>
-    </div>
-    <div style="width: 120px;">
-        <label class="form-label">Dari</label>
-        <input type="date" id="filterDateFrom" class="form-control">
-    </div>
-    <div style="width: 120px;">
-        <label class="form-label">Sampai</label>
-        <input type="date" id="filterDateTo" class="form-control">
-    </div>
-    <div>
-        <button class="btn btn-primary" onclick="reloadTable()">Filter</button>
-    </div>
+<div class="card" style="border-top:0;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+    <div style="width:130px;"><label class="form-label">Plant</label><select id="filterPlant" class="form-control"><option value="">All</option>@foreach($plants as $plant)<option value="{{ $plant->id }}">{{ $plant->name }}</option>@endforeach</select></div>
+    <div style="width:130px;"><label class="form-label">Location</label><select id="filterLocation" class="form-control"><option value="">All</option>@foreach($locations as $location)<option value="{{ $location->id }}">{{ $location->name }}</option>@endforeach</select></div>
+    <div style="width:130px;"><label class="form-label">User</label><select id="filterUser" class="form-control"><option value="">All</option>@foreach($users as $user)<option value="{{ $user->id }}">{{ $user->name }}</option>@endforeach</select></div>
+    <div style="width:130px;"><label class="form-label">Material</label><select id="filterMaterial" class="form-control"><option value="">All</option>@foreach($materials as $material)<option value="{{ $material->material_code }}">{{ $material->material_code }}</option>@endforeach</select></div>
+    <div style="width:130px;"><label class="form-label">Date From</label><input type="date" id="filterDateFrom" class="form-control"></div>
+    <div style="width:130px;"><label class="form-label">Date To</label><input type="date" id="filterDateTo" class="form-control"></div>
+    <button class="btn btn-primary" type="button" onclick="reloadTable()">Filter</button>
 </div>
 
-{{-- Data Table --}}
-<div class="table-container" style="border-top: none;">
-    <table id="adminScanTable" class="table-enterprise nowrap" style="width:100%;">
+<div id="inlineEditorError" class="inline-editor-error"></div>
+
+<div class="table-container" style="border-top:0;">
+    <table id="adminScanTable" class="table-enterprise" style="width:100%;">
+        <colgroup>
+            <col style="width:3%;">
+            <col style="width:12%;">
+            <col style="width:6%;">
+            <col style="width:6%;">
+            <col style="width:4%;">
+            <col style="width:4%;">
+            <col style="width:4%;">
+            <col style="width:4%;">
+            <col style="width:6%;">
+            <col style="width:4%;">
+            <col style="width:7%;">
+            <col style="width:7%;">
+            <col style="width:6%;">
+            <col style="width:11%;">
+            <col style="width:8%;">
+            <col style="width:5%;">
+        </colgroup>
         <thead>
             <tr>
-                <th>No</th>
-                <th>Barcode</th>
-                <th>Material</th>
-                <th>Shape</th>
-                <th>T</th>
-                <th>W</th>
-                <th>D</th>
-                <th>L</th>
-                <th>Qty</th>
-                <th>Lot</th>
-                <th>User</th>
-                <th>Plant</th>
-                <th>Lokasi</th>
-                <th>Jam</th>
-                <th>Keterangan</th>
-                <th>Aksi</th>
+                <th>No</th><th>QR code</th><th>Material</th><th>Shape</th><th>T</th><th>W</th><th>D</th><th>L</th><th>Lot</th><th>Qty</th><th>User</th><th>Plant</th><th>Location</th><th>Time</th><th>Status</th><th>Action</th>
             </tr>
         </thead>
     </table>
 </div>
 
+<div class="modal-overlay" id="duplicateModal">
+    <div class="modal-content">
+        <div class="modal-header"><strong>Warning</strong></div>
+        <div class="modal-body">QR code sudah pernah discan sebelumnya. Tetap simpan?</div>
+        <div class="modal-footer">
+            <button class="btn" type="button" onclick="closeDuplicateModal()">Batal</button>
+            <button class="btn btn-primary" type="button" onclick="saveScanResult(true)">Ya</button>
+        </div>
+    </div>
+</div>
 
+@push('styles')
+<style>
+    #adminScanTable {
+        table-layout: fixed;
+    }
+
+    #adminScanTable th,
+    #adminScanTable td {
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    #adminScanTable th:first-child,
+    #adminScanTable td:first-child,
+    #adminScanTable th:nth-child(5),
+    #adminScanTable td:nth-child(5),
+    #adminScanTable th:nth-child(6),
+    #adminScanTable td:nth-child(6),
+    #adminScanTable th:nth-child(7),
+    #adminScanTable td:nth-child(7),
+    #adminScanTable th:nth-child(8),
+    #adminScanTable td:nth-child(8),
+    #adminScanTable th:nth-child(10),
+    #adminScanTable td:nth-child(10),
+    #adminScanTable th:nth-child(15),
+    #adminScanTable td:nth-child(15) {
+        text-align: center;
+        padding-left: 4px;
+        padding-right: 4px;
+    }
+
+    #adminScanTable th:nth-child(16),
+    #adminScanTable td:nth-child(16) {
+        overflow: visible;
+        text-overflow: clip;
+        padding-left: 6px;
+        padding-right: 6px;
+    }
+
+    #adminScanTable th:nth-child(14),
+    #adminScanTable td:nth-child(14) {
+        padding-right: 12px;
+    }
+
+    #adminScanTable th:nth-child(15),
+    #adminScanTable td:nth-child(15) {
+        padding-left: 8px;
+    }
+
+    #adminScanTable th.sorting,
+    #adminScanTable th.sorting_asc,
+    #adminScanTable th.sorting_desc {
+        padding-right: 18px !important;
+        background-position: right 2px center !important;
+    }
+
+    .scan-time {
+        display: block;
+        width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .scan-row-actions {
+        display: flex;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 8px;
+        white-space: nowrap;
+    }
+
+    .scan-row-actions .btn-icon {
+        padding: 2px 0;
+        font-size: 12px;
+    }
+
+    .scan-row-actions .js-row-delete {
+        color: var(--danger);
+    }
+
+    #adminScanTable td:nth-child(15) .status-badge {
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: clip;
+        white-space: nowrap;
+        letter-spacing: 0;
+        padding-left: 5px;
+        padding-right: 5px;
+    }
+
+    #adminScanTable td:nth-child(15) .status-badge:not(.badge-valid) {
+        font-size: 9px;
+        padding-left: 4px;
+        padding-right: 4px;
+    }
+
+    #adminScanTable .inline-scan-editor td {
+        background: #f8fafc;
+        border-top: 1px solid var(--primary);
+        border-bottom: 1px solid var(--primary);
+        padding: 3px 4px;
+        vertical-align: top;
+        white-space: normal;
+    }
+
+    .inline-editor-label {
+        color: var(--primary);
+        font-weight: 700;
+        white-space: nowrap;
+    }
+
+    .inline-input,
+    .inline-select {
+        width: 100%;
+        min-width: 0;
+        max-width: 100%;
+        height: 26px;
+        padding: 2px 4px;
+        font-size: 11px;
+    }
+
+    .inline-select {
+        appearance: none;
+        -webkit-appearance: none;
+        background-image:
+            linear-gradient(45deg, transparent 50%, var(--text) 50%),
+            linear-gradient(135deg, var(--text) 50%, transparent 50%);
+        background-position:
+            calc(100% - 11px) 7px,
+            calc(100% - 6px) 7px;
+        background-repeat: no-repeat;
+        background-size: 5px 5px, 5px 5px;
+        padding-right: 18px;
+    }
+
+    .inline-select::-ms-expand {
+        display: none;
+    }
+
+    .inline-input.compact {
+        min-width: 0;
+    }
+
+    .inline-input.wide,
+    .inline-select.wide {
+        min-width: 0;
+    }
+
+    .inline-actions {
+        display: flex;
+        gap: 4px;
+        min-width: 0;
+    }
+
+    .inline-actions .btn {
+        flex: 1 1 0;
+        min-width: 0;
+        padding: 3px 5px;
+        font-size: 11px;
+        white-space: nowrap;
+    }
+
+    .inline-editor-error {
+        display: none;
+        background: #fff7f7;
+        border: 1px solid #f3b4b0;
+        color: var(--danger);
+        font-size: 12px;
+        font-weight: 600;
+        padding: 6px 10px;
+    }
+
+    .inline-editor-error.active {
+        display: block;
+    }
+
+    .inline-field.is-invalid {
+        border-color: var(--danger);
+        box-shadow: 0 0 0 1px rgba(217, 45, 32, 0.12);
+    }
+</style>
+@endpush
 
 @push('scripts')
 <script>
     let adminTable;
+    let activeEditor = null;
+    let pendingCreatePayload = null;
+    let suppressOutsideUntil = 0;
+    window.scanResultRows = {};
+
+    const materialNames = @json($materials->mapWithKeys(fn($material) => [$material->material_code => $material->material_name]));
+    const userOptions = @json($users->map(fn($user) => ['id' => $user->id, 'label' => $user->name])->values());
+    const stoOptions = @json($stoOptions->map(fn($sto) => ['id' => $sto->id, 'label' => $sto->code])->values());
+    const stoIdsByCode = @json($stoOptions->mapWithKeys(fn($sto) => [$sto->code => $sto->id]));
+    const plantOptions = @json($plants->map(fn($plant) => ['id' => $plant->id, 'label' => $plant->name])->values());
+    const materialOptions = @json($materials->map(fn($material) => ['id' => $material->material_code, 'label' => $material->material_name])->values());
+    const keteranganOptions = @json(collect($keteranganList)->map(fn($name) => ['id' => $name, 'label' => $name])->values());
+    const shapeCodeOptions = [{ id: 'RF', label: 'Flat' }, { id: 'RR', label: 'Round' }];
+    const scanResultsCsrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+
+    function filters() {
+        return {
+            sto_code: $('#filterSto').val(),
+            plant_id: $('#filterPlant').val(),
+            location_id: $('#filterLocation').val(),
+            user_id: $('#filterUser').val(),
+            material_code: $('#filterMaterial').val(),
+            date_from: $('#filterDateFrom').val(),
+            date_to: $('#filterDateTo').val(),
+        };
+    }
+
+    function updateExportLinks() {
+        const params = new URLSearchParams(filters()).toString();
+        document.getElementById('exportExcel').href = '{{ route("admin.export.scan-results.excel") }}?' + params;
+        document.getElementById('exportPdf').href = '{{ route("admin.export.scan-results.pdf") }}?' + params;
+    }
 
     $(document).ready(function() {
         adminTable = $('#adminScanTable').DataTable({
             processing: true,
             serverSide: true,
-            ajax: {
-                url: '{{ route("admin.scan-results.datatable") }}',
-                data: function(d) {
-                    d.plant_id = $('#filterPlant').val();
-                    d.user_id = $('#filterUser').val();
-                    d.sto_code = $('#filterSto').val();
-                    d.keterangan = $('#filterKeterangan').val();
-                    d.date_from = $('#filterDateFrom').val();
-                    d.date_to = $('#filterDateTo').val();
-                }
-            },
+            scrollX: false,
+            autoWidth: false,
+            ajax: { url: '{{ route("admin.api.scan-results") }}', data: d => Object.assign(d, filters()) },
             order: [],
+            pageLength: 25,
             columnDefs: [
-                { className: "dt-center", targets: [0, 4, 5, 6, 7, 8, 9, 14, 15] },
+                { targets: 0, width: '3%', className: 'dt-center' },
+                { targets: 1, width: '12%' },
+                { targets: [2, 3], width: '6%' },
+                { targets: [4, 5, 6, 7, 9], width: '4%', className: 'dt-center' },
+                { targets: 8, width: '6%' },
+                { targets: 10, width: '7%' },
+                { targets: [11, 12], width: '6%' },
+                { targets: 13, width: '11%' },
+                { targets: 14, width: '8%', className: 'dt-center' },
+                { targets: 15, width: '9%', orderable: false },
             ],
             columns: [
-                { data: 'no', orderable: false, width: '40px' },
-                { data: 'barcode', render: d => `<span class="mono" style="color:var(--primary);font-weight:600;">${d}</span>` },
-                { data: 'material' },
-                { data: 'shape' },
-                { data: 'thickness', render: d => d || '-' },
-                { data: 'width', render: d => d || '-' },
-                { data: 'diameter', render: d => d || '-' },
-                { data: 'length', render: d => d || '-' },
-                { data: 'qty' },
-                { data: 'lot', render: d => `<span class="mono">${d}</span>` },
-                { data: 'user' },
-                { data: 'plant' },
-                { data: 'location' },
-                { data: 'scan_time', render: d => `<span class="mono">${d}</span>` },
-                {
-                    data: 'keterangan',
-                    render: function(d) {
-                        const cls = d === 'OK' ? 'badge-valid' : 'badge-invalid';
-                        return `<span class="badge ${cls}">${d}</span>`;
-                    }
-                },
-                {
-                    data: 'id',
-                    orderable: false,
-                    render: function(id) {
-                        return `
-                            <div style="display:flex;gap:4px;">
-                                <button class="btn-icon" onclick="openInlineEdit(this, ${id})" title="Edit">
-                                    <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
-                                </button>
-                                <button class="btn-icon" onclick="deleteResult(${id})" title="Delete" style="color:var(--danger);">
-                                    <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                                </button>
-                            </div>
-                        `;
-                    }
-                },
+                { data: 'no', orderable: false }, { data: 'barcode_material'}, { data: 'material_name' }, { data: 'shape_name' },
+                { data: 'thickness', render: d => d ?? '-' }, { data: 'width', render: d => d ?? '-' }, { data: 'diameter', render: d => d ?? '-' }, { data: 'length' },
+                { data: 'lot_number'}, { data: 'qty' }, { data: 'user' }, { data: 'plant' }, { data: 'location_name' }, { data: 'created_at', render: d => `<span class="scan-time" title="${escapeAttr(d)}">${escapeHtml(d)}</span>` },
+                { data: 'keterangan', render: d => `<span class="badge status-badge ${d === 'OK' ? 'badge-valid' : 'badge-invalid'}">${escapeHtml(d)}</span>` },
+                { data: null, orderable: false, render: row => {
+                    window.scanResultRows[row.id] = row;
+                    return `<div class="scan-row-actions"><button class="btn-icon js-row-edit" type="button" data-scan-id="${row.id}" onclick="openEdit(${row.id})">Edit</button><button class="btn-icon js-row-delete" type="button" onclick="deleteRow(${row.id})">Delete</button></div>`;
+                }}
             ],
-            language: {
-                search: 'Cari Data:',
-                lengthMenu: 'Tampilkan _MENU_',
-                info: '_START_ - _END_ dari _TOTAL_',
-                paginate: { previous: '‹', next: '›' },
-                emptyTable: 'Tidak ada data',
-                processing: '<span style="color:var(--primary);font-weight:600;">Memuat...</span>',
-            },
-            pageLength: 25,
-            scrollX: true,
+            language: { emptyTable: 'Tidak ada data ditemukan.' }
         });
+        updateExportLinks();
 
-        $('#filterDateFrom, #filterDateTo').on('change', reloadTable);
+        $(document).on('mousedown', function(event) {
+            if (!activeEditor || Date.now() < suppressOutsideUntil || $('#duplicateModal').hasClass('active')) return;
+
+            const target = $(event.target);
+            if (target.closest('.inline-scan-editor,#duplicateModal,.js-row-edit,.js-row-delete,.enterprise-toolbar').length) {
+                return;
+            }
+
+            if (!closeActiveEditor(true)) {
+                suppressOutsideUntil = Date.now() + 250;
+                event.preventDefault();
+                event.stopPropagation();
+            }
+        });
     });
 
-    function reloadTable() {
+    function reloadTable(confirmClose = true) {
+        if (confirmClose && !closeActiveEditor(true)) {
+            suppressOutsideUntil = Date.now() + 250;
+            return;
+        }
+
+        updateExportLinks();
         adminTable.ajax.reload();
-        updateExportLink();
     }
 
     function resetFilters() {
-        $('#filterPlant, #filterUser, #filterSto, #filterKeterangan, #filterDateFrom, #filterDateTo').val('');
-        reloadTable();
+        if (!closeActiveEditor(true)) {
+            suppressOutsideUntil = Date.now() + 250;
+            return;
+        }
+
+        $('#filterSto,#filterPlant,#filterLocation,#filterUser,#filterMaterial,#filterDateFrom,#filterDateTo').val('');
+        reloadTable(false);
     }
 
-    function updateExportLink() {
-        const params = new URLSearchParams({
-            plant_id: $('#filterPlant').val() || '',
-            user_id: $('#filterUser').val() || '',
-            sto_code: $('#filterSto').val() || '',
-            keterangan: $('#filterKeterangan').val() || '',
-            date_from: $('#filterDateFrom').val() || '',
-            date_to: $('#filterDateTo').val() || '',
+    function openCreate() {
+        if (!closeActiveEditor(true)) {
+            suppressOutsideUntil = Date.now() + 250;
+            return;
+        }
+
+        const createData = defaultCreateData();
+        const mainRow = $(inlineEditorRow('create', createData));
+        const tbody = $('#adminScanTable tbody');
+
+        tbody.prepend(mainRow);
+        activeEditor = { mode: 'create', id: null, mainRow, originalPayload: payloadSnapshot(createData) };
+        attachInlineEvents();
+        mainRow.find('[data-field="barcode_material"]').trigger('focus');
+    }
+
+    function openEdit(id) {
+        const row = window.scanResultRows[id];
+        if (!row) return;
+
+        if (!closeActiveEditor(true)) {
+            suppressOutsideUntil = Date.now() + 250;
+            return;
+        }
+
+        const parentRow = $(`button.js-row-edit[data-scan-id="${id}"]`).closest('tr');
+        if (!parentRow.length) return;
+
+        const normalized = normalizeRow(row);
+        const mainRow = $(inlineEditorRow('edit', normalized));
+
+        parentRow.after(mainRow);
+        activeEditor = { mode: 'edit', id, mainRow, originalPayload: payloadSnapshot(normalized) };
+        attachInlineEvents();
+        mainRow.find('[data-field="barcode_material"]').trigger('focus');
+    }
+
+    function closeDuplicateModal() { $('#duplicateModal').removeClass('active'); pendingCreatePayload = null; }
+
+    function saveScanResult(forceSave) {
+        if (!activeEditor && !pendingCreatePayload) return;
+
+        const mode = activeEditor?.mode || 'create';
+        const id = activeEditor?.id;
+        const payload = forceSave && pendingCreatePayload ? pendingCreatePayload : scanPayload();
+        payload.force_save = !!forceSave;
+        clearInlineErrors();
+
+        fetch(mode === 'edit' ? `/admin/api/scan-results/${id}` : '{{ route("admin.api.scan-results.store") }}', {
+            method: mode === 'edit' ? 'PUT' : 'POST',
+            headers: requestHeaders(),
+            body: JSON.stringify(payload)
+        })
+        .then(async response => {
+            const data = await response.json();
+            if (!response.ok) throw data;
+            return data;
+        })
+        .then(data => {
+            closeDuplicateModal();
+            clearActiveEditor();
+            showToast(data.message);
+            reloadTable(false);
+        })
+        .catch(error => {
+            if (error.duplicate && mode === 'create') {
+                pendingCreatePayload = payload;
+                $('#duplicateModal').addClass('active');
+                return;
+            }
+
+            showInlineError(error);
         });
-        document.getElementById('exportBtn').href = '{{ route("admin.scan-results.export") }}?' + params.toString();
     }
 
-    let currentEditRow = null;
+    function scanPayload() {
+        if (!activeEditor) return pendingCreatePayload || {};
 
-    function openInlineEdit(btn, id) {
-        if (currentEditRow) {
-            currentEditRow.child.hide();
-            $(currentEditRow.node()).removeClass('shown');
-            currentEditRow = null;
-        }
-
-        var tr = $(btn).closest('tr');
-        var row = adminTable.row(tr);
-        
-        var btnHtml = $(btn).html();
-        $(btn).html('...').prop('disabled', true);
-
-        fetch(`/admin/scan-results/${id}/edit`)
-            .then(r => r.json())
-            .then(res => {
-                $(btn).html(btnHtml).prop('disabled', false);
-
-                const data = res.data;
-                let locationOptions = res.locations.map(l => `<option value="${l.id}" ${l.id === data.location_id ? 'selected' : ''}>${l.name}</option>`).join('');
-                let plantOptions = res.plants.map(p => `<option value="${p.id}" ${p.id === data.plant_id ? 'selected' : ''}>${p.name}</option>`).join('');
-                let userOptions = res.users.map(u => `<option value="${u.id}" ${u.id === data.user_id ? 'selected' : ''}>${u.name}</option>`).join('');
-                let keteranganOptions = res.keterangan_list.map(k => `<option value="${k}" ${k === data.keterangan ? 'selected' : ''}>${k}</option>`).join('');
-                let scanTime = data.scan_time || '';
-
-                let editHtml = `
-                <div class="inline-edit-wrap">
-                    <div class="inline-edit-grid">
-                        <div class="ie-field"><label>Barcode</label><input type="text" id="ie_barcode_${id}" value="${data.barcode_material}"></div>
-                        <div class="ie-field"><label>Material</label><input type="text" id="ie_material_${id}" value="${data.material_name || ''}"></div>
-                        <div class="ie-field"><label>Shape</label><input type="text" id="ie_shape_${id}" value="${data.shape_name || ''}"></div>
-                        <div class="ie-field"><label>Thickness (T)</label><input type="number" step="0.01" id="ie_thickness_${id}" value="${data.thickness || ''}"></div>
-                        <div class="ie-field"><label>Width (W)</label><input type="number" step="0.01" id="ie_width_${id}" value="${data.width || ''}"></div>
-                        <div class="ie-field"><label>Diameter (D)</label><input type="number" step="0.01" id="ie_diameter_${id}" value="${data.diameter || ''}"></div>
-                        <div class="ie-field"><label>Length (L)</label><input type="number" step="0.01" id="ie_length_${id}" value="${data.length || ''}"></div>
-                        <div class="ie-field"><label>Qty</label><input type="number" id="ie_qty_${id}" value="${data.qty}" min="1"></div>
-                        <div class="ie-field"><label>Lot</label><input type="text" id="ie_lot_${id}" value="${data.lot || ''}"></div>
-                        <div class="ie-field"><label>User</label><select id="ie_user_${id}">${userOptions}</select></div>
-                        <div class="ie-field"><label>Plant</label><select id="ie_plant_${id}" onchange="fetchLocationsForInline(this.value, ${id})">${plantOptions}</select></div>
-                        <div class="ie-field"><label>Lokasi</label><select id="ie_location_${id}">${locationOptions}</select></div>
-                        <div class="ie-field"><label>Jam Scan</label><input type="text" id="ie_scantime_${id}" value="${scanTime}"></div>
-                        <div class="ie-field"><label>Keterangan</label><select id="ie_keterangan_${id}">${keteranganOptions}</select></div>
-                    </div>
-                    <div class="inline-edit-actions">
-                        <button class="btn" onclick="cancelInlineEdit()">Batal</button>
-                        <button class="btn btn-primary" onclick="saveInlineEdit(${id})">Simpan Perubahan</button>
-                    </div>
-                </div>`;
-
-                // Use DataTables child row API for proper rendering
-                row.child(editHtml).show();
-                $(row.node()).addClass('shown');
-                currentEditRow = row;
-            });
+        return {
+            user_id: fieldValue('user_id'),
+            sto_code_id: fieldValue('sto_code_id'),
+            plant_id: fieldValue('plant_id'),
+            location_name: fieldValue('location_name'),
+            barcode_raw: fieldValue('barcode_raw') || fieldValue('barcode_material'),
+            barcode_material: fieldValue('barcode_material'),
+            lot_number: fieldValue('lot_number'),
+            qty: fieldValue('qty'),
+            material_code: fieldValue('material_code'),
+            material_name: fieldValue('material_name'),
+            shape_code: fieldValue('shape_code'),
+            shape_name: fieldValue('shape_name'),
+            thickness: valueOrNull('thickness'),
+            width: valueOrNull('width'),
+            diameter: valueOrNull('diameter'),
+            length: fieldValue('length'),
+            keterangan: fieldValue('keterangan'),
+            scan_source: fieldValue('scan_source') || 'admin',
+            created_at: fieldValue('created_at'),
+        };
     }
 
-    function cancelInlineEdit() {
-        if (currentEditRow) {
-            currentEditRow.child.hide();
-            $(currentEditRow.node()).removeClass('shown');
-            currentEditRow = null;
-        }
+    function valueOrNull(field) {
+        const value = fieldValue(field);
+        return value === '' ? null : value;
     }
 
-    function fetchLocationsForInline(plantId, id) {
-        if (!plantId) return;
-        fetch(`/api/locations/${plantId}`)
-            .then(r => r.json())
-            .then(locations => {
-                let options = locations.map(l => `<option value="${l.id}">${l.name}</option>`).join('');
-                document.getElementById(`ie_location_${id}`).innerHTML = options;
-            });
+    function errorMessage(error) {
+        if (error.message) return error.message;
+        const first = Object.values(error.errors || {})[0];
+        return first?.[0] || 'Data tidak valid.';
     }
 
-    function saveInlineEdit(id) {
-        fetch(`/admin/scan-results/${id}`, {
-            method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
-                'Accept': 'application/json',
-            },
-            body: JSON.stringify({
-                barcode_material: document.getElementById(`ie_barcode_${id}`).value,
-                material_name: document.getElementById(`ie_material_${id}`).value,
-                shape_name: document.getElementById(`ie_shape_${id}`).value,
-                thickness: document.getElementById(`ie_thickness_${id}`).value || null,
-                width: document.getElementById(`ie_width_${id}`).value || null,
-                diameter: document.getElementById(`ie_diameter_${id}`).value || null,
-                length: document.getElementById(`ie_length_${id}`).value || null,
-                lot: document.getElementById(`ie_lot_${id}`).value,
-                qty: parseInt(document.getElementById(`ie_qty_${id}`).value),
-                scan_time: document.getElementById(`ie_scantime_${id}`).value,
-                user_id: document.getElementById(`ie_user_${id}`).value,
-                plant_id: document.getElementById(`ie_plant_${id}`).value,
-                location_id: document.getElementById(`ie_location_${id}`).value,
-                keterangan: document.getElementById(`ie_keterangan_${id}`).value,
+    function showInlineError(error) {
+        const messages = error.errors
+            ? Object.entries(error.errors).map(([field, values]) => {
+                activeEditor?.mainRow.find(`[data-field="${field}"]`).addClass('is-invalid');
+                return values[0];
             })
-        })
-        .then(r => r.json())
-        .then(data => {
-            if (data.success) {
-                showToast(data.message);
-                if (currentEditRow) {
-                    currentEditRow.child.hide();
-                    $(currentEditRow.node()).removeClass('shown');
-                    currentEditRow = null;
-                }
-                adminTable.ajax.reload(null, false);
-            } else {
-                showToast('Gagal update', 'error');
+            : [errorMessage(error)];
+
+        $('#inlineEditorError').html(messages.map(escapeHtml).join('<br>')).addClass('active');
+        showToast(messages[0] || 'Data tidak valid.', 'error');
+    }
+
+    function clearInlineErrors() {
+        activeEditor?.mainRow.find('.inline-field').removeClass('is-invalid');
+        $('#inlineEditorError').removeClass('active').empty();
+    }
+
+    function requestHeaders() {
+        const headers = { 'Content-Type': 'application/json', Accept: 'application/json' };
+
+        if (scanResultsCsrfToken) {
+            headers['X-CSRF-TOKEN'] = scanResultsCsrfToken;
+        }
+
+        return headers;
+    }
+
+    function nowForInput() {
+        const date = new Date();
+        const pad = value => String(value).padStart(2, '0');
+        return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+    }
+
+    function toDateTimeLocal(value) {
+        return value ? value.replace(' ', 'T') : nowForInput();
+    }
+
+    function inlineEditorRow(mode, data) {
+        const label = mode === 'create' ? 'New' : 'Edit';
+
+        return `
+            <tr class="inline-scan-editor" data-mode="${mode}">
+                <td class="inline-editor-label">${label}</td>
+                <td>${textField('barcode_material', data.barcode_material, 'wide mono')}</td>
+                <td>
+                    ${selectField('material_code', materialOptions, data.material_code, 'wide js-material-select')}
+                    ${hiddenField('material_name', data.material_name)}
+                </td>
+                <td>${selectField('shape_code', shapeCodeOptions, data.shape_code, 'js-shape-select')}${hiddenField('shape_name', data.shape_name)}</td>
+                <td>${numberField('thickness', data.thickness)}</td>
+                <td>${numberField('width', data.width)}</td>
+                <td>${numberField('diameter', data.diameter)}</td>
+                <td>${numberField('length', data.length)}</td>
+                <td>${textField('lot_number', data.lot_number, 'wide')}</td>
+                <td>${numberField('qty', data.qty, 'compact')}</td>
+                <td>${selectField('user_id', userOptions, data.user_id, 'wide')}</td>
+                <td>${selectField('plant_id', plantOptions, data.plant_id, 'wide')}</td>
+                <td>${textField('location_name', data.location_name, 'wide')}${hiddenField('sto_code_id', data.sto_code_id || defaultStoCodeId())}</td>
+                <td>${dateTimeField('created_at', data.created_at)}</td>
+                <td>${selectField('keterangan', keteranganOptions, data.keterangan, 'wide')}</td>
+                <td>
+                    ${hiddenField('barcode_raw', data.barcode_raw)}
+                    ${hiddenField('scan_source', data.scan_source || 'admin')}
+                    <div class="inline-actions">
+                        <button class="btn btn-primary" type="button" onclick="saveScanResult(false)">Save</button>
+                        <button class="btn" type="button" onclick="closeActiveEditor(true)">Cancel</button>
+                    </div>
+                </td>
+            </tr>`;
+    }
+
+    function textField(field, value = '', extraClass = '') {
+        return `<input class="form-control inline-field inline-input ${extraClass}" data-field="${field}" value="${escapeAttr(value)}" maxlength="255">`;
+    }
+
+    function hiddenField(field, value = '') {
+        return `<input class="inline-field" data-field="${field}" type="hidden" value="${escapeAttr(value)}">`;
+    }
+
+    function numberField(field, value = '', extraClass = '') {
+        return `<input class="form-control inline-field inline-input ${extraClass}" data-field="${field}" type="number" min="1" value="${escapeAttr(value)}">`;
+    }
+
+    function dateTimeField(field, value = '') {
+        return `<input class="form-control inline-field inline-input wide" data-field="${field}" type="datetime-local" step="1" value="${escapeAttr(value)}">`;
+    }
+
+    function selectField(field, options, value = '', extraClass = '') {
+        const optionHtml = ['<option value=""></option>']
+            .concat(options.map(option => `<option value="${escapeAttr(option.id)}"${String(option.id) === String(value ?? '') ? ' selected' : ''}>${escapeHtml(option.label)}</option>`))
+            .join('');
+
+        return `<select class="form-control inline-field inline-select ${extraClass}" data-field="${field}">${optionHtml}</select>`;
+    }
+
+    function attachInlineEvents() {
+        activeEditor.mainRow.find('.js-material-select').on('change', function() {
+            const value = this.value;
+            const materialNameField = activeEditor.mainRow.find('[data-field="material_name"]');
+
+            materialNameField.val(materialNames[value] || '');
+        });
+
+        const shapeSelect = activeEditor.mainRow.find('.js-shape-select');
+        shapeSelect.on('change', function() {
+            const shapeVal = this.value;
+            activeEditor.mainRow.find('[data-field="shape_name"]').val(shapeVal === 'RR' ? 'Round' : (shapeVal === 'RF' ? 'Flat' : ''));
+            
+            const thickness = activeEditor.mainRow.find('[data-field="thickness"]');
+            const width = activeEditor.mainRow.find('[data-field="width"]');
+            const diameter = activeEditor.mainRow.find('[data-field="diameter"]');
+            
+            thickness.prop('disabled', false).css('background', '');
+            width.prop('disabled', false).css('background', '');
+            diameter.prop('disabled', false).css('background', '');
+            
+            if (shapeVal === 'RF') {
+                diameter.prop('disabled', true).val('').css('background', '#e9ecef');
+            } else if (shapeVal === 'RR') {
+                thickness.prop('disabled', true).val('').css('background', '#e9ecef');
+                width.prop('disabled', true).val('').css('background', '#e9ecef');
             }
-        })
-        .catch(err => {
-            showToast('Terjadi kesalahan', 'error');
-            console.error(err);
+        });
+        
+        // Trigger initial shape logic
+        shapeSelect.trigger('change');
+
+        activeEditor.mainRow.find('.inline-field').on('input change', clearInlineErrors);
+    }
+
+    function closeActiveEditor(confirmDirty = true) {
+        if (!activeEditor) return true;
+
+        if (confirmDirty && isEditorDirty() && !confirm('Batalkan perubahan data scan?')) {
+            return false;
+        }
+
+        clearActiveEditor();
+        return true;
+    }
+
+    function clearActiveEditor() {
+        activeEditor?.mainRow.remove();
+        activeEditor = null;
+        pendingCreatePayload = null;
+        clearInlineErrors();
+    }
+
+    function isEditorDirty() {
+        if (!activeEditor) return false;
+
+        return JSON.stringify(payloadSnapshot(scanPayload())) !== JSON.stringify(activeEditor.originalPayload);
+    }
+
+    function emptyPayload() {
+        return payloadSnapshot({
+            user_id: '',
+            sto_code_id: '',
+            plant_id: '',
+            location_name: '',
+            barcode_raw: '',
+            barcode_material: '',
+            lot_number: '',
+            qty: '',
+            material_code: '',
+            material_name: '',
+            shape_code: '',
+            shape_name: '',
+            thickness: null,
+            width: null,
+            diameter: null,
+            length: '',
+            keterangan: '',
+            scan_source: '',
+            created_at: '',
         });
     }
 
-    function deleteResult(id) {
-        if (!confirm('Yakin ingin menghapus data scan ini?')) return;
+    function defaultCreateData() {
+        return {
+            sto_code_id: defaultStoCodeId(),
+            scan_source: 'admin',
+        };
+    }
 
-        fetch(`/admin/scan-results/${id}`, {
-            method: 'DELETE',
-            headers: {
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
-                'Accept': 'application/json',
-            },
-        })
-        .then(r => r.json())
-        .then(data => {
-            if (data.success) {
-                showToast(data.message);
-                adminTable.ajax.reload(null, false);
-            }
+    function defaultStoCodeId() {
+        return stoOptions[0]?.id || '';
+    }
+
+    function normalizeRow(row) {
+        return {
+            user_id: row.user_id ?? '',
+            sto_code_id: row.sto_code_id || stoIdsByCode[row.sto_code] || '',
+            plant_id: row.plant_id ?? '',
+            location_name: row.location_name ?? '',
+            barcode_raw: row.barcode_raw ?? '',
+            barcode_material: row.barcode_material ?? '',
+            lot_number: row.lot_number ?? '',
+            qty: row.qty ?? '',
+            material_code: row.material_code ?? '',
+            material_name: row.material_name ?? '',
+            shape_code: row.shape_code ?? '',
+            shape_name: row.shape_name ?? '',
+            thickness: row.thickness ?? null,
+            width: row.width ?? null,
+            diameter: row.diameter ?? null,
+            length: row.length ?? '',
+            keterangan: row.keterangan ?? '',
+            scan_source: row.scan_source ?? '',
+            created_at: toDateTimeLocal(row.created_at),
+        };
+    }
+
+    function payloadSnapshot(payload) {
+        const normalized = {};
+
+        Object.keys(emptyPayloadFields()).forEach(field => {
+            normalized[field] = payload[field] === null || payload[field] === undefined ? '' : String(payload[field]);
         });
+
+        return normalized;
+    }
+
+    function emptyPayloadFields() {
+        return {
+            user_id: '', sto_code_id: '', plant_id: '', location_name: '', barcode_raw: '', barcode_material: '',
+            lot_number: '', qty: '', material_code: '', material_name: '', shape_code: '', shape_name: '',
+            thickness: '', width: '', diameter: '', length: '', keterangan: '', scan_source: '', created_at: '',
+        };
+    }
+
+    function fieldValue(field) {
+        return activeEditor?.mainRow.find(`[data-field="${field}"]`).val() ?? '';
+    }
+
+    function escapeHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, char => ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#039;',
+        }[char]));
+    }
+
+    function escapeAttr(value) {
+        return escapeHtml(value);
+    }
+
+    function deleteRow(id) {
+        if (!confirm('Hapus data scan ini?')) return;
+        clearActiveEditor();
+        fetch(`/admin/api/scan-results/${id}`, { method: 'DELETE', headers: requestHeaders() })
+            .then(r => r.json()).then(payload => { if (payload.success) { showToast(payload.message); reloadTable(); } else showToast(payload.message || 'Gagal hapus', 'error'); });
     }
 </script>
 @endpush

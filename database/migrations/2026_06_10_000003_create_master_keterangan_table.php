@@ -10,7 +10,7 @@ return new class extends Migration
     {
         Schema::create('master_keterangan', function (Blueprint $table) {
             $table->id();
-            $table->string('name', 100);
+            $table->string('name')->unique();
             $table->boolean('is_active')->default(true);
             $table->timestamps();
         });

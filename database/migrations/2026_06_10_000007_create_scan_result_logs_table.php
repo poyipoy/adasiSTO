@@ -10,15 +10,21 @@ return new class extends Migration
     {
         Schema::create('scan_result_logs', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('scan_result_id')->constrained('scan_results')->cascadeOnDelete();
-            $table->foreignId('user_id')->constrained('users')->cascadeOnDelete();
-            $table->enum('action', ['created', 'updated', 'deleted']);
-            $table->json('old_values')->nullable();
-            $table->json('new_values')->nullable();
-            $table->timestamps();
+
+            $table->unsignedBigInteger('scan_result_id')->nullable();
+            $table->foreignId('user_id')->nullable()->constrained()->nullOnDelete();
+
+            $table->string('action');
+            $table->string('field_name')->nullable();
+            $table->text('old_value')->nullable();
+            $table->text('new_value')->nullable();
+
+            $table->timestamp('created_at')->useCurrent();
 
             $table->index('scan_result_id');
             $table->index('user_id');
+            $table->index('action');
+            $table->index('created_at');
         });
     }
 

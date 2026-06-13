@@ -17,7 +17,10 @@ class MasterKeteranganSeeder extends Seeder
         ];
 
         foreach ($keterangan as $item) {
-            MasterKeterangan::create($item);
+            MasterKeterangan::updateOrCreate(
+                ['name' => $item['name']],
+                ['is_active' => true]
+            );
         }
     }
 }

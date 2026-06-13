@@ -9,7 +9,7 @@ class MasterMaterial extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['code', 'name', 'is_active'];
+    protected $fillable = ['material_code', 'material_name', 'is_active'];
 
     protected function casts(): array
     {
@@ -26,7 +26,7 @@ class MasterMaterial extends Model
      */
     public static function findByCode(string $code): ?self
     {
-        return static::where('code', $code)
+        return static::where('material_code', strtoupper($code))
             ->where('is_active', true)
             ->first();
     }

@@ -2,406 +2,260 @@
 
 namespace App\Http\Controllers;
 
-use App\DTOs\BarcodeResult;
+use App\Http\Requests\CheckDuplicateScanRequest;
+use App\Http\Requests\PreviewScanRequest;
+use App\Http\Requests\StoreLocationRequest;
+use App\Http\Requests\StoreScanRequest;
+use App\Http\Requests\StoreSetupRequest;
 use App\Models\Location;
-use App\Models\MasterKeterangan;
 use App\Models\Plant;
 use App\Models\ScanResult;
-use App\Models\ScanResultLog;
-use App\Models\StoSession;
-use App\Models\User;
-use App\Services\BarcodeParser;
+use App\Services\STOService;
+use App\Services\ScanService;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
 class ScanController extends Controller
 {
+    private const RECENT_SCAN_PER_PAGE = 50;
+
     public function __construct(
-        private BarcodeParser $barcodeParser
+        private ScanService $scanService,
+        private STOService $stoService,
     ) {}
 
-    /**
-     * Setup page — choose PIC, Plant, Location before scanning.
-     * STO Code is auto-generated.
-     */
     public function setup(): View
     {
-        $plants = Plant::active()->get();
-        $users = User::where('is_active', true)->orderBy('name')->get();
+        $activeSto = $this->stoService->active();
+        $plants = Plant::active()->orderBy('name')->get();
+        $scanContext = session('scan_context');
 
-        // Get active session for this user if exists
-        $activeSession = StoSession::where('user_id', auth()->id())
-            ->active()
-            ->with('plant')
-            ->latest()
-            ->first();
-
-        return view('scan.setup', compact('plants', 'users', 'activeSession'));
+        return view('scan.setup', compact('activeSto', 'plants', 'scanContext'));
     }
 
-    /**
-     * Store STO session setup.
-     */
-    public function storeSetup(Request $request)
+    public function storeSetup(StoreSetupRequest $request)
     {
-        $validated = $request->validate([
-            'plant_id' => 'required|exists:plants,id',
-            'location_id' => 'required|exists:locations,id',
-        ]);
+        $activeSto = $this->stoService->active();
 
-        $picUser = auth()->user();
+        if (!$activeSto) {
+            return back()->with('error', STOService::NO_ACTIVE_STO_MESSAGE);
+        }
 
-        // Auto-generate STO Code: STO{DD}{MM}
-        $stoCode = $this->generateStoCode();
-
-        // Create STO session
-        $session = StoSession::create([
-            'user_id' => $picUser->id,
-            'sto_code' => $stoCode,
-            'plant_id' => $validated['plant_id'],
-            'pic' => $picUser->name,
-            'status' => 'active',
-        ]);
-
-        // Store location in session for the scanner page
         session([
-            'sto_session_id' => $session->id,
-            'location_id' => $validated['location_id'],
+            'scan_context' => [
+                'plant_id' => $request->integer('plant_id'),
+                'location_id' => $request->integer('location_id'),
+            ],
         ]);
 
-        return redirect()->route('scan.index')->with('success', 'Sesi STO berhasil dimulai! Kode: ' . $stoCode);
+        return redirect()->route('scan.scanner');
     }
 
-    /**
-     * Auto-generate STO Code.
-     * Format: STO{DD}{MM}-{sequence}
-     * Example: STO1006-001, STO1006-002
-     */
-    private function generateStoCode(): string
+    public function scanner(Request $request): View
     {
-        return 'STO' . now()->format('dm'); // e.g. STO1006
-    }
+        $activeSto = $this->stoService->active();
+        $scanContext = session('scan_context');
 
-    /**
-     * Scanner page with camera viewfinder.
-     */
-    public function index(): View
-    {
-        $sessionId = session('sto_session_id');
-
-        if (!$sessionId) {
-            return view('scan.no-session');
+        if (!$activeSto) {
+            return view('scan.no-session', ['message' => STOService::NO_ACTIVE_STO_MESSAGE]);
         }
 
-        $stoSession = StoSession::with('plant')->find($sessionId);
-
-        if (!$stoSession) {
-            session()->forget(['sto_session_id', 'location_id']);
-            return view('scan.no-session');
+        if (!$scanContext) {
+            return view('scan.no-session', ['message' => 'Silakan setup STO terlebih dahulu sebelum memulai scan.']);
         }
 
-        $location = Location::findOrFail(session('location_id'));
-        $keteranganList = MasterKeterangan::active()->pluck('name');
-        $locations = Location::where('plant_id', $stoSession->plant_id)->get();
+        $plant = Plant::findOrFail($scanContext['plant_id']);
+        $location = Location::active()
+            ->forUser(auth()->id())
+            ->where('plant_id', $plant->id)
+            ->findOrFail($scanContext['location_id']);
 
-        // Recent scans (last 10) for this user in this session
-        $recentScans = ScanResult::where('user_id', auth()->id())
-            ->where('sto_session_id', $sessionId)
-            ->latestFirst()
-            ->limit(10)
+        $recentScans = $this->recentScanPaginator($request->user()->id, (int) $request->input('page', 1), $plant->id);
+        $recentMeta = $this->recentScanMeta($recentScans);
+        $totalToday = ScanResult::forUser(auth()->id())->today()->where('plant_id', $plant->id)->count();
+
+        $locations = Location::active()
+            ->forUser(auth()->id())
+            ->where('plant_id', $plant->id)
+            ->orderBy('name')
             ->get();
 
-        // Stats
-        $totalToday = ScanResult::forUser(auth()->id())->today()->count();
-        $totalSession = ScanResult::forUser(auth()->id())
-            ->where('sto_session_id', $sessionId)
-            ->count();
-
-        return view('scan.scanner', compact(
-            'stoSession',
-            'location',
-            'locations',
-            'keteranganList',
-            'recentScans',
-            'totalToday',
-            'totalSession'
-        ));
+        return view('scan.scanner', compact('activeSto', 'plant', 'location', 'locations', 'recentScans', 'recentMeta', 'totalToday'));
     }
 
-    /**
-     * Process barcode scan via AJAX.
-     * Lot is auto-filled from STO Code.
-     */
-    public function storeScan(Request $request): JsonResponse
+    public function historyPage(Request $request): View
     {
-        $validated = $request->validate([
-            'barcode' => 'required|string|max:100',
-            'location_id' => 'required|exists:locations,id',
-            'qty' => 'nullable|integer|min:1',
+        $filterOptions = $this->scanService->historyFilterOptions($request->user());
+
+        return view('scan.results', compact('filterOptions'));
+    }
+
+    public function locations(Request $request): JsonResponse
+    {
+        $request->validate([
+            'plant_id' => ['required', 'integer', 'exists:plants,id'],
         ]);
 
-        $sessionId = session('sto_session_id');
-        if (!$sessionId) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Sesi STO tidak ditemukan. Silakan setup ulang.',
-            ], 422);
-        }
-
-        $stoSession = StoSession::findOrFail($sessionId);
-
-        // Parse barcode
-        $result = $this->barcodeParser->parse($validated['barcode']);
-
-        if (!$result->isValid) {
-            return response()->json([
-                'success' => false,
-                'message' => $result->errorMessage,
-            ], 422);
-        }
-
-        // Lot = STO Code (auto-filled)
-        $lot = $stoSession->sto_code;
-
-        // Store scan result
-        $scanResult = ScanResult::create([
-            'user_id' => auth()->id(),
-            'sto_session_id' => $stoSession->id,
-            'plant_id' => $stoSession->plant_id,
-            'location_id' => $validated['location_id'],
-            ...$result->toArray(),
-            'qty' => $validated['qty'] ?? 1,
-            'lot' => $lot,
-            'scan_time' => now(),
-            'keterangan' => 'OK',
-        ]);
-
-        // Log creation
-        ScanResultLog::create([
-            'scan_result_id' => $scanResult->id,
-            'user_id' => auth()->id(),
-            'action' => 'created',
-            'new_values' => $scanResult->toArray(),
-        ]);
-
-        $scanResult->load('location');
+        $locations = Location::active()
+            ->forUser($request->user()->id)
+            ->where('plant_id', $request->integer('plant_id'))
+            ->orderBy('name')
+            ->get(['id', 'plant_id', 'name']);
 
         return response()->json([
             'success' => true,
-            'message' => 'Scan berhasil disimpan!',
+            'data' => $locations,
+        ]);
+    }
+
+    public function storeLocation(StoreLocationRequest $request): JsonResponse
+    {
+        $location = Location::create([
+            'user_id' => $request->user()->id,
+            'plant_id' => $request->integer('plant_id'),
+            'name' => $request->string('name')->toString(),
+            'is_active' => true,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Location/Rack berhasil ditambahkan.',
             'data' => [
-                'id' => $scanResult->id,
-                'barcode' => $scanResult->barcode_material,
-                'material' => $scanResult->material_name,
-                'shape' => $scanResult->shape_name,
-                'size' => $scanResult->size,
-                'lot' => $scanResult->lot,
-                'qty' => $scanResult->qty,
-                'keterangan' => $scanResult->keterangan,
-                'scan_time' => $scanResult->scan_time->format('H:i:s'),
-                'location' => $scanResult->location->name,
+                'id' => $location->id,
+                'plant_id' => $location->plant_id,
+                'name' => $location->name,
+            ],
+        ], 201);
+    }
+
+    public function preview(PreviewScanRequest $request): JsonResponse
+    {
+        $result = $this->scanService->preview($request->string('qr')->toString());
+
+        if (!$result['valid']) {
+            return response()->json([
+                'success' => false,
+                'message' => $result['message'],
+            ], 422);
+        }
+
+        unset($result['valid']);
+
+        return response()->json([
+            'success' => true,
+            'data' => $result,
+        ]);
+    }
+
+    public function checkDuplicate(CheckDuplicateScanRequest $request): JsonResponse
+    {
+        $activeSto = $this->stoService->active();
+
+        if (!$activeSto) {
+            return response()->json([
+                'success' => false,
+                'message' => STOService::NO_ACTIVE_STO_MESSAGE,
+            ], 422);
+        }
+
+        $duplicate = $this->scanService->isDuplicate($request->string('barcode_material')->toString(), $activeSto->code);
+
+        return response()->json([
+            'success' => true,
+            'duplicate' => $duplicate,
+            'message' => $duplicate ? 'Barcode sudah pernah discan sebelumnya.' : null,
+        ]);
+    }
+
+    public function store(StoreScanRequest $request): JsonResponse
+    {
+        $result = $this->scanService->store($request->user(), $request->validated());
+
+        if (!$result['success']) {
+            return response()->json(
+                collect($result)->except('status')->all(),
+                $result['status'] ?? 422
+            );
+        }
+
+        return response()->json($result);
+    }
+
+    public function history(Request $request): JsonResponse
+    {
+        $perPage = min(max((int) $request->input('per_page', 25), 1), 100);
+        $page = max((int) $request->input('page', 1), 1);
+
+        $paginator = $this->scanService
+            ->historyQuery($request->user(), $request->only(['date_from', 'date_to', 'search', 'barcode_material', 'material_code', 'location_id']))
+            ->paginate($perPage, ['*'], 'page', $page);
+
+        return response()->json([
+            'success' => true,
+            'data' => $paginator->getCollection()
+                ->map(fn (ScanResult $scanResult) => $this->scanService->serializeScan($scanResult))
+                ->values(),
+            'meta' => [
+                'page' => $paginator->currentPage(),
+                'per_page' => $paginator->perPage(),
+                'total' => $paginator->total(),
             ],
         ]);
     }
 
-    /**
-     * User's scan results page with DataTable.
-     */
-    public function results(): View
+    public function recent(Request $request): JsonResponse
     {
-        $keteranganList = MasterKeterangan::active()->pluck('name');
+        $scanContext = session('scan_context');
+        $plantId = $scanContext ? $scanContext['plant_id'] : null;
 
-        $totalToday = ScanResult::forUser(auth()->id())->today()->count();
-
-        $activeSession = StoSession::where('user_id', auth()->id())
-            ->active()
-            ->with('plant')
-            ->latest()
-            ->first();
-
-        $totalSession = 0;
-        $plantName = '-';
-        $locationCount = 0;
-
-        if ($activeSession) {
-            $totalSession = ScanResult::forUser(auth()->id())
-                ->where('sto_session_id', $activeSession->id)
-                ->count();
-            $plantName = $activeSession->plant->name;
-            $locationCount = ScanResult::forUser(auth()->id())
-                ->where('sto_session_id', $activeSession->id)
-                ->distinct('location_id')
-                ->count('location_id');
-        }
-
-        return view('scan.results', compact(
-            'keteranganList',
-            'totalToday',
-            'totalSession',
-            'plantName',
-            'locationCount'
-        ));
-    }
-
-    /**
-     * Server-side DataTable for user's scan results.
-     */
-    public function datatable(Request $request): JsonResponse
-    {
-        $query = ScanResult::with(['location', 'stoSession'])
-            ->forUser(auth()->id())
-            ->latestFirst();
-
-        return $this->buildDatatable($query, $request);
-    }
-
-    /**
-     * Update keterangan for a scan result (user can only update their own).
-     */
-    public function updateKeterangan(Request $request, int $id): JsonResponse
-    {
-        $validated = $request->validate([
-            'keterangan' => 'required|string|max:100',
-        ]);
-
-        $scanResult = ScanResult::where('id', $id)
-            ->where('user_id', auth()->id())
-            ->firstOrFail();
-
-        $oldValues = $scanResult->only(['keterangan']);
-        $scanResult->update(['keterangan' => $validated['keterangan']]);
-
-        ScanResultLog::create([
-            'scan_result_id' => $scanResult->id,
-            'user_id' => auth()->id(),
-            'action' => 'updated',
-            'old_values' => $oldValues,
-            'new_values' => ['keterangan' => $validated['keterangan']],
-        ]);
+        $paginator = $this->recentScanPaginator($request->user()->id, (int) $request->input('page', 1), $plantId);
 
         return response()->json([
             'success' => true,
-            'message' => 'Keterangan berhasil diupdate!',
+            'data' => $paginator->getCollection()
+                ->map(fn (ScanResult $scanResult) => $this->scanService->serializeScan($scanResult))
+                ->values(),
+            'meta' => $this->recentScanMeta($paginator),
         ]);
     }
 
-    /**
-     * Get locations by plant (AJAX).
-     */
-    public function getLocations(int $plantId): JsonResponse
+    public function destroy(Request $request, int $id): JsonResponse
     {
-        $locations = Location::where('plant_id', $plantId)
-            ->orderBy('name')
-            ->get(['id', 'name']);
-
-        return response()->json($locations);
-    }
-
-    /**
-     * Store new location (AJAX).
-     */
-    public function storeLocation(Request $request): JsonResponse
-    {
-        $validated = $request->validate([
-            'plant_id' => 'required|exists:plants,id',
-            'name' => 'required|string|max:100',
-        ]);
-
-        $location = Location::firstOrCreate(
-            ['plant_id' => $validated['plant_id'], 'name' => strtoupper($validated['name'])],
-        );
+        try {
+            $this->scanService->deleteForScanner($request->user(), $id);
+        } catch (AuthorizationException $exception) {
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage(),
+            ], 403);
+        }
 
         return response()->json([
             'success' => true,
-            'data' => $location,
+            'message' => 'Scan berhasil dihapus.',
         ]);
     }
 
-    /**
-     * Change active location during scanning (AJAX).
-     */
-    public function changeLocation(Request $request): JsonResponse
+    private function recentScanPaginator(int $userId, int $page, ?int $plantId = null)
     {
-        $validated = $request->validate([
-            'location_id' => 'required|exists:locations,id',
-        ]);
-
-        session(['location_id' => $validated['location_id']]);
-
-        return response()->json(['success' => true]);
+        return ScanResult::query()
+            ->with(['plant', 'location'])
+            ->forUser($userId)
+            ->when($plantId, fn ($query) => $query->where('plant_id', $plantId))
+            ->today()
+            ->latestFirst()
+            ->paginate(self::RECENT_SCAN_PER_PAGE, ['*'], 'page', max($page, 1));
     }
 
-    /**
-     * End current STO session.
-     */
-    public function endSession(): \Illuminate\Http\RedirectResponse
+    private function recentScanMeta($paginator): array
     {
-        $sessionId = session('sto_session_id');
-        if ($sessionId) {
-            StoSession::where('id', $sessionId)->update(['status' => 'completed']);
-            session()->forget(['sto_session_id', 'location_id']);
-        }
-
-        return redirect()->route('scan.setup')->with('success', 'Sesi STO berhasil diakhiri.');
-    }
-
-    /**
-     * Build server-side DataTable response.
-     */
-    private function buildDatatable($query, Request $request): JsonResponse
-    {
-        $totalRecords = (clone $query)->count();
-
-        // Search
-        $search = $request->input('search.value');
-        if ($search) {
-            $query->where(function ($q) use ($search) {
-                $q->where('barcode_material', 'like', "%{$search}%")
-                    ->orWhere('material_name', 'like', "%{$search}%")
-                    ->orWhere('material_code', 'like', "%{$search}%")
-                    ->orWhere('lot', 'like', "%{$search}%")
-                    ->orWhere('keterangan', 'like', "%{$search}%");
-            });
-        }
-
-        $filteredRecords = (clone $query)->count();
-
-        // Pagination
-        $start = $request->input('start', 0);
-        $length = $request->input('length', 10);
-
-        $data = $query->skip($start)->take($length)->get();
-
-        // Build response with descending row numbers (Rule 2)
-        $rows = $data->map(function ($item, $index) use ($filteredRecords, $start) {
-            return [
-                'no' => $filteredRecords - $start - $index,
-                'id' => $item->id,
-                'barcode' => $item->barcode_material,
-                'material' => $item->material_name,
-                'shape' => $item->shape_name,
-                'size' => $item->size,
-                'thickness' => $item->thickness,
-                'width' => $item->width,
-                'diameter' => $item->diameter,
-                'length' => $item->length,
-                'qty' => $item->qty,
-                'lot' => $item->lot ?? '-',
-                'user' => $item->user->name ?? '-',
-                'plant' => $item->plant->name ?? '-',
-                'location' => $item->location->name ?? '-',
-                'scan_time' => $item->scan_time->format('H:i:s'),
-                'keterangan' => $item->keterangan,
-                'created_at' => $item->created_at->format('Y-m-d H:i:s'),
-            ];
-        });
-
-        return response()->json([
-            'draw' => intval($request->input('draw')),
-            'recordsTotal' => $totalRecords,
-            'recordsFiltered' => $filteredRecords,
-            'data' => $rows,
-        ]);
+        return [
+            'page' => $paginator->currentPage(),
+            'per_page' => $paginator->perPage(),
+            'total' => $paginator->total(),
+            'last_page' => $paginator->lastPage(),
+        ];
     }
 }

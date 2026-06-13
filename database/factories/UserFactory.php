@@ -28,9 +28,19 @@ class UserFactory extends Factory
             'name' => fake()->name(),
             'username' => fake()->unique()->userName(),
             'password' => static::$password ??= Hash::make('password'),
-            'role' => 'user',
+            'role' => 'scanner',
             'is_active' => true,
             'remember_token' => Str::random(10),
         ];
+    }
+
+    public function admin(): static
+    {
+        return $this->state(fn () => ['role' => 'admin']);
+    }
+
+    public function scanner(): static
+    {
+        return $this->state(fn () => ['role' => 'scanner']);
     }
 }

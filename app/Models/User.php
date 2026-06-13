@@ -40,9 +40,14 @@ class User extends Authenticatable
         return $this->hasMany(ScanResult::class);
     }
 
-    public function stoSessions(): HasMany
+    public function scanResultLogs(): HasMany
     {
-        return $this->hasMany(StoSession::class);
+        return $this->hasMany(ScanResultLog::class);
+    }
+
+    public function locations(): HasMany
+    {
+        return $this->hasMany(Location::class);
     }
 
     // ─── Helpers ───
@@ -52,8 +57,8 @@ class User extends Authenticatable
         return $this->role === 'admin';
     }
 
-    public function isUser(): bool
+    public function isScanner(): bool
     {
-        return $this->role === 'user';
+        return $this->role === 'scanner';
     }
 }

@@ -10,7 +10,7 @@ class Plant extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['code', 'name', 'is_active'];
+    protected $fillable = ['name', 'is_active'];
 
     protected function casts(): array
     {
@@ -24,11 +24,6 @@ class Plant extends Model
     public function locations(): HasMany
     {
         return $this->hasMany(Location::class);
-    }
-
-    public function stoSessions(): HasMany
-    {
-        return $this->hasMany(StoSession::class);
     }
 
     public function scanResults(): HasMany

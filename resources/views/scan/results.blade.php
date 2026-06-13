@@ -1,115 +1,168 @@
-<x-layouts.app :title="'Hasil Scan Saya'">
+<x-layouts.app :title="'Scan History'">
 
-{{-- Stats --}}
-<div class="stat-grid">
-    <div class="stat-card animate-in animate-delay-1">
-        <div class="stat-icon indigo">📊</div>
-        <div class="stat-value" data-count="{{ $totalToday }}">0</div>
-        <div class="stat-label">Scan Hari Ini</div>
-    </div>
-    <div class="stat-card animate-in animate-delay-2">
-        <div class="stat-icon green">📋</div>
-        <div class="stat-value" data-count="{{ $totalSession }}">0</div>
-        <div class="stat-label">Scan STO Aktif</div>
-    </div>
-    <div class="stat-card animate-in animate-delay-3">
-        <div class="stat-icon amber">🏭</div>
-        <div class="stat-value" style="-webkit-text-fill-color: #fbbf24;">{{ $plantName }}</div>
-        <div class="stat-label">Plant Aktif</div>
-    </div>
-    <div class="stat-card animate-in animate-delay-4">
-        <div class="stat-icon blue">📍</div>
-        <div class="stat-value" data-count="{{ $locationCount }}">0</div>
-        <div class="stat-label">Lokasi Aktif</div>
-    </div>
+
+
+<div class="enterprise-toolbar">
+    <button class="btn btn-primary" type="button" onclick="loadHistory()">Refresh</button>
+    <a href="{{ route('scan.scanner') }}" class="btn" id="openScannerTab">Scanner</a>
 </div>
 
-{{-- Data Table --}}
-<div class="glass-card animate-in" style="animation-delay: 0.5s; opacity: 0;">
-    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
-        <h3 style="font-size: 1rem; font-weight: 700;">Riwayat Scan</h3>
-        <a href="{{ route('scan.index') }}" class="btn btn-primary btn-sm">
-            <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width:14px;height:14px;"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"></path></svg>
-            Scan Lagi
-        </a>
+<div class="card" style="border-top:0;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+    <div style="width:150px;">
+        <label class="form-label">Tanggal Awal</label>
+        <input type="date" id="dateFrom" class="form-control">
     </div>
-
-    <div class="table-responsive">
-        <table id="scanTable" class="display" style="width: 100%;">
-            <thead>
-                <tr>
-                    <th>No</th>
-                    <th>Barcode</th>
-                    <th>Material</th>
-                    <th>Shape</th>
-                    <th>Size</th>
-                    <th>Lot</th>
-                    <th>Jam</th>
-                    <th>Keterangan</th>
-                </tr>
-            </thead>
-        </table>
+    <div style="width:150px;">
+        <label class="form-label">Tanggal Akhir</label>
+        <input type="date" id="dateTo" class="form-control">
     </div>
+    <div style="min-width:180px;flex:1;">
+        <label class="form-label">Barcode</label>
+        <select id="barcodeFilter" class="form-control">
+            <option value="">All</option>
+            @foreach(($filterOptions['barcodes'] ?? []) as $option)
+                <option value="{{ $option['value'] }}">{{ $option['label'] }}</option>
+            @endforeach
+        </select>
+    </div>
+    <div style="min-width:180px;flex:1;">
+        <label class="form-label">Material</label>
+        <select id="materialFilter" class="form-control">
+            <option value="">All</option>
+            @foreach(($filterOptions['materials'] ?? []) as $option)
+                <option value="{{ $option['value'] }}">{{ $option['label'] }}</option>
+            @endforeach
+        </select>
+    </div>
+    <div style="min-width:160px;flex:1;">
+        <label class="form-label">Location</label>
+        <select id="locationFilter" class="form-control">
+            <option value="">All</option>
+            @foreach(($filterOptions['locations'] ?? []) as $option)
+                <option value="{{ $option['value'] }}">{{ $option['label'] }}</option>
+            @endforeach
+        </select>
+    </div>
+    <div style="min-width:220px;flex:1;">
+        <label class="form-label">Search</label>
+        <input type="text" id="searchInput" class="form-control" placeholder="Barcode, material, lot">
+    </div>
+    <button class="btn btn-primary" type="button" onclick="loadHistory()">Filter</button>
 </div>
+
+<div class="table-container" style="border-top:0;">
+    <table class="table-enterprise">
+        <thead>
+            <tr>
+                <th>No</th>
+                <th>Barcode</th>
+                <th>Material</th>
+                <th>Shape</th>
+                <th>Lot</th>
+                <th>Qty</th>
+                <th>Location</th>
+                <th>Time</th>
+                <th>Status</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody id="historyRows"></tbody>
+    </table>
+</div>
+
+
 
 @push('scripts')
 <script>
-    $(document).ready(function() {
-        const table = $('#scanTable').DataTable({
-            processing: true,
-            serverSide: true,
-            ajax: '{{ route("scan.datatable") }}',
-            order: [],
-            columns: [
-                { data: 'no', orderable: false, className: 'mono', width: '50px' },
-                { data: 'barcode', className: 'mono', render: d => `<span style="color:#818cf8;font-weight:600;">${d}</span>` },
-                { data: 'material' },
-                { data: 'shape' },
-                { data: 'size' },
-                { data: 'lot' },
-                { data: 'scan_time', className: 'mono' },
-                {
-                    data: 'keterangan',
-                    render: function(data, type, row) {
-                        const options = @json($keteranganList);
-                        let select = `<select class="form-control" style="padding:0.3rem;font-size:0.75rem;border-radius:6px;min-width:120px;" onchange="updateKeterangan(${row.id}, this.value)">`;
-                        options.forEach(opt => {
-                            select += `<option value="${opt}" ${opt === data ? 'selected' : ''}>${opt}</option>`;
-                        });
-                        select += '</select>';
-                        return select;
-                    }
-                },
-            ],
-            language: {
-                search: 'Cari:',
-                lengthMenu: 'Tampilkan _MENU_ data',
-                info: 'Menampilkan _START_ - _END_ dari _TOTAL_ data',
-                paginate: { previous: '‹', next: '›' },
-                emptyTable: 'Belum ada data scan',
-                processing: '<span style="color:var(--accent-primary);">Memuat...</span>',
-            },
-            pageLength: 25,
-        });
+    let currentPage = 1;
+
+    document.getElementById('openScannerTab')?.addEventListener('click', function(event) {
+        const url = this.href;
+        const title = this.textContent.trim() || 'Scanner';
+
+        try {
+            const workspaceWindow = window.parent && window.parent !== window ? window.parent : window;
+            if (typeof workspaceWindow.openWorkspaceTab === 'function') {
+                event.preventDefault();
+                workspaceWindow.openWorkspaceTab(url, title);
+            }
+        } catch (error) {
+            // Keep the normal link fallback if the parent frame cannot be reached.
+        }
     });
 
-    function updateKeterangan(id, value) {
-        fetch(`/scan/${id}/keterangan`, {
-            method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
-                'Accept': 'application/json',
-            },
-            body: JSON.stringify({ keterangan: value })
-        })
-        .then(r => r.json())
-        .then(data => {
-            if (data.success) showToast('Keterangan berhasil diupdate!');
-            else showToast('Gagal update keterangan', 'error');
-        })
-        .catch(() => showToast('Error koneksi', 'error'));
+    function loadHistory(page = 1) {
+        currentPage = page;
+        const params = new URLSearchParams({
+            page,
+            per_page: 25,
+            date_from: document.getElementById('dateFrom').value,
+            date_to: document.getElementById('dateTo').value,
+            barcode_material: document.getElementById('barcodeFilter').value,
+            material_code: document.getElementById('materialFilter').value,
+            location_id: document.getElementById('locationFilter').value,
+            search: document.getElementById('searchInput').value
+        });
+
+        fetch(`/api/scan/history?${params.toString()}`, { headers: { Accept: 'application/json' } })
+            .then(response => response.json())
+            .then(payload => renderRows(payload.data, payload.meta))
+            .catch(() => showToast('Gagal memuat history.', 'error'));
     }
+
+    function escapeHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, char => ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#039;'
+        }[char]));
+    }
+
+    function renderRows(rows, meta) {
+        const tbody = document.getElementById('historyRows');
+        if (!rows.length) {
+            tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--text-muted);padding:16px;">Belum ada hasil scan.</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = rows.map((row, index) => `
+            <tr>
+                <td>${meta.total - ((meta.page - 1) * meta.per_page) - index}</td>
+                <td class="mono">${escapeHtml(row.barcode_material)}</td>
+                <td>${escapeHtml(row.material_name)}</td>
+                <td>${escapeHtml(row.shape_name)}</td>
+                <td class="mono">${escapeHtml(row.lot_number)}</td>
+                <td>${escapeHtml(row.qty)}</td>
+                <td>${escapeHtml(row.location || '-')}</td>
+                <td class="mono">${escapeHtml(row.created_at)}</td>
+                <td><span class="badge ${row.keterangan === 'OK' ? 'badge-valid' : 'badge-invalid'}">${escapeHtml(row.keterangan)}</span></td>
+                <td><button class="btn-icon" type="button" onclick="deleteScan(${row.id})" title="Delete">Delete</button></td>
+            </tr>
+        `).join('');
+    }
+
+    function deleteScan(id) {
+        if (!confirm('Hapus scan ini?')) return;
+
+        fetch(`/api/scan/${id}`, {
+            method: 'DELETE',
+            headers: { Accept: 'application/json' }
+        })
+        .then(async response => {
+            const payload = await response.json();
+            if (!response.ok) throw payload;
+            return payload;
+        })
+        .then(payload => {
+            showToast(payload.message);
+            loadHistory(currentPage);
+        })
+        .catch(error => showToast(error.message || 'Gagal menghapus scan.', 'error'));
+    }
+
+    document.addEventListener('DOMContentLoaded', () => loadHistory());
 </script>
 @endpush
 

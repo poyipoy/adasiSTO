@@ -10,12 +10,15 @@ return new class extends Migration
     {
         Schema::create('locations', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('plant_id')->constrained('plants')->cascadeOnDelete();
-            $table->string('name', 100);
+            $table->foreignId('user_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('plant_id')->constrained()->cascadeOnDelete();
+            $table->string('name');
+            $table->boolean('is_active')->default(true);
             $table->timestamps();
 
+            $table->index('user_id');
             $table->index('plant_id');
-            $table->unique(['plant_id', 'name']);
+            $table->unique(['user_id', 'plant_id', 'name']);
         });
     }
 

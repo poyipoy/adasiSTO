@@ -13,10 +13,14 @@ class ScanResult extends Model
 
     protected $fillable = [
         'user_id',
-        'sto_session_id',
+        'sto_code_id',
         'plant_id',
         'location_id',
+        'sto_code',
+        'barcode_raw',
         'barcode_material',
+        'lot_number',
+        'qty',
         'material_code',
         'material_name',
         'shape_code',
@@ -25,34 +29,29 @@ class ScanResult extends Model
         'width',
         'diameter',
         'length',
-        'qty',
-        'lot',
-        'scan_time',
         'keterangan',
+        'scan_source',
     ];
 
     protected function casts(): array
     {
         return [
-            'thickness' => 'decimal:2',
-            'width' => 'decimal:2',
-            'diameter' => 'decimal:2',
-            'length' => 'decimal:2',
+            'thickness' => 'integer',
+            'width' => 'integer',
+            'diameter' => 'integer',
+            'length' => 'integer',
             'qty' => 'integer',
-            'scan_time' => 'datetime',
         ];
     }
-
-    // ─── Relationships ───
 
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
     }
 
-    public function stoSession(): BelongsTo
+    public function stoCode(): BelongsTo
     {
-        return $this->belongsTo(StoSession::class);
+        return $this->belongsTo(StoCode::class);
     }
 
     public function plant(): BelongsTo
@@ -70,47 +69,44 @@ class ScanResult extends Model
         return $this->hasMany(ScanResultLog::class);
     }
 
-    // ─── Scopes ───
-
-    /**
-     * Isolate data to a specific user (Rule 3).
-     */
     public function scopeForUser($query, int $userId)
     {
         return $query->where('user_id', $userId);
     }
 
-    /**
-     * Default ordering: newest first (Rule 1).
-     */
     public function scopeLatestFirst($query)
     {
-        return $query->orderBy('created_at', 'desc');
+        return $query->orderBy('created_at', 'desc')->orderBy('id', 'desc');
     }
 
-    /**
-     * Scope for today's scans.
-     */
     public function scopeToday($query)
     {
         return $query->whereDate('created_at', today());
     }
 
-    // ─── Helpers ───
-
-    /**
-     * Get formatted size string based on shape.
-     */
     public function getSizeAttribute(): string
     {
         if ($this->shape_code === 'RF') {
-            return "{$this->thickness} x {$this->width} x {$this->length}";
+            return $this->formatDimension($this->thickness)
+                . ' x ' . $this->formatDimension($this->width)
+                . ' x ' . $this->formatDimension($this->length);
         }
 
         if ($this->shape_code === 'RR') {
-            return "Ø{$this->diameter} x {$this->length}";
+            return '⌀' . $this->formatDimension($this->diameter)
+                . ' x ' . $this->formatDimension($this->length);
         }
 
         return '-';
+    }
+
+    public function getRecentDetailAttribute(): string
+    {
+        return "{$this->material_name} - {$this->shape_name} - {$this->size} - Lot {$this->lot_number} - {$this->created_at?->format('Y-m-d H:i:s')}";
+    }
+
+    private function formatDimension(?int $value): string
+    {
+        return $value === null ? '-' : (string) $value;
     }
 }

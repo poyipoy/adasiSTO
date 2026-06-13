@@ -14,17 +14,12 @@ class ScanResultLog extends Model
         'scan_result_id',
         'user_id',
         'action',
-        'old_values',
-        'new_values',
+        'field_name',
+        'old_value',
+        'new_value',
     ];
 
-    protected function casts(): array
-    {
-        return [
-            'old_values' => 'array',
-            'new_values' => 'array',
-        ];
-    }
+    public $timestamps = false;
 
     // ─── Relationships ───
 

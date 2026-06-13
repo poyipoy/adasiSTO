@@ -12,9 +12,12 @@ class AdminMiddleware
     {
         if (!auth()->check() || !auth()->user()->isAdmin()) {
             if ($request->expectsJson()) {
-                return response()->json(['message' => 'Unauthorized'], 403);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Anda tidak memiliki akses.',
+                ], 403);
             }
-            return redirect()->route('scan.setup')->with('error', 'Akses ditolak. Anda bukan admin.');
+            abort(403, 'Anda tidak memiliki akses.');
         }
 
         return $next($request);

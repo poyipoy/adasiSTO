@@ -9,14 +9,13 @@ class PlantSeeder extends Seeder
 {
     public function run(): void
     {
-        $plants = [
-            ['code' => 'CKR', 'name' => 'Cikarang'],
-            ['code' => 'DLT', 'name' => 'Deltamas'],
-            ['code' => 'SBY', 'name' => 'Surabaya'],
-        ];
+        $plants = ['Cikarang', 'Deltamas', 'Surabaya'];
 
-        foreach ($plants as $plant) {
-            Plant::create($plant);
+        foreach ($plants as $plantName) {
+            Plant::updateOrCreate(
+                ['name' => $plantName],
+                ['is_active' => true]
+            );
         }
     }
 }
