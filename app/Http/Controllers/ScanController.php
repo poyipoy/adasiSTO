@@ -15,6 +15,7 @@ use App\Services\ScanService;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\View\View;
 
 class ScanController extends Controller
@@ -40,6 +41,9 @@ class ScanController extends Controller
         $activeSto = $this->stoService->active();
 
         if (!$activeSto) {
+            if ($request->wantsJson()) {
+                return response()->json(['success' => false, 'message' => STOService::NO_ACTIVE_STO_MESSAGE], 422);
+            }
             return back()->with('error', STOService::NO_ACTIVE_STO_MESSAGE);
         }
 
@@ -50,7 +54,11 @@ class ScanController extends Controller
             ],
         ]);
 
-        return redirect()->route('scan.scanner');
+        if ($request->wantsJson()) {
+            return response()->json(['success' => true]);
+        }
+
+        return redirect()->to(route('scan.scanner', [], false));
     }
 
     public function scanner(Request $request): View
@@ -72,9 +80,13 @@ class ScanController extends Controller
             ->where('plant_id', $plant->id)
             ->findOrFail($scanContext['location_id']);
 
-        $recentScans = $this->recentScanPaginator($request->user()->id, (int) $request->input('page', 1), $plant->id);
+        $recentScans = $this->recentScanPaginator($request->user()->id, (int) $request->input('page', 1), $plant->id, $location->id);
         $recentMeta = $this->recentScanMeta($recentScans);
-        $totalToday = ScanResult::forUser(auth()->id())->today()->where('plant_id', $plant->id)->count();
+        $totalToday = ScanResult::forUser(auth()->id())
+            ->today()
+            ->where('plant_id', $plant->id)
+            ->where('location_id', $location->id)
+            ->count();
 
         $locations = Location::active()
             ->forUser(auth()->id())
@@ -128,6 +140,34 @@ class ScanController extends Controller
                 'name' => $location->name,
             ],
         ], 201);
+    }
+
+    public function destroyLocation(Request $request, int $id): JsonResponse
+    {
+        $location = Location::findOrFail($id);
+
+        if ((int) $location->user_id !== (int) $request->user()->id) {
+            Log::warning('Unauthorized location delete attempt', [
+                'user_id' => $request->user()->id,
+                'location_id' => $location->id,
+            ]);
+
+            abort(403);
+        }
+
+        if (ScanResult::where('location_id', $location->id)->exists()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Tidak bisa menghapus lokasi karena sudah digunakan untuk scan.',
+            ], 422);
+        }
+
+        $location->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Location/Rack berhasil dihapus.',
+        ]);
     }
 
     public function preview(PreviewScanRequest $request): JsonResponse
@@ -189,7 +229,7 @@ class ScanController extends Controller
         $page = max((int) $request->input('page', 1), 1);
 
         $paginator = $this->scanService
-            ->historyQuery($request->user(), $request->only(['date_from', 'date_to', 'search', 'barcode_material', 'material_code', 'location_id']))
+            ->historyQuery($request->user(), $request->only(['date_from', 'date_to', 'search', 'barcode_material', 'material_code', 'plant_id', 'location_id']))
             ->paginate($perPage, ['*'], 'page', $page);
 
         return response()->json([
@@ -209,8 +249,14 @@ class ScanController extends Controller
     {
         $scanContext = session('scan_context');
         $plantId = $scanContext ? $scanContext['plant_id'] : null;
+        $locationId = $scanContext ? $scanContext['location_id'] : null;
 
-        $paginator = $this->recentScanPaginator($request->user()->id, (int) $request->input('page', 1), $plantId);
+        $paginator = $this->recentScanPaginator($request->user()->id, (int) $request->input('page', 1), $plantId, $locationId);
+        $totalToday = ScanResult::forUser($request->user()->id)
+            ->today()
+            ->when($plantId, fn($q) => $q->where('plant_id', $plantId))
+            ->when($locationId, fn($q) => $q->where('location_id', $locationId))
+            ->count();
 
         return response()->json([
             'success' => true,
@@ -218,6 +264,7 @@ class ScanController extends Controller
                 ->map(fn (ScanResult $scanResult) => $this->scanService->serializeScan($scanResult))
                 ->values(),
             'meta' => $this->recentScanMeta($paginator),
+            'total_today' => $totalToday,
         ]);
     }
 
@@ -238,13 +285,14 @@ class ScanController extends Controller
         ]);
     }
 
-    private function recentScanPaginator(int $userId, int $page, ?int $plantId = null)
+    private function recentScanPaginator(int $userId, int $page, ?int $plantId = null, ?int $locationId = null)
     {
         return ScanResult::query()
             ->with(['plant', 'location'])
             ->forUser($userId)
-            ->when($plantId, fn ($query) => $query->where('plant_id', $plantId))
             ->today()
+            ->when($plantId, fn ($query) => $query->where('plant_id', $plantId))
+            ->when($locationId, fn ($query) => $query->where('location_id', $locationId))
             ->latestFirst()
             ->paginate(self::RECENT_SCAN_PER_PAGE, ['*'], 'page', max($page, 1));
     }

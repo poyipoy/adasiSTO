@@ -5,8 +5,8 @@
     <button class="btn btn-icon" type="button" onclick="reloadTable()" title="Refresh">Refresh</button>
     <button class="btn btn-icon" type="button" onclick="resetFilters()" title="Reset">Reset</button>
     <div class="toolbar-sep"></div>
-    <a href="{{ route('admin.export.scan-results.excel') }}" id="exportExcel" class="btn btn-success">Export Excel</a>
-    <a href="{{ route('admin.export.scan-results.pdf') }}" id="exportPdf" class="btn">Export PDF</a>
+    <button class="btn btn-success" type="button" id="exportExcel" onclick="queueExport('excel')">Export Excel</button>
+    <button class="btn" type="button" id="exportPdf" onclick="queueExport('pdf')">Export PDF</button>
 </div>
 
 <div class="card" style="border-top:0;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
@@ -250,6 +250,11 @@
     let activeEditor = null;
     let pendingCreatePayload = null;
     let suppressOutsideUntil = 0;
+    let exportPollingTimer = null;
+    let exportPollingFailureCount = 0;
+    const maxExportPollingFailures = 3;
+    const pendingAutoDownloadExportIds = new Set();
+    const autoDownloadedExportIds = new Set();
     window.scanResultRows = {};
 
     const materialNames = @json($materials->mapWithKeys(fn($material) => [$material->material_code => $material->material_name]));
@@ -261,6 +266,8 @@
     const keteranganOptions = @json(collect($keteranganList)->map(fn($name) => ['id' => $name, 'label' => $name])->values());
     const shapeCodeOptions = [{ id: 'RF', label: 'Flat' }, { id: 'RR', label: 'Round' }];
     const scanResultsCsrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+    const exportQueueUrlTemplate = @json(route('admin.export.scan-results.queue', ['format' => '__FORMAT__']));
+    const exportStatusUrl = @json(route('admin.export.scan-results.status'));
 
     function filters() {
         return {
@@ -275,9 +282,7 @@
     }
 
     function updateExportLinks() {
-        const params = new URLSearchParams(filters()).toString();
-        document.getElementById('exportExcel').href = '{{ route("admin.export.scan-results.excel") }}?' + params;
-        document.getElementById('exportPdf').href = '{{ route("admin.export.scan-results.pdf") }}?' + params;
+        refreshExportStatus();
     }
 
     $(document).ready(function() {
@@ -308,7 +313,7 @@
                 { data: 'keterangan', render: d => `<span class="badge status-badge ${d === 'OK' ? 'badge-valid' : 'badge-invalid'}">${escapeHtml(d)}</span>` },
                 { data: null, orderable: false, render: row => {
                     window.scanResultRows[row.id] = row;
-                    return `<div class="scan-row-actions"><button class="btn-icon js-row-edit" type="button" data-scan-id="${row.id}" onclick="openEdit(${row.id})">Edit</button><button class="btn-icon js-row-delete" type="button" onclick="deleteRow(${row.id})">Delete</button></div>`;
+                    return `<div class="scan-row-actions"><button class="btn-icon js-row-edit" type="button" data-scan-id="${row.id}" onclick="openEdit(${row.id})">Edit</button><button class="btn-icon js-row-delete" type="button" onclick="deleteRow(${row.id}, '${escapeHtml(row.barcode_material)}')">Delete</button></div>`;
                 }}
             ],
             language: { emptyTable: 'Tidak ada data ditemukan.' }
@@ -319,7 +324,7 @@
             if (!activeEditor || Date.now() < suppressOutsideUntil || $('#duplicateModal').hasClass('active')) return;
 
             const target = $(event.target);
-            if (target.closest('.inline-scan-editor,#duplicateModal,.js-row-edit,.js-row-delete,.enterprise-toolbar').length) {
+            if (target.closest('.inline-scan-editor,#duplicateModal,.js-row-edit,.js-row-delete,.enterprise-toolbar,.swal2-container').length) {
                 return;
             }
 
@@ -332,7 +337,7 @@
     });
 
     function reloadTable(confirmClose = true) {
-        if (confirmClose && !closeActiveEditor(true)) {
+        if (confirmClose && !closeActiveEditor(true, () => reloadTable(false))) {
             suppressOutsideUntil = Date.now() + 250;
             return;
         }
@@ -342,17 +347,18 @@
     }
 
     function resetFilters() {
-        if (!closeActiveEditor(true)) {
+        if (!closeActiveEditor(true, () => resetFilters())) {
             suppressOutsideUntil = Date.now() + 250;
             return;
         }
 
         $('#filterSto,#filterPlant,#filterLocation,#filterUser,#filterMaterial,#filterDateFrom,#filterDateTo').val('');
+        adminTable.order([]).search('').page('first');
         reloadTable(false);
     }
 
     function openCreate() {
-        if (!closeActiveEditor(true)) {
+        if (!closeActiveEditor(true, () => openCreate())) {
             suppressOutsideUntil = Date.now() + 250;
             return;
         }
@@ -371,7 +377,7 @@
         const row = window.scanResultRows[id];
         if (!row) return;
 
-        if (!closeActiveEditor(true)) {
+        if (!closeActiveEditor(true, () => openEdit(id))) {
             suppressOutsideUntil = Date.now() + 250;
             return;
         }
@@ -490,6 +496,141 @@
         return headers;
     }
 
+    function queueExport(format) {
+        if (!closeActiveEditor(true, () => queueExport(format))) {
+            suppressOutsideUntil = Date.now() + 250;
+            return;
+        }
+
+        setExportButtonsDisabled(true);
+
+        fetch(exportQueueUrlTemplate.replace('__FORMAT__', format), {
+            method: 'POST',
+            headers: requestHeaders(),
+            body: JSON.stringify(filters()),
+        })
+        .then(async response => {
+            const data = await response.json();
+            if (!response.ok) throw data;
+            return data;
+        })
+        .then(payload => {
+            if (payload.data?.id) {
+                pendingAutoDownloadExportIds.add(Number(payload.data.id));
+            }
+
+            showToast(payload.message);
+            exportPollingFailureCount = 0;
+            refreshExportStatus();
+            startExportPolling();
+        })
+        .catch(error => {
+            showToast(error.message || 'Export gagal dimulai.', 'error');
+        })
+        .finally(() => setExportButtonsDisabled(false));
+    }
+
+    function refreshExportStatus() {
+        fetch(exportStatusUrl, { headers: { Accept: 'application/json' } })
+            .then(async response => {
+                const payload = await response.json();
+                if (!response.ok) throw payload;
+                return payload;
+            })
+            .then(payload => {
+                exportPollingFailureCount = 0;
+                const exports = payload.data || [];
+                triggerAutoDownloads(exports);
+
+                const waitingForAutoDownload = exports.some(item => {
+                    const id = Number(item.id);
+
+                    return pendingAutoDownloadExportIds.has(id)
+                        && ['queued', 'processing'].includes(item.status);
+                });
+
+                if (waitingForAutoDownload) {
+                    startExportPolling();
+                } else {
+                    stopExportPolling();
+                }
+            })
+            .catch(() => handleExportPollingFailure());
+    }
+
+    function handleExportPollingFailure() {
+        if (pendingAutoDownloadExportIds.size === 0) {
+            stopExportPolling();
+            return;
+        }
+
+        exportPollingFailureCount++;
+
+        if (exportPollingFailureCount < maxExportPollingFailures) {
+            return;
+        }
+
+        stopExportPolling();
+        pendingAutoDownloadExportIds.clear();
+        exportPollingFailureCount = 0;
+        showToast('Status export gagal dimuat. Silakan coba export ulang.', 'error');
+    }
+
+    function triggerAutoDownloads(exports) {
+        exports.forEach(item => {
+            const id = Number(item.id);
+
+            if (!pendingAutoDownloadExportIds.has(id)) {
+                return;
+            }
+
+            if (item.status === 'failed') {
+                pendingAutoDownloadExportIds.delete(id);
+                showToast(item.message || 'Export gagal diproses.', 'error');
+                return;
+            }
+
+            if (item.status !== 'completed' || !item.download_url || autoDownloadedExportIds.has(id)) {
+                return;
+            }
+
+            pendingAutoDownloadExportIds.delete(id);
+            autoDownloadedExportIds.add(id);
+            autoDownloadExport(item.download_url);
+            showToast('Export selesai. Download dimulai.');
+        });
+    }
+
+    function autoDownloadExport(downloadUrl) {
+        let frame = document.getElementById('exportAutoDownloadFrame');
+
+        if (!frame) {
+            frame = document.createElement('iframe');
+            frame.id = 'exportAutoDownloadFrame';
+            frame.hidden = true;
+            frame.style.display = 'none';
+            document.body.appendChild(frame);
+        }
+
+        frame.src = downloadUrl;
+    }
+
+    function startExportPolling() {
+        if (exportPollingTimer) return;
+        exportPollingTimer = setInterval(() => refreshExportStatus(), 3000);
+    }
+
+    function stopExportPolling() {
+        if (!exportPollingTimer) return;
+        clearInterval(exportPollingTimer);
+        exportPollingTimer = null;
+    }
+
+    function setExportButtonsDisabled(disabled) {
+        document.getElementById('exportExcel').disabled = disabled;
+        document.getElementById('exportPdf').disabled = disabled;
+    }
+
     function nowForInput() {
         const date = new Date();
         const pad = value => String(value).padStart(2, '0');
@@ -501,7 +642,7 @@
     }
 
     function inlineEditorRow(mode, data) {
-        const label = mode === 'create' ? 'New' : 'Edit';
+        const label = mode === 'create' ? '+' : 'Edit';
 
         return `
             <tr class="inline-scan-editor" data-mode="${mode}">
@@ -593,10 +734,27 @@
         activeEditor.mainRow.find('.inline-field').on('input change', clearInlineErrors);
     }
 
-    function closeActiveEditor(confirmDirty = true) {
+    function closeActiveEditor(confirmDirty = true, onConfirm = null) {
         if (!activeEditor) return true;
 
-        if (confirmDirty && isEditorDirty() && !confirm('Batalkan perubahan data scan?')) {
+        if (confirmDirty && isEditorDirty()) {
+            Swal.fire({
+                title: 'Batalkan perubahan?',
+                text: 'Data scan yang belum disimpan akan hilang.',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#f43f5e',
+                cancelButtonColor: '#64748b',
+                confirmButtonText: 'Ya, batalkan',
+                cancelButtonText: 'Kembali edit',
+                background: '#ffffff',
+                color: '#1f2937'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    clearActiveEditor();
+                    if (onConfirm) onConfirm();
+                }
+            });
             return false;
         }
 
@@ -712,11 +870,12 @@
         return escapeHtml(value);
     }
 
-    function deleteRow(id) {
-        if (!confirm('Hapus data scan ini?')) return;
-        clearActiveEditor();
-        fetch(`/admin/api/scan-results/${id}`, { method: 'DELETE', headers: requestHeaders() })
-            .then(r => r.json()).then(payload => { if (payload.success) { showToast(payload.message); reloadTable(); } else showToast(payload.message || 'Gagal hapus', 'error'); });
+    function deleteRow(id, barcode) {
+        confirmAction(`Apakah Anda yakin ingin menghapus data scan <b>${barcode}</b>?`, () => {
+            clearActiveEditor();
+            fetch(`/admin/api/scan-results/${id}`, { method: 'DELETE', headers: requestHeaders() })
+                .then(r => r.json()).then(payload => { if (payload.success) { showToast(payload.message); reloadTable(); } else showToast(payload.message || 'Gagal hapus', 'error'); });
+        });
     }
 </script>
 @endpush

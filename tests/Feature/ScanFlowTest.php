@@ -12,6 +12,8 @@ use App\Models\StoCode;
 use App\Models\User;
 use App\Services\ScanService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\RateLimiter;
 use Tests\TestCase;
 
 class ScanFlowTest extends TestCase
@@ -81,6 +83,17 @@ class ScanFlowTest extends TestCase
         ]);
     }
 
+    public function test_setup_page_shows_location_rack_scanner_controls(): void
+    {
+        $response = $this->actingAs($this->scanner)->get('/scan/setup');
+
+        $response->assertOk()
+            ->assertSee('Scan QR / Barcode Rack')
+            ->assertSee('showLocationCameraBtn')
+            ->assertSee('locationReader', false)
+            ->assertSee('html5-qrcode.min.js', false);
+    }
+
     public function test_location_rack_list_only_shows_current_user_locations(): void
     {
         $otherLocation = Location::create([
@@ -111,6 +124,51 @@ class ScanFlowTest extends TestCase
         ]));
 
         $response->assertStatus(422);
+    }
+
+    public function test_scanner_can_delete_own_unused_location_rack(): void
+    {
+        $location = Location::create([
+            'user_id' => $this->scanner->id,
+            'plant_id' => $this->plant->id,
+            'name' => 'Temporary Rack',
+            'is_active' => true,
+        ]);
+
+        $response = $this->actingAs($this->scanner)->deleteJson("/api/locations/{$location->id}");
+
+        $response->assertOk()
+            ->assertJsonPath('success', true);
+
+        $this->assertDatabaseMissing('locations', ['id' => $location->id]);
+    }
+
+    public function test_scanner_cannot_delete_other_user_location_rack(): void
+    {
+        $otherLocation = Location::create([
+            'user_id' => $this->otherScanner->id,
+            'plant_id' => $this->plant->id,
+            'name' => 'Other Rack',
+            'is_active' => true,
+        ]);
+
+        $response = $this->actingAs($this->scanner)->deleteJson("/api/locations/{$otherLocation->id}");
+
+        $response->assertForbidden();
+        $this->assertDatabaseHas('locations', ['id' => $otherLocation->id]);
+    }
+
+    public function test_scanner_cannot_delete_location_rack_used_by_scan(): void
+    {
+        $scan = $this->createScan($this->scanner);
+
+        $response = $this->actingAs($this->scanner)->deleteJson("/api/locations/{$this->location->id}");
+
+        $response->assertStatus(422)
+            ->assertJsonPath('success', false);
+
+        $this->assertDatabaseHas('locations', ['id' => $this->location->id]);
+        $this->assertDatabaseHas('scan_results', ['id' => $scan->id]);
     }
 
     public function test_scanner_can_hard_delete_own_scan_with_audit(): void
@@ -344,7 +402,67 @@ class ScanFlowTest extends TestCase
             ->assertDontSee($yesterdayScan->barcode_material);
     }
 
-    public function test_scanner_recent_scan_displays_desc_number_and_timestamp_next_to_barcode(): void
+    public function test_scanner_recent_scan_filters_by_selected_location(): void
+    {
+        $otherLocation = Location::create([
+            'user_id' => $this->scanner->id,
+            'plant_id' => $this->plant->id,
+            'name' => 'CT02',
+            'is_active' => true,
+        ]);
+
+        $selectedLocationScan = $this->createScan($this->scanner, 'RF1H059-00960001B|CT01|1');
+        $otherLocationScan = $this->createScan($this->scanner, 'RF1H059-00960002B|CT02|1', [
+            'location_id' => $otherLocation->id,
+        ]);
+
+        $response = $this->actingAs($this->scanner)
+            ->withSession([
+                'scan_context' => [
+                    'plant_id' => $this->plant->id,
+                    'location_id' => $this->location->id,
+                ],
+            ])
+            ->get('/scan/scanner');
+
+        $response->assertOk()
+            ->assertSee($selectedLocationScan->barcode_material)
+            ->assertDontSee($otherLocationScan->barcode_material)
+            ->assertSee('id="counterToday">1</span>', false);
+    }
+
+    public function test_recent_scan_endpoint_filters_by_selected_location_context(): void
+    {
+        $otherLocation = Location::create([
+            'user_id' => $this->scanner->id,
+            'plant_id' => $this->plant->id,
+            'name' => 'CT02',
+            'is_active' => true,
+        ]);
+
+        $selectedLocationScan = $this->createScan($this->scanner, 'RF1H059-00960001B|CT01|1');
+        $otherLocationScan = $this->createScan($this->scanner, 'RF1H059-00960002B|CT02|1', [
+            'location_id' => $otherLocation->id,
+        ]);
+
+        $response = $this->actingAs($this->scanner)
+            ->withSession([
+                'scan_context' => [
+                    'plant_id' => $this->plant->id,
+                    'location_id' => $otherLocation->id,
+                ],
+            ])
+            ->getJson('/api/scan/recent?page=1');
+
+        $response->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('meta.total', 1)
+            ->assertJsonPath('total_today', 1)
+            ->assertJsonFragment(['id' => $otherLocationScan->id])
+            ->assertJsonMissing(['id' => $selectedLocationScan->id]);
+    }
+
+    public function test_scanner_recent_scan_displays_desc_number_and_action_meta_below_status(): void
     {
         $olderAt = now()->setTime(10, 28, 36);
         $newerAt = now()->setTime(10, 28, 37);
@@ -366,14 +484,18 @@ class ScanFlowTest extends TestCase
 
         $response->assertOk()
             ->assertSee('<span class="recent-number">2</span>', false)
+            ->assertSee('recent-action-meta', false)
+            ->assertSee('CT01 &bull; ' . $newerAt->format('H:i:s'), false)
             ->assertSeeInOrder([
                 $newerScan->barcode_material,
-                $newerAt->format('H:i:s'),
                 'SKD11 - Flat - 59 x 96 x 99 - 1 pcs - ST2605',
+                'OK',
+                $newerAt->format('H:i:s'),
                 $olderScan->barcode_material,
                 $olderAt->format('H:i:s'),
             ])
             ->assertDontSee($newerAt->format('Y-m-d H:i:s'))
+            ->assertDontSee('recent-time', false)
             ->assertDontSee('Lot ST2605 - ' . $newerAt->format('Y-m-d H:i:s'));
     }
 
@@ -469,6 +591,31 @@ class ScanFlowTest extends TestCase
             ->assertJsonMissing(['id' => $other->id]);
     }
 
+    public function test_scan_history_filters_by_plant_id(): void
+    {
+        $secondPlant = Plant::create(['name' => 'Deltamas', 'is_active' => true]);
+        $secondLocation = Location::create([
+            'user_id' => $this->scanner->id,
+            'plant_id' => $secondPlant->id,
+            'name' => 'DM01',
+            'is_active' => true,
+        ]);
+
+        $match = $this->createScan($this->scanner, 'RF1H059-00960001B|MATCH|1', [
+            'plant_id' => $secondPlant->id,
+            'location_id' => $secondLocation->id,
+        ]);
+        $other = $this->createScan($this->scanner, 'RF1H059-00960002B|OTHER|1');
+
+        $response = $this->actingAs($this->scanner)
+            ->getJson('/api/scan/history?plant_id=' . $secondPlant->id);
+
+        $response->assertOk()
+            ->assertJsonFragment(['id' => $match->id])
+            ->assertJsonFragment(['plant' => 'Deltamas'])
+            ->assertJsonMissing(['id' => $other->id]);
+    }
+
     public function test_scan_history_filter_dropdown_options_are_owned_and_latest_ordered(): void
     {
         $oldAt = now()->subMinutes(10);
@@ -477,13 +624,15 @@ class ScanFlowTest extends TestCase
         $olderScan = $this->createScan($this->scanner, 'RF1H059-00960001B|OLD|1');
         $olderScan->forceFill(['created_at' => $oldAt, 'updated_at' => $oldAt])->save();
 
+        $newPlant = Plant::create(['name' => 'Deltamas', 'is_active' => true]);
         $newLocation = Location::create([
             'user_id' => $this->scanner->id,
-            'plant_id' => $this->plant->id,
-            'name' => 'CT02',
+            'plant_id' => $newPlant->id,
+            'name' => 'DM01',
             'is_active' => true,
         ]);
         $newerScan = $this->createScan($this->scanner, 'RR2P051-00000835B|NEW|1', [
+            'plant_id' => $newPlant->id,
             'location_id' => $newLocation->id,
             'material_code' => '2P',
             'material_name' => 'SKD61',
@@ -496,15 +645,27 @@ class ScanFlowTest extends TestCase
         ]);
         $newerScan->forceFill(['created_at' => $newAt, 'updated_at' => $newAt])->save();
 
-        $otherUserScan = $this->createScan($this->otherScanner, 'RF1H059-00969999B|OTHER|1');
+        $otherPlant = Plant::create(['name' => 'Surabaya', 'is_active' => true]);
+        $otherLocation = Location::create([
+            'user_id' => $this->otherScanner->id,
+            'plant_id' => $otherPlant->id,
+            'name' => 'SB01',
+            'is_active' => true,
+        ]);
+        $otherUserScan = $this->createScan($this->otherScanner, 'RF1H059-00969999B|OTHER|1', [
+            'plant_id' => $otherPlant->id,
+            'location_id' => $otherLocation->id,
+        ]);
 
         $response = $this->actingAs($this->scanner)->get('/scan/history');
 
         $response->assertOk()
             ->assertSeeInOrder([$newerScan->barcode_material, $olderScan->barcode_material])
             ->assertSeeInOrder(['SKD61 (2P)', 'SKD11 (1H)'])
-            ->assertSeeInOrder(['CT02', 'CT01'])
-            ->assertDontSee($otherUserScan->barcode_material);
+            ->assertSeeInOrder(['Deltamas', 'Cikarang'])
+            ->assertSeeInOrder(['DM01', 'CT01'])
+            ->assertDontSee($otherUserScan->barcode_material)
+            ->assertDontSee('Surabaya');
     }
 
     public function test_duplicate_scan_can_be_saved_as_new_row_if_confirmed(): void
@@ -527,25 +688,455 @@ class ScanFlowTest extends TestCase
             ->assertJsonPath('recordsFiltered', 1);
     }
 
-    public function test_admin_dashboard_latest_scan_is_server_side_paginated(): void
+    public function test_admin_scan_results_datatable_clamps_length_and_negative_start(): void
+    {
+        for ($i = 1; $i <= 105; $i++) {
+            $this->createScan($this->scanner, sprintf('RF1H059-0096%04dB|LOT%03d|1', $i, $i));
+        }
+
+        $response = $this->actingAs($this->admin)
+            ->getJson('/admin/api/scan-results?draw=1&start=-25&length=1000');
+
+        $response->assertOk()
+            ->assertJsonPath('recordsTotal', 105)
+            ->assertJsonPath('recordsFiltered', 105)
+            ->assertJsonCount(100, 'data')
+            ->assertJsonPath('data.0.no', 105);
+    }
+
+    public function test_admin_can_open_material_double_page_and_scanner_cannot_access_endpoint(): void
+    {
+        $this->actingAs($this->admin)
+            ->get('/admin/material-double')
+            ->assertOk()
+            ->assertSee('Material Double');
+
+        $this->actingAs($this->scanner)
+            ->getJson('/admin/api/material-double?draw=1&start=0&length=10')
+            ->assertForbidden();
+    }
+
+    public function test_material_double_datatable_only_returns_duplicate_groups_per_qr_plant_location_and_clamps_length(): void
+    {
+        $secondLocation = Location::create([
+            'user_id' => $this->scanner->id,
+            'plant_id' => $this->plant->id,
+            'name' => 'CT02',
+            'is_active' => true,
+        ]);
+
+        $this->createScan($this->scanner, 'RF1H059-00960099B|LOT001|1');
+        $this->createScan($this->scanner, 'RF1H059-00960099B|LOT002|1');
+        $this->createScan($this->scanner, 'RF1H060-00960098B|SINGLE|1');
+        $this->createScan($this->scanner, 'RR2P051-00000835B|LOT003|1', [
+            'location_id' => $secondLocation->id,
+            'material_code' => '2P',
+            'material_name' => 'SKD61',
+            'shape_code' => 'RR',
+            'shape_name' => 'Round',
+            'thickness' => null,
+            'width' => null,
+            'diameter' => 51,
+            'length' => 835,
+        ]);
+        $this->createScan($this->scanner, 'RR2P051-00000835B|LOT004|1', [
+            'location_id' => $secondLocation->id,
+            'material_code' => '2P',
+            'material_name' => 'SKD61',
+            'shape_code' => 'RR',
+            'shape_name' => 'Round',
+            'thickness' => null,
+            'width' => null,
+            'diameter' => 51,
+            'length' => 835,
+        ]);
+
+        $response = $this->actingAs($this->admin)
+            ->getJson('/admin/api/material-double?draw=1&start=-5&length=1000');
+
+        $response->assertOk()
+            ->assertJsonPath('recordsTotal', 2)
+            ->assertJsonPath('recordsFiltered', 2)
+            ->assertJsonCount(2, 'data')
+            ->assertJsonFragment([
+                'barcode_material' => 'RF1H059-00960099B',
+                'location' => 'CT01',
+                'duplicate_count' => 2,
+            ])
+            ->assertJsonFragment([
+                'barcode_material' => 'RR2P051-00000835B',
+                'location' => 'CT02',
+                'duplicate_count' => 2,
+            ])
+            ->assertJsonMissing(['barcode_material' => 'RF1H060-00960098B']);
+    }
+
+    public function test_material_double_filters_affect_grouping(): void
+    {
+        $secondPlant = Plant::create(['name' => 'Deltamas', 'is_active' => true]);
+        $secondLocation = Location::create([
+            'user_id' => $this->scanner->id,
+            'plant_id' => $secondPlant->id,
+            'name' => 'DM01',
+            'is_active' => true,
+        ]);
+
+        $excluded = $this->createScan($this->scanner, 'RF1H059-00960099B|OLD001|1');
+        $excluded->forceFill(['created_at' => '2026-06-10 09:00:00', 'updated_at' => '2026-06-10 09:00:00'])->save();
+        $this->createScan($this->scanner, 'RF1H059-00960099B|OLD002|1')
+            ->forceFill(['created_at' => '2026-06-10 09:05:00', 'updated_at' => '2026-06-10 09:05:00'])
+            ->save();
+
+        $matchOne = $this->createScan($this->scanner, 'RR2P051-00000835B|NEW001|1', [
+            'plant_id' => $secondPlant->id,
+            'location_id' => $secondLocation->id,
+            'material_code' => '2P',
+            'material_name' => 'SKD61',
+            'shape_code' => 'RR',
+            'shape_name' => 'Round',
+            'thickness' => null,
+            'width' => null,
+            'diameter' => 51,
+            'length' => 835,
+        ]);
+        $matchOne->forceFill(['created_at' => '2026-06-11 10:00:00', 'updated_at' => '2026-06-11 10:00:00'])->save();
+        $matchTwo = $this->createScan($this->scanner, 'RR2P051-00000835B|NEW002|1', [
+            'plant_id' => $secondPlant->id,
+            'location_id' => $secondLocation->id,
+            'material_code' => '2P',
+            'material_name' => 'SKD61',
+            'shape_code' => 'RR',
+            'shape_name' => 'Round',
+            'thickness' => null,
+            'width' => null,
+            'diameter' => 51,
+            'length' => 835,
+        ]);
+        $matchTwo->forceFill(['created_at' => '2026-06-11 10:05:00', 'updated_at' => '2026-06-11 10:05:00'])->save();
+
+        $query = http_build_query([
+            'draw' => 1,
+            'start' => 0,
+            'length' => 25,
+            'plant_id' => $secondPlant->id,
+            'location_id' => $secondLocation->id,
+            'material_code' => '2P',
+            'date_from' => '2026-06-11',
+            'date_to' => '2026-06-11',
+        ]);
+
+        $response = $this->actingAs($this->admin)->getJson("/admin/api/material-double?{$query}");
+
+        $response->assertOk()
+            ->assertJsonPath('recordsFiltered', 1)
+            ->assertJsonFragment(['barcode_material' => 'RR2P051-00000835B'])
+            ->assertJsonMissing(['barcode_material' => $excluded->barcode_material]);
+    }
+
+    public function test_material_double_valid_action_marks_group_but_keeps_it_visible(): void
+    {
+        $this->createScan($this->scanner, 'RF1H059-00960099B|LOT001|1');
+        $this->createScan($this->scanner, 'RF1H059-00960099B|LOT002|1');
+
+        $payload = [
+            'barcode_material' => 'RF1H059-00960099B',
+            'plant_id' => $this->plant->id,
+            'location_id' => $this->location->id,
+        ];
+
+        $this->actingAs($this->admin)
+            ->postJson('/admin/api/material-double/validate', $payload)
+            ->assertOk()
+            ->assertJsonPath('message', 'Duplicate QR berhasil diverifikasi.');
+
+        $this->assertDatabaseHas('material_double_validations', [
+            'barcode_material' => 'RF1H059-00960099B',
+            'plant_id' => $this->plant->id,
+            'location_id' => $this->location->id,
+            'validated_by' => $this->admin->id,
+        ]);
+
+        $response = $this->actingAs($this->admin)
+            ->getJson('/admin/api/material-double?draw=1&start=0&length=10');
+
+        $response->assertOk()
+            ->assertJsonFragment([
+                'barcode_material' => 'RF1H059-00960099B',
+                'is_validated' => true,
+            ]);
+    }
+
+    public function test_material_double_detail_follows_group_and_delete_selected_hard_deletes_with_audit(): void
+    {
+        $targetOne = $this->createScan($this->scanner, 'RF1H059-00960099B|LOT001|1');
+        $targetTwo = $this->createScan($this->scanner, 'RF1H059-00960099B|LOT002|1');
+        $otherLocation = Location::create([
+            'user_id' => $this->scanner->id,
+            'plant_id' => $this->plant->id,
+            'name' => 'CT02',
+            'is_active' => true,
+        ]);
+        $otherGroup = $this->createScan($this->scanner, 'RF1H059-00960099B|LOT003|1', [
+            'location_id' => $otherLocation->id,
+        ]);
+
+        $query = http_build_query([
+            'draw' => 1,
+            'start' => 0,
+            'length' => 25,
+            'barcode_material' => 'RF1H059-00960099B',
+            'plant_id' => $this->plant->id,
+            'location_id' => $this->location->id,
+        ]);
+
+        $detail = $this->actingAs($this->admin)
+            ->getJson("/admin/api/material-double/detail?{$query}");
+
+        $detail->assertOk()
+            ->assertJsonPath('recordsTotal', 2)
+            ->assertJsonFragment(['id' => $targetOne->id])
+            ->assertJsonFragment(['id' => $targetTwo->id])
+            ->assertJsonMissing(['id' => $otherGroup->id]);
+
+        $delete = $this->actingAs($this->admin)
+            ->deleteJson('/admin/api/material-double/delete-selected', [
+                'barcode_material' => 'RF1H059-00960099B',
+                'plant_id' => $this->plant->id,
+                'location_id' => $this->location->id,
+                'ids' => [$targetOne->id],
+            ]);
+
+        $delete->assertOk()
+            ->assertJsonPath('deleted_count', 1);
+
+        $this->assertDatabaseMissing('scan_results', ['id' => $targetOne->id]);
+        $this->assertDatabaseHas('scan_results', ['id' => $targetTwo->id]);
+        $this->assertDatabaseHas('scan_results', ['id' => $otherGroup->id]);
+        $this->assertDatabaseHas('scan_result_logs', [
+            'scan_result_id' => $targetOne->id,
+            'user_id' => $this->admin->id,
+            'action' => 'deleted',
+        ]);
+    }
+
+    public function test_material_double_delete_selected_rejects_ids_outside_group(): void
+    {
+        $this->createScan($this->scanner, 'RF1H059-00960099B|LOT001|1');
+        $this->createScan($this->scanner, 'RF1H059-00960099B|LOT002|1');
+        $other = $this->createScan($this->scanner, 'RF1H060-00960098B|OTHER|1');
+
+        $response = $this->actingAs($this->admin)
+            ->deleteJson('/admin/api/material-double/delete-selected', [
+                'barcode_material' => 'RF1H059-00960099B',
+                'plant_id' => $this->plant->id,
+                'location_id' => $this->location->id,
+                'ids' => [$other->id],
+            ]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('success', false);
+
+        $this->assertDatabaseHas('scan_results', ['id' => $other->id]);
+    }
+
+    public function test_master_datatable_clamps_length_and_negative_start(): void
+    {
+        for ($i = 1; $i <= 105; $i++) {
+            MasterMaterial::create([
+                'material_code' => sprintf('T%03d', $i),
+                'material_name' => sprintf('Test Material %03d', $i),
+                'is_active' => true,
+            ]);
+        }
+
+        $response = $this->actingAs($this->admin)
+            ->getJson('/admin/api/master-material?draw=1&start=-10&length=1000');
+
+        $response->assertOk()
+            ->assertJsonPath('recordsTotal', 107)
+            ->assertJsonPath('recordsFiltered', 107)
+            ->assertJsonCount(100, 'data')
+            ->assertJsonPath('data.0.no', 107);
+    }
+
+    public function test_login_endpoint_is_rate_limited(): void
+    {
+        config(['sto.rate_limits.login_per_minute' => 2]);
+        RateLimiter::clear('login:limited-user|127.0.0.1');
+
+        $this->post('/login', ['username' => 'limited-user', 'password' => 'wrong'])
+            ->assertRedirect();
+        $this->post('/login', ['username' => 'limited-user', 'password' => 'wrong'])
+            ->assertRedirect();
+
+        $this->post('/login', ['username' => 'limited-user', 'password' => 'wrong'])
+            ->assertStatus(429);
+    }
+
+    public function test_scan_write_endpoint_is_rate_limited(): void
+    {
+        config(['sto.rate_limits.scan_write_per_minute' => 2]);
+        RateLimiter::clear("scan-write:{$this->scanner->id}");
+
+        $this->actingAs($this->scanner)->postJson('/api/scan/store', $this->payload([
+            'qr' => 'RF1H059-00960001B|LOT001|1',
+        ]))->assertOk();
+
+        $this->actingAs($this->scanner)->postJson('/api/scan/store', $this->payload([
+            'qr' => 'RF1H059-00960002B|LOT002|1',
+        ]))->assertOk();
+
+        $this->actingAs($this->scanner)->postJson('/api/scan/store', $this->payload([
+            'qr' => 'RF1H059-00960003B|LOT003|1',
+        ]))->assertStatus(429);
+    }
+
+    public function test_export_queue_endpoint_is_rate_limited(): void
+    {
+        Queue::fake();
+        config(['sto.rate_limits.export_per_minute' => 1]);
+        RateLimiter::clear("export:{$this->admin->id}");
+
+        $this->actingAs($this->admin)
+            ->postJson('/admin/export/scan-results/excel')
+            ->assertStatus(202);
+
+        $this->actingAs($this->admin)
+            ->postJson('/admin/export/scan-results/excel')
+            ->assertStatus(429);
+    }
+
+    public function test_datatable_endpoint_is_rate_limited(): void
+    {
+        config(['sto.rate_limits.datatable_per_minute' => 1]);
+        RateLimiter::clear("datatable:{$this->admin->id}");
+
+        $this->actingAs($this->admin)
+            ->getJson('/admin/api/scan-results?draw=1&start=0&length=10')
+            ->assertOk();
+
+        $this->actingAs($this->admin)
+            ->getJson('/admin/api/scan-results?draw=1&start=0&length=10')
+            ->assertStatus(429);
+    }
+
+    public function test_admin_dashboard_does_not_render_latest_scan_rows_in_blade(): void
+    {
+        $scan = $this->createScan($this->scanner, 'RF1H059-00960055B|LOT055|1');
+
+        $response = $this->actingAs($this->admin)->get('/admin/dashboard');
+
+        $response->assertOk()
+            ->assertSee('dashboardDataTable')
+            ->assertDontSee($scan->barcode_material);
+    }
+
+    public function test_admin_dashboard_latest_scan_endpoint_is_server_side_and_clamped_to_fifty_rows(): void
     {
         for ($i = 1; $i <= 55; $i++) {
             $this->createScan($this->scanner, sprintf('RF1H059-0096%04dB|LOT%03d|1', $i, $i));
         }
 
-        $pageOne = $this->actingAs($this->admin)->get('/admin/dashboard');
+        $pageOne = $this->actingAs($this->admin)->getJson('/admin/api/dashboard/latest-scan?draw=3&start=0&length=100');
 
         $pageOne->assertOk()
-            ->assertSee('Showing 1 to 50 of 55 entries')
-            ->assertSee('RF1H059-00960055B')
-            ->assertDontSee('RF1H059-00960005B');
+            ->assertJsonPath('draw', 3)
+            ->assertJsonPath('recordsTotal', 55)
+            ->assertJsonPath('recordsFiltered', 55)
+            ->assertJsonCount(50, 'data')
+            ->assertJsonFragment(['barcode_material' => 'RF1H059-00960055B'])
+            ->assertJsonMissing(['barcode_material' => 'RF1H059-00960005B']);
 
-        $pageTwo = $this->actingAs($this->admin)->get('/admin/dashboard?latest_page=2');
+        $pageTwo = $this->actingAs($this->admin)->getJson('/admin/api/dashboard/latest-scan?draw=4&start=50&length=100');
 
         $pageTwo->assertOk()
-            ->assertSee('Showing 51 to 55 of 55 entries')
-            ->assertSee('RF1H059-00960005B')
-            ->assertDontSee('RF1H059-00960055B');
+            ->assertJsonPath('draw', 4)
+            ->assertJsonCount(5, 'data')
+            ->assertJsonFragment(['barcode_material' => 'RF1H059-00960005B'])
+            ->assertJsonMissing(['barcode_material' => 'RF1H059-00960055B']);
+    }
+
+    public function test_admin_dashboard_latest_scan_endpoint_applies_dashboard_filters(): void
+    {
+        $otherPlant = Plant::create(['name' => 'Deltamas', 'is_active' => true]);
+        $otherLocation = Location::create([
+            'user_id' => $this->scanner->id,
+            'plant_id' => $otherPlant->id,
+            'name' => 'DM01',
+            'is_active' => true,
+        ]);
+
+        $older = $this->createScan($this->scanner, 'RF1H059-00960001B|LOT001|1');
+        $older->forceFill([
+            'created_at' => '2026-06-10 10:00:00',
+            'updated_at' => '2026-06-10 10:00:00',
+        ])->save();
+
+        $included = $this->createScan($this->scanner, 'RF1H059-00960002B|LOT002|1', [
+            'plant_id' => $otherPlant->id,
+            'location_id' => $otherLocation->id,
+        ]);
+        $included->forceFill([
+            'created_at' => '2026-06-11 10:00:00',
+            'updated_at' => '2026-06-11 10:00:00',
+        ])->save();
+
+        $newer = $this->createScan($this->scanner, 'RF1H059-00960003B|LOT003|1', [
+            'plant_id' => $otherPlant->id,
+            'location_id' => $otherLocation->id,
+        ]);
+        $newer->forceFill([
+            'created_at' => '2026-06-12 10:00:00',
+            'updated_at' => '2026-06-12 10:00:00',
+        ])->save();
+
+        $query = http_build_query([
+            'draw' => 1,
+            'start' => 0,
+            'length' => 50,
+            'plant_id' => $otherPlant->id,
+            'date_from' => '2026-06-11',
+            'date_to' => '2026-06-11',
+        ]);
+
+        $response = $this->actingAs($this->admin)->getJson("/admin/api/dashboard/latest-scan?{$query}");
+
+        $response->assertOk()
+            ->assertJsonPath('recordsTotal', 1)
+            ->assertJsonPath('recordsFiltered', 1)
+            ->assertJsonFragment(['barcode_material' => $included->barcode_material])
+            ->assertJsonMissing(['barcode_material' => 'RF1H059-00960001B'])
+            ->assertJsonMissing(['barcode_material' => 'RF1H059-00960003B']);
+    }
+
+    public function test_admin_dashboard_latest_scan_endpoint_searches_server_side(): void
+    {
+        $this->createScan($this->scanner, 'RF1H059-00960001B|LOT001|1');
+        $matched = $this->createScan($this->scanner, 'RR2P051-00000835B|LOT002|1', [
+            'material_code' => '2P',
+            'material_name' => 'SKD61',
+            'shape_code' => 'RR',
+            'shape_name' => 'Round',
+            'thickness' => null,
+            'width' => null,
+            'diameter' => 51,
+            'length' => 835,
+        ]);
+
+        $query = http_build_query([
+            'draw' => 1,
+            'start' => 0,
+            'length' => 50,
+            'search' => ['value' => 'SKD61'],
+        ]);
+
+        $response = $this->actingAs($this->admin)->getJson("/admin/api/dashboard/latest-scan?{$query}");
+
+        $response->assertOk()
+            ->assertJsonPath('recordsTotal', 2)
+            ->assertJsonPath('recordsFiltered', 1)
+            ->assertJsonFragment(['barcode_material' => $matched->barcode_material])
+            ->assertJsonMissing(['barcode_material' => 'RF1H059-00960001B']);
     }
 
     public function test_recent_scan_serializer_formats_flat_and_round_dimensions(): void

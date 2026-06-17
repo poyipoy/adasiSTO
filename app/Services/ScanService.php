@@ -8,15 +8,18 @@ use App\Models\ScanResultLog;
 use App\Models\StoCode;
 use App\Models\User;
 use Carbon\Carbon;
-use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class ScanService
 {
     public function __construct(
         private BarcodeParserService $barcodeParser,
-        private STOService $stoService,
+        private ActiveStoService $activeStoService,
+        private ActivityLogService $activityLog,
     ) {}
 
     public function preview(string $qr): array
@@ -24,79 +27,101 @@ class ScanService
         return $this->barcodeParser->parse($qr);
     }
 
-    public function isDuplicate(string $barcodeMaterial, ?string $stoCode = null): bool
+    public function isDuplicate(string $barcodeMaterial, ?string $stoCode = null, ?int $plantId = null, ?int $locationId = null): bool
     {
-        $activeSto = $stoCode ? null : $this->stoService->active();
-        $resolvedStoCode = $stoCode ?: $activeSto?->code;
-
-        if (!$resolvedStoCode) {
-            return false;
+        $query = ScanResult::query()
+            ->where('barcode_material', strtoupper(trim($barcodeMaterial)));
+            
+        if ($plantId !== null) {
+            $query->where('plant_id', $plantId);
+        }
+        
+        if ($locationId !== null) {
+            $query->where('location_id', $locationId);
         }
 
-        return ScanResult::query()
-            ->where('sto_code', $resolvedStoCode)
-            ->where('barcode_material', strtoupper(trim($barcodeMaterial)))
-            ->exists();
+        return $query->exists();
     }
 
     public function store(User $user, array $payload): array
     {
-        $activeSto = $this->stoService->active();
+        $activeSto = $this->activeStoService->active();
 
         if (!$activeSto) {
             return [
                 'success' => false,
                 'status' => 422,
-                'message' => STOService::NO_ACTIVE_STO_MESSAGE,
+                'message' => ActiveStoService::NO_ACTIVE_STO_MESSAGE,
             ];
         }
 
-        $parsed = $this->barcodeParser->parse($payload['qr']);
+        try {
+            $result = DB::transaction(function () use ($user, $payload, $activeSto) {
+                $parsed = $this->barcodeParser->parse($payload['qr']);
 
-        if (!$parsed['valid']) {
-            return [
-                'success' => false,
-                'status' => 422,
-                'message' => $parsed['message'],
-            ];
-        }
+                if (!$parsed['valid']) {
+                    return [
+                        'success' => false,
+                        'status' => 422,
+                        'message' => $parsed['message'],
+                    ];
+                }
 
-        if ($this->isDuplicate($parsed['barcode_material'], $activeSto->code) && empty($payload['force_save'])) {
-            return [
-                'success' => false,
-                'status' => 409,
-                'duplicate' => true,
-                'message' => 'Barcode sudah pernah discan sebelumnya. Tetap simpan?',
-            ];
-        }
+                if ($this->isDuplicate($parsed['barcode_material'], $activeSto->code, $payload['plant_id'] ?? null, $payload['location_id'] ?? null) && empty($payload['force_save'])) {
+                    return [
+                        'success' => false,
+                        'status' => 409,
+                        'duplicate' => true,
+                        'message' => "Barcode {$parsed['barcode_material']} (Material: {$parsed['material_name']}, Qty: {$parsed['qty']}) sudah pernah discan sebelumnya. Tetap simpan?",
+                    ];
+                }
 
-        $scanResult = DB::transaction(function () use ($user, $payload, $parsed, $activeSto) {
-            $scanResult = ScanResult::create([
+                $scanResult = ScanResult::create([
+                    'user_id' => $user->id,
+                    'sto_code_id' => $activeSto->id,
+                    'plant_id' => $payload['plant_id'],
+                    'location_id' => $payload['location_id'],
+                    'sto_code' => $activeSto->code,
+                    'barcode_raw' => $payload['qr'],
+                    'barcode_material' => $parsed['barcode_material'],
+                    'lot_number' => $parsed['lot_number'],
+                    'qty' => $parsed['qty'],
+                    'material_code' => $parsed['material_code'],
+                    'material_name' => $parsed['material_name'],
+                    'shape_code' => $parsed['shape_code'],
+                    'shape_name' => $parsed['shape_name'],
+                    'thickness' => $parsed['thickness'],
+                    'width' => $parsed['width'],
+                    'diameter' => $parsed['diameter'],
+                    'length' => $parsed['length'],
+                    'keterangan' => $this->defaultKeterangan(),
+                    'scan_source' => $payload['scan_source'] ?? 'manual',
+                ]);
+
+                $this->logSnapshot($scanResult, $user->id, 'created', newValue: $scanResult->toArray());
+                $this->activityLog->record($user, 'scan.created', $scanResult, newValues: $this->auditValues($scanResult));
+
+                return [
+                    'success' => true,
+                    'scan_result' => $scanResult,
+                ];
+            });
+        } catch (Throwable $exception) {
+            Log::error('Scan store failed', [
                 'user_id' => $user->id,
-                'sto_code_id' => $activeSto->id,
-                'plant_id' => $payload['plant_id'],
-                'location_id' => $payload['location_id'],
-                'sto_code' => $activeSto->code,
-                'barcode_raw' => $payload['qr'],
-                'barcode_material' => $parsed['barcode_material'],
-                'lot_number' => $parsed['lot_number'],
-                'qty' => $parsed['qty'],
-                'material_code' => $parsed['material_code'],
-                'material_name' => $parsed['material_name'],
-                'shape_code' => $parsed['shape_code'],
-                'shape_name' => $parsed['shape_name'],
-                'thickness' => $parsed['thickness'],
-                'width' => $parsed['width'],
-                'diameter' => $parsed['diameter'],
-                'length' => $parsed['length'],
-                'keterangan' => 'OK',
-                'scan_source' => $payload['scan_source'] ?? 'manual',
+                'plant_id' => $payload['plant_id'] ?? null,
+                'location_id' => $payload['location_id'] ?? null,
+                'exception' => $exception::class,
             ]);
 
-            $this->logSnapshot($scanResult, $user->id, 'created', newValue: $scanResult->toArray());
+            throw $exception;
+        }
 
-            return $scanResult;
-        });
+        if (!$result['success']) {
+            return $result;
+        }
+
+        $scanResult = $result['scan_result'];
 
         return [
             'success' => true,
@@ -128,6 +153,10 @@ class ScanService
             $query->where('material_code', strtoupper(trim($filters['material_code'])));
         }
 
+        if (!empty($filters['plant_id'])) {
+            $query->where('plant_id', (int) $filters['plant_id']);
+        }
+
         if (!empty($filters['location_id'])) {
             $query->where('location_id', (int) $filters['location_id']);
         }
@@ -147,6 +176,8 @@ class ScanService
 
     public function historyFilterOptions(User $user): array
     {
+        $limit = max((int) config('sto.scan_history_filter_limit', 250), 1);
+
         return [
             'barcodes' => ScanResult::query()
                 ->forUser($user->id)
@@ -156,6 +187,7 @@ class ScanService
                 ->groupBy('barcode_material')
                 ->orderByDesc('latest_created_at')
                 ->orderByDesc('latest_id')
+                ->limit($limit)
                 ->get()
                 ->map(fn (ScanResult $scanResult) => [
                     'value' => $scanResult->barcode_material,
@@ -170,10 +202,27 @@ class ScanService
                 ->groupBy('material_code', 'material_name')
                 ->orderByDesc('latest_created_at')
                 ->orderByDesc('latest_id')
+                ->limit($limit)
                 ->get()
                 ->map(fn (ScanResult $scanResult) => [
                     'value' => $scanResult->material_code,
                     'label' => "{$scanResult->material_name} ({$scanResult->material_code})",
+                ])
+                ->values(),
+            'plants' => ScanResult::query()
+                ->join('plants', 'plants.id', '=', 'scan_results.plant_id')
+                ->where('scan_results.user_id', $user->id)
+                ->select('plants.id', 'plants.name')
+                ->selectRaw('MAX(scan_results.created_at) as latest_created_at')
+                ->selectRaw('MAX(scan_results.id) as latest_id')
+                ->groupBy('plants.id', 'plants.name')
+                ->orderByDesc('latest_created_at')
+                ->orderByDesc('latest_id')
+                ->limit($limit)
+                ->get()
+                ->map(fn ($plant) => [
+                    'value' => $plant->id,
+                    'label' => $plant->name,
                 ])
                 ->values(),
             'locations' => ScanResult::query()
@@ -185,6 +234,7 @@ class ScanService
                 ->groupBy('locations.id', 'locations.name')
                 ->orderByDesc('latest_created_at')
                 ->orderByDesc('latest_id')
+                ->limit($limit)
                 ->get()
                 ->map(fn ($location) => [
                     'value' => $location->id,
@@ -197,10 +247,7 @@ class ScanService
     public function deleteForScanner(User $user, int $id): void
     {
         $scanResult = ScanResult::findOrFail($id);
-
-        if ($scanResult->user_id !== $user->id) {
-            throw new AuthorizationException('Anda tidak memiliki akses untuk menghapus data ini.');
-        }
+        Gate::forUser($user)->authorize('delete', $scanResult);
 
         $this->deleteWithAudit($scanResult, $user->id);
     }
@@ -209,6 +256,8 @@ class ScanService
     {
         return DB::transaction(function () use ($admin, $id, $payload) {
             $scanResult = ScanResult::findOrFail($id);
+            Gate::forUser($admin)->authorize('update', $scanResult);
+
             $oldValues = $this->auditValues($scanResult);
             $stoCode = StoCode::findOrFail($payload['sto_code_id']);
             $location = $this->resolveLocation($payload['user_id'], $payload['plant_id'], $payload['location_name']);
@@ -219,11 +268,18 @@ class ScanService
             $scanResult->refresh();
 
             $newValues = $this->auditValues($scanResult);
+            $hasChanges = false;
+
             foreach ($newValues as $field => $newValue) {
                 $oldValue = $oldValues[$field] ?? null;
                 if ((string) $oldValue !== (string) $newValue) {
+                    $hasChanges = true;
                     $this->logFieldChange($scanResult, $admin->id, $field, $oldValue, $newValue);
                 }
+            }
+
+            if ($hasChanges) {
+                $this->activityLog->record($admin, 'scan.updated', $scanResult, $oldValues, $newValues);
             }
 
             return $scanResult->refresh();
@@ -235,12 +291,16 @@ class ScanService
         $stoCode = StoCode::findOrFail($payload['sto_code_id']);
         $barcodeMaterial = strtoupper(trim($payload['barcode_material']));
 
-        if ($this->isDuplicate($barcodeMaterial, $stoCode->code) && empty($payload['force_save'])) {
+        if ($this->isDuplicate($barcodeMaterial, $stoCode->code, $payload['plant_id'] ?? null, $payload['location_id'] ?? null) && empty($payload['force_save'])) {
+            $parsed = $this->barcodeParser->parse($payload['barcode_raw'] ?? $barcodeMaterial . '|LOT|1');
+            $matName = $parsed['valid'] ? $parsed['material_name'] : '-';
+            $qty = $parsed['valid'] ? $parsed['qty'] : 1;
+
             return [
                 'success' => false,
                 'status' => 409,
                 'duplicate' => true,
-                'message' => 'Barcode sudah pernah discan sebelumnya. Tetap simpan?',
+                'message' => "Barcode {$barcodeMaterial} (Material: {$matName}, Qty: {$qty}) sudah pernah discan sebelumnya. Tetap simpan?",
             ];
         }
 
@@ -252,6 +312,7 @@ class ScanService
             $scanResult->save();
 
             $this->logSnapshot($scanResult, $admin->id, 'created', newValue: $scanResult->toArray());
+            $this->activityLog->record($admin, 'scan.created', $scanResult, newValues: $this->auditValues($scanResult));
 
             return $scanResult;
         });
@@ -265,7 +326,10 @@ class ScanService
 
     public function deleteByAdmin(User $admin, int $id): void
     {
-        $this->deleteWithAudit(ScanResult::findOrFail($id), $admin->id);
+        $scanResult = ScanResult::findOrFail($id);
+        Gate::forUser($admin)->authorize('delete', $scanResult);
+
+        $this->deleteWithAudit($scanResult, $admin->id);
     }
 
     public function serializeScan(ScanResult $scanResult): array
@@ -304,7 +368,10 @@ class ScanService
     private function deleteWithAudit(ScanResult $scanResult, int $userId): void
     {
         DB::transaction(function () use ($scanResult, $userId) {
-            $this->logSnapshot($scanResult, $userId, 'deleted', oldValue: $scanResult->toArray());
+            $oldValues = $scanResult->toArray();
+
+            $this->logSnapshot($scanResult, $userId, 'deleted', oldValue: $oldValues);
+            $this->activityLog->record(User::find($userId), 'scan.deleted', $scanResult, oldValues: $oldValues);
             $scanResult->delete();
         });
     }
@@ -401,5 +468,10 @@ class ScanService
             'old_value' => $oldValue ? json_encode($oldValue) : null,
             'new_value' => $newValue ? json_encode($newValue) : null,
         ]);
+    }
+
+    private function defaultKeterangan(): string
+    {
+        return (string) config('sto.default_keterangan', 'OK');
     }
 }

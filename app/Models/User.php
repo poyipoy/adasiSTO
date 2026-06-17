@@ -45,6 +45,16 @@ class User extends Authenticatable
         return $this->hasMany(ScanResultLog::class);
     }
 
+    public function activityLogs(): HasMany
+    {
+        return $this->hasMany(ActivityLog::class);
+    }
+
+    public function exportRequests(): HasMany
+    {
+        return $this->hasMany(ExportRequest::class);
+    }
+
     public function locations(): HasMany
     {
         return $this->hasMany(Location::class);

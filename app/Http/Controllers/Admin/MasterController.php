@@ -14,6 +14,7 @@ use App\Models\Plant;
 use App\Models\ScanResult;
 use App\Models\StoCode;
 use App\Models\User;
+use App\Services\ActivityLogService;
 use App\Services\STOService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -23,7 +24,10 @@ use Illuminate\View\View;
 
 class MasterController extends Controller
 {
-    public function __construct(private STOService $stoService) {}
+    public function __construct(
+        private STOService $stoService,
+        private ActivityLogService $activityLog,
+    ) {}
 
     public function sto(): View
     {
@@ -73,9 +77,10 @@ class MasterController extends Controller
         $stoCode = StoCode::create($request->safe()->except('is_active') + [
             'is_active' => false,
         ]);
+        $this->activityLog->record($request->user(), 'master.sto.created', $stoCode, newValues: $stoCode->toArray());
 
         if ($request->boolean('is_active')) {
-            $this->stoService->activate($stoCode);
+            $this->stoService->activate($stoCode, $request->user());
         }
 
         return $this->success('STO berhasil ditambahkan.');
@@ -84,12 +89,17 @@ class MasterController extends Controller
     public function updateSto(UpsertStoCodeRequest $request, int $id): JsonResponse
     {
         $stoCode = StoCode::findOrFail($id);
+        $oldValues = $stoCode->toArray();
         $stoCode->update($request->safe()->except('is_active'));
+        $stoCode->refresh();
+        $this->activityLog->record($request->user(), 'master.sto.updated', $stoCode, $oldValues, $stoCode->toArray());
 
         if ($request->boolean('is_active')) {
-            $this->stoService->activate($stoCode);
+            $this->stoService->activate($stoCode, $request->user());
         } elseif ($stoCode->is_active && $request->has('is_active')) {
+            $oldActiveValues = $stoCode->toArray();
             $stoCode->update(['is_active' => false]);
+            $this->activityLog->record($request->user(), 'master.sto.updated', $stoCode, $oldActiveValues, $stoCode->fresh()->toArray());
         }
 
         return $this->success('STO berhasil diperbarui.');
@@ -97,7 +107,7 @@ class MasterController extends Controller
 
     public function activateSto(int $id): JsonResponse
     {
-        $this->stoService->activate(StoCode::findOrFail($id));
+        $this->stoService->activate(StoCode::findOrFail($id), request()->user());
 
         return $this->success('STO berhasil diaktifkan.');
     }
@@ -113,6 +123,7 @@ class MasterController extends Controller
             ], 422);
         }
 
+        $this->activityLog->record(request()->user(), 'master.sto.deleted', $stoCode, oldValues: $stoCode->toArray());
         $stoCode->delete();
 
         return $this->success('STO berhasil dihapus.');
@@ -135,14 +146,18 @@ class MasterController extends Controller
 
     public function storePlant(UpsertPlantRequest $request): JsonResponse
     {
-        Plant::create($request->validated() + ['is_active' => $request->boolean('is_active', true)]);
+        $plant = Plant::create($request->validated() + ['is_active' => $request->boolean('is_active', true)]);
+        $this->activityLog->record($request->user(), 'master.plant.created', $plant, newValues: $plant->toArray());
 
         return $this->success('Plant berhasil ditambahkan.');
     }
 
     public function updatePlant(UpsertPlantRequest $request, int $id): JsonResponse
     {
-        Plant::findOrFail($id)->update($request->validated() + ['is_active' => $request->boolean('is_active')]);
+        $plant = Plant::findOrFail($id);
+        $oldValues = $plant->toArray();
+        $plant->update($request->validated() + ['is_active' => $request->boolean('is_active')]);
+        $this->activityLog->record($request->user(), 'master.plant.updated', $plant, $oldValues, $plant->fresh()->toArray());
 
         return $this->success('Plant berhasil diperbarui.');
     }
@@ -155,6 +170,7 @@ class MasterController extends Controller
             return response()->json(['success' => false, 'message' => 'Plant tidak dapat dihapus karena sudah digunakan.'], 422);
         }
 
+        $this->activityLog->record(request()->user(), 'master.plant.deleted', $plant, oldValues: $plant->toArray());
         $plant->delete();
 
         return $this->success('Plant berhasil dihapus.');
@@ -178,14 +194,18 @@ class MasterController extends Controller
 
     public function storeMaterial(UpsertMaterialRequest $request): JsonResponse
     {
-        MasterMaterial::create($request->validated() + ['is_active' => $request->boolean('is_active', true)]);
+        $material = MasterMaterial::create($request->validated() + ['is_active' => $request->boolean('is_active', true)]);
+        $this->activityLog->record($request->user(), 'master.material.created', $material, newValues: $material->toArray());
 
         return $this->success('Material berhasil ditambahkan.');
     }
 
     public function updateMaterial(UpsertMaterialRequest $request, int $id): JsonResponse
     {
-        MasterMaterial::findOrFail($id)->update($request->validated() + ['is_active' => $request->boolean('is_active')]);
+        $material = MasterMaterial::findOrFail($id);
+        $oldValues = $material->toArray();
+        $material->update($request->validated() + ['is_active' => $request->boolean('is_active')]);
+        $this->activityLog->record($request->user(), 'master.material.updated', $material, $oldValues, $material->fresh()->toArray());
 
         return $this->success('Material berhasil diperbarui.');
     }
@@ -198,6 +218,7 @@ class MasterController extends Controller
             return response()->json(['success' => false, 'message' => 'Material tidak dapat dihapus karena sudah digunakan.'], 422);
         }
 
+        $this->activityLog->record(request()->user(), 'master.material.deleted', $material, oldValues: $material->toArray());
         $material->delete();
 
         return $this->success('Material berhasil dihapus.');
@@ -220,14 +241,18 @@ class MasterController extends Controller
 
     public function storeKeterangan(UpsertKeteranganRequest $request): JsonResponse
     {
-        MasterKeterangan::create($request->validated() + ['is_active' => $request->boolean('is_active', true)]);
+        $keterangan = MasterKeterangan::create($request->validated() + ['is_active' => $request->boolean('is_active', true)]);
+        $this->activityLog->record($request->user(), 'master.keterangan.created', $keterangan, newValues: $keterangan->toArray());
 
         return $this->success('Keterangan berhasil ditambahkan.');
     }
 
     public function updateKeterangan(UpsertKeteranganRequest $request, int $id): JsonResponse
     {
-        MasterKeterangan::findOrFail($id)->update($request->validated() + ['is_active' => $request->boolean('is_active')]);
+        $keterangan = MasterKeterangan::findOrFail($id);
+        $oldValues = $keterangan->toArray();
+        $keterangan->update($request->validated() + ['is_active' => $request->boolean('is_active')]);
+        $this->activityLog->record($request->user(), 'master.keterangan.updated', $keterangan, $oldValues, $keterangan->fresh()->toArray());
 
         return $this->success('Keterangan berhasil diperbarui.');
     }
@@ -240,6 +265,7 @@ class MasterController extends Controller
             return response()->json(['success' => false, 'message' => 'Keterangan OK tidak dapat dihapus.'], 422);
         }
 
+        $this->activityLog->record(request()->user(), 'master.keterangan.deleted', $keterangan, oldValues: $keterangan->toArray());
         $keterangan->delete();
 
         return $this->success('Keterangan berhasil dihapus.');
@@ -268,7 +294,8 @@ class MasterController extends Controller
         $data['password'] = Hash::make($data['password']);
         $data['is_active'] = $request->boolean('is_active', true);
 
-        User::create($data);
+        $user = User::create($data);
+        $this->activityLog->record($request->user(), 'master.user.created', $user, newValues: $user->makeHidden(['password', 'remember_token'])->toArray());
 
         return $this->success('User berhasil ditambahkan.');
     }
@@ -285,7 +312,10 @@ class MasterController extends Controller
 
         $data['is_active'] = $request->boolean('is_active');
 
-        User::findOrFail($id)->update($data);
+        $user = User::findOrFail($id);
+        $oldValues = $user->makeHidden(['password', 'remember_token'])->toArray();
+        $user->update($data);
+        $this->activityLog->record($request->user(), 'master.user.updated', $user, $oldValues, $user->fresh()->makeHidden(['password', 'remember_token'])->toArray());
 
         return $this->success('User berhasil diperbarui.');
     }
@@ -298,6 +328,7 @@ class MasterController extends Controller
             return response()->json(['success' => false, 'message' => 'User tidak dapat dihapus karena sudah memiliki scan.'], 422);
         }
 
+        $this->activityLog->record(request()->user(), 'master.user.deleted', $user, oldValues: $user->makeHidden(['password', 'remember_token'])->toArray());
         $user->delete();
 
         return $this->success('User berhasil dihapus.');
@@ -317,8 +348,9 @@ class MasterController extends Controller
         }
 
         $filteredRecords = (clone $query)->count();
-        $start = (int) $request->input('start', 0);
-        $length = (int) $request->input('length', 25);
+        $maxLength = max((int) config('sto.datatable_max_length', 100), 1);
+        $start = max((int) $request->input('start', 0), 0);
+        $length = min(max((int) $request->input('length', 25), 1), $maxLength);
 
         $rows = $query->orderByDesc('id')
             ->skip($start)

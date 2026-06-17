@@ -1097,6 +1097,197 @@ Missing Qty
 Expected:
 Reject
 ________________________________________
+29.3 Architectural Requirements
+Tujuan:
+Menjaga sistem STO tetap scalable, reliable, available, dan maintainable.
+________________________________________
+29.3.1 Server-Side Processing
+Semua tabel besar wajib menggunakan:
+Server-side processing
+Pagination
+Search
+Filter
+Sorting
+
+Wajib diterapkan untuk:
+Scan History
+Report
+Recent Scan
+Master Material
+Admin monitoring table
+
+Dilarang:
+Model::all()
+untuk halaman utama atau data besar.
+Gunakan query terfilter, pagination, cursor pagination, chunk, atau DataTables server-side sesuai kebutuhan.
+________________________________________
+29.3.2 Database Index Requirements
+Kolom yang sering difilter wajib memiliki index.
+Minimal:
+INDEX(user_id)
+INDEX(sto_code)
+INDEX(sto_code_id)
+INDEX(material_code)
+INDEX(lot_number)
+INDEX(plant_id)
+INDEX(created_at)
+INDEX(user_id, sto_code, created_at)
+INDEX(user_id, sto_code_id, created_at)
+
+Catatan:
+Skema saat ini menggunakan sto_code.
+Jika skema dinormalisasi ke sto_code_id, index sto_code_id wajib ditambahkan tanpa merusak kompatibilitas sto_code existing.
+________________________________________
+29.3.3 Transaction Boundary
+Semua proses scan barcode wajib menggunakan database transaction untuk operasi yang saling terkait.
+Satu transaction minimal mencakup:
+Parsing
+Validation
+Insert scan result
+Update summary jika ada
+Activity log / audit log
+
+Jika salah satu proses gagal:
+Seluruh perubahan wajib rollback.
+Tidak boleh ada data scan, summary, atau audit yang tersimpan setengah.
+________________________________________
+29.3.4 Service Separation
+Controller tetap thin.
+Logic wajib dipisahkan ke service:
+BarcodeParserService
+  - Parsing QR
+  - Parsing material
+  - Parsing dimension
+  - Shape validation
+  - Material validation
+
+ActiveStoService
+  - Active STO lookup
+  - Active STO switching
+  - No active STO rule
+  - Active STO availability for scanner user
+
+ScanService
+  - Preview scan
+  - Duplicate check
+  - Store scan transaction
+  - Scan history query
+  - Delete scan with audit
+  - Admin scan update if needed
+
+Existing STOService boleh tetap ada untuk backward compatibility, tetapi business rule STO aktif baru harus diarahkan atau didelegasikan ke ActiveStoService.
+________________________________________
+29.3.5 Form Request Coverage
+Semua validasi input wajib menggunakan Form Request.
+Minimal:
+Input scan
+Setup STO aktif
+Master material
+Import data
+Admin scan update
+
+Controller tidak boleh berisi validasi panjang yang berulang.
+________________________________________
+29.3.6 Authorization Layer
+Role dan permission wajib menggunakan:
+Middleware
+Policy
+Gate
+atau kombinasi sesuai kebutuhan.
+
+Dilarang:
+Hardcode pengecekan permission berulang di view/controller.
+
+View hanya boleh menampilkan action yang sudah sesuai permission.
+Controller/service tetap wajib melakukan authorization server-side.
+________________________________________
+29.3.7 Audit Log Coverage
+Audit log wajib dibuat untuk aktivitas penting:
+Scan created
+Scan deleted
+Set active STO
+Export report
+Master data created
+Master data updated
+Master data deleted
+
+Audit minimal mencatat:
+User
+Action
+Target entity
+Field penting
+Old value
+New value
+Timestamp
+________________________________________
+29.3.8 Error Logging Coverage
+Gunakan Log::warning() atau Log::error() sesuai severity untuk:
+Barcode invalid
+Scan gagal
+Import gagal
+Export gagal
+Queue job gagal
+Unexpected exception pada proses scan
+
+Log tidak boleh membocorkan password, token, atau data sensitif.
+________________________________________
+29.3.9 Health Endpoint
+Sistem wajib menyediakan endpoint:
+/health
+
+Endpoint /health minimal mengecek:
+Application status
+Database connection
+Storage writable/readable
+Queue readiness jika queue digunakan
+
+Response harus ringkas dan aman untuk monitoring.
+Jangan menampilkan secret, credential, atau stack trace.
+________________________________________
+29.3.10 Queue Readiness
+Proses berat harus disiapkan menggunakan queue job:
+Export besar
+Import besar
+Recalculation summary
+Report besar
+
+Jika proses masih synchronous pada tahap awal:
+Implementasi wajib tetap dirancang agar mudah dipindahkan ke queue tanpa mengubah public workflow.
+________________________________________
+29.3.11 STO Configuration File
+Rule configurable wajib dipindahkan ke:
+config/sto.php
+
+Minimal berisi:
+default_qty = 1
+default_keterangan = OK
+scanner_can_edit_keterangan = false
+scanner_delete_scan = hard_delete
+
+Business rule tetap mengikuti AGENTS.md.
+Config hanya menjadi sumber teknis agar nilai tidak hardcoded berulang.
+________________________________________
+29.3.12 Automated Test Coverage
+Automated test minimal wajib mencakup:
+BarcodeParserService
+Scan flow
+Active STO rule
+Permission admin/scanner
+Delete scan
+
+Test harus memastikan:
+User hanya melihat datanya sendiri
+Admin dapat melihat seluruh data
+Invalid barcode ditolak
+Unknown material ditolak
+Delete scan membuat audit sebelum hard delete
+No active STO mencegah scan
+________________________________________
+29.3.13 Backward Compatibility
+Refactor wajib bertahap, aman, dan backward-compatible.
+Jangan mengubah logic existing yang tidak berkaitan langsung.
+Jangan mengubah workflow scan, format QR, permission, database contract, atau response shape tanpa requirement eksplisit.
+________________________________________
 30. Do Not Do
 AI Agent dilarang:
 ________________________________________

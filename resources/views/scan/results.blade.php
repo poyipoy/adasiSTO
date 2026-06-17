@@ -4,7 +4,7 @@
 
 <div class="enterprise-toolbar">
     <button class="btn btn-primary" type="button" onclick="loadHistory()">Refresh</button>
-    <a href="{{ route('scan.scanner') }}" class="btn" id="openScannerTab">Scanner</a>
+    <a href="{{ route('scan.scanner', [], false) }}" class="btn" id="openScannerTab">Scanner</a>
 </div>
 
 <div class="card" style="border-top:0;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
@@ -35,6 +35,15 @@
         </select>
     </div>
     <div style="min-width:160px;flex:1;">
+        <label class="form-label">Plant</label>
+        <select id="plantFilter" class="form-control">
+            <option value="">All</option>
+            @foreach(($filterOptions['plants'] ?? []) as $option)
+                <option value="{{ $option['value'] }}">{{ $option['label'] }}</option>
+            @endforeach
+        </select>
+    </div>
+    <div style="min-width:160px;flex:1;">
         <label class="form-label">Location</label>
         <select id="locationFilter" class="form-control">
             <option value="">All</option>
@@ -60,6 +69,7 @@
                 <th>Shape</th>
                 <th>Lot</th>
                 <th>Qty</th>
+                <th>Plant</th>
                 <th>Location</th>
                 <th>Time</th>
                 <th>Status</th>
@@ -100,6 +110,7 @@
             date_to: document.getElementById('dateTo').value,
             barcode_material: document.getElementById('barcodeFilter').value,
             material_code: document.getElementById('materialFilter').value,
+            plant_id: document.getElementById('plantFilter').value,
             location_id: document.getElementById('locationFilter').value,
             search: document.getElementById('searchInput').value
         });
@@ -107,7 +118,16 @@
         fetch(`/api/scan/history?${params.toString()}`, { headers: { Accept: 'application/json' } })
             .then(response => response.json())
             .then(payload => renderRows(payload.data, payload.meta))
-            .catch(() => showToast('Gagal memuat history.', 'error'));
+            .catch(() => {
+                const swal = window.top.Swal || Swal;
+                swal.fire({
+                    title: 'Gagal',
+                    text: 'Gagal memuat history.',
+                    icon: 'error',
+                    confirmButtonColor: '#2b2d30',
+                    confirmButtonText: 'Tutup'
+                });
+            });
     }
 
     function escapeHtml(value) {
@@ -135,31 +155,62 @@
                 <td>${escapeHtml(row.shape_name)}</td>
                 <td class="mono">${escapeHtml(row.lot_number)}</td>
                 <td>${escapeHtml(row.qty)}</td>
+                <td>${escapeHtml(row.plant || '-')}</td>
                 <td>${escapeHtml(row.location || '-')}</td>
                 <td class="mono">${escapeHtml(row.created_at)}</td>
                 <td><span class="badge ${row.keterangan === 'OK' ? 'badge-valid' : 'badge-invalid'}">${escapeHtml(row.keterangan)}</span></td>
-                <td><button class="btn-icon" type="button" onclick="deleteScan(${row.id})" title="Delete">Delete</button></td>
+                <td><button class="btn-icon" style="color:var(--danger);padding:0 4px;" type="button" onclick="deleteScan(${row.id}, '${escapeHtml(row.barcode_material)}')" title="Delete"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width: 16px; height: 16px;"><path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg></button></td>
             </tr>
         `).join('');
     }
 
-    function deleteScan(id) {
-        if (!confirm('Hapus scan ini?')) return;
-
-        fetch(`/api/scan/${id}`, {
-            method: 'DELETE',
-            headers: { Accept: 'application/json' }
-        })
-        .then(async response => {
-            const payload = await response.json();
-            if (!response.ok) throw payload;
-            return payload;
-        })
-        .then(payload => {
-            showToast(payload.message);
-            loadHistory(currentPage);
-        })
-        .catch(error => showToast(error.message || 'Gagal menghapus scan.', 'error'));
+    function deleteScan(id, barcode) {
+        const swal = window.top.Swal || Swal;
+        swal.fire({
+            title: 'Hapus Scan',
+            html: `Yakin ingin menghapus hasil scan ini?<br><br><div style="padding: 8px; background: #f8f9fa; border: 1px dashed #adb5bd; border-radius: 4px; display: inline-block; font-family: monospace; font-size: 14px; font-weight: bold; color: #0072ce;">${barcode}</div>`,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'Ya, Hapus',
+            cancelButtonText: 'Batal',
+            confirmButtonColor: '#b92525',
+            reverseButtons: true
+        }).then((result) => {
+            if (result.isConfirmed) {
+                const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+                fetch(`/api/scan/${id}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': csrfToken
+                    }
+                })
+                .then(async response => {
+                    const payload = await response.json();
+                    if (!response.ok) throw payload;
+                    return payload;
+                })
+                .then(payload => {
+                    swal.fire({
+                        title: 'Berhasil!',
+                        text: payload.message || 'Scan berhasil dihapus.',
+                        icon: 'success',
+                        timer: 1500,
+                        showConfirmButton: false
+                    });
+                    loadHistory(currentPage);
+                })
+                .catch(error => {
+                    swal.fire({
+                        title: 'Gagal',
+                        text: error.message || 'Gagal menghapus scan.',
+                        icon: 'error',
+                        confirmButtonColor: '#2b2d30',
+                        confirmButtonText: 'Tutup'
+                    });
+                });
+            }
+        });
     }
 
     document.addEventListener('DOMContentLoaded', () => loadHistory());

@@ -44,10 +44,10 @@
             max-width: 100%;
         }
         .recent-main-line {
-            display: flex;
+            display: grid;
+            grid-template-columns: 30px max-content;
+            column-gap: 8px;
             align-items: baseline;
-            gap: 8px;
-            flex-wrap: wrap;
         }
         .recent-number {
             min-width: 30px;
@@ -55,14 +55,36 @@
             font-weight: 700;
             font-size: 12px;
         }
-        .recent-time {
+        .recent-barcode {
+            min-width: 0;
+            white-space: nowrap;
+            overflow: visible;
+            text-overflow: clip;
+        }
+        .recent-actions {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            justify-content: center;
+            gap: 4px;
+            flex: 0 0 auto;
+            min-width: 90px;
+        }
+        .recent-actions-main {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 8px;
+        }
+        .recent-action-meta {
             color: var(--text-secondary);
             font-size: 11px;
             font-weight: 600;
+            white-space: nowrap;
         }
         html.is-iframe .recent-main-line {
             display: grid;
-            grid-template-columns: 38px minmax(0, max-content) max-content;
+            grid-template-columns: 38px max-content;
             column-gap: 8px;
             align-items: baseline;
         }
@@ -73,13 +95,8 @@
         html.is-iframe .recent-barcode {
             grid-column: 2;
             min-width: 0;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-        html.is-iframe .recent-time {
-            grid-column: 3;
-            display: inline-block;
+            overflow: visible;
+            text-overflow: clip;
             white-space: nowrap;
         }
         html.is-iframe .recent-row .recent-detail {
@@ -154,7 +171,7 @@
             }
             .recent-main-line {
                 display: grid;
-                grid-template-columns: 38px minmax(0, max-content) max-content;
+                grid-template-columns: 38px max-content;
                 column-gap: 8px;
                 align-items: baseline;
             }
@@ -165,17 +182,19 @@
             .recent-barcode {
                 grid-column: 2;
                 min-width: 0;
-                overflow: hidden;
-                text-overflow: ellipsis;
+                word-break: normal;
                 white-space: nowrap;
-            }
-            .recent-time {
-                grid-column: 3;
-                display: inline-block;
-                white-space: nowrap;
+                overflow: visible;
+                text-overflow: clip;
             }
             .recent-row .recent-detail {
                 padding-left: 46px !important;
+            }
+            .recent-actions {
+                min-width: 82px;
+            }
+            .recent-action-meta {
+                font-size: 10.5px;
             }
             .recent-pagination {
                 flex-direction: column;
@@ -222,7 +241,7 @@
                         <div class="scanner-info-column">
                 <div class="scanner-info-item">
                     <span class="scanner-info-label">STO:</span>
-                    <span class="scanner-info-value mono">{{ $activeSto->code }}</span>
+                    <span class="scanner-info-value">{{ $activeSto->code }}</span>
                 </div>
                 <div class="scanner-info-item">
                     <span class="scanner-info-label">PIC:</span>
@@ -230,7 +249,7 @@
                 </div>
                 <div class="scanner-info-item">
                     <span class="scanner-info-label">Plant:</span>
-                    <span class="scanner-info-value">{{ $plant->name }}</span>
+                    <span class="scanner-info-value" id="plantNameDisplay">{{ $plant->name }}</span>
                 </div>
             </div>
                         <div class="scanner-info-column scanner-info-column-right">
@@ -243,8 +262,8 @@
                     </select>
                 </div>
                 <div class="scanner-info-item">
-                    <span class="scanner-info-label">Today:</span>
-                    <span class="scanner-info-value mono" id="counterToday">{{ $totalToday }}</span>
+                    <span class="scanner-info-label">Total Scan per Rak:</span>
+                    <span class="scanner-info-value" id="counterToday">{{ $totalToday }}</span>
                 </div>
             </div>
         </div>
@@ -283,27 +302,29 @@
                 @php($recentNumber = $recentMeta['total'] - (($recentMeta['page'] - 1) * $recentMeta['per_page']) - $loop->index)
                 <div class="recent-row" id="scan-row-{{ $scan->id }}"
                     style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border-light);">
-                    <div style="flex:1;">
+                    <div style="flex:1;min-width:0;">
                         <div class="recent-main-line">
                             <span class="recent-number">{{ $recentNumber }}</span>
                             <span class="recent-barcode mono" style="font-weight:700;color:var(--primary);">{{ $scan->barcode_material }}</span>
-                            <span class="recent-time mono">{{ $scan->location?->name }} &bull; {{ $scan->created_at?->format('H:i:s') }}</span>
                         </div>
                         <div class="recent-detail" style="font-size:11px;color:var(--text-secondary);padding-left:38px;">
                                     {{ $scan->material_name }} - {{ $scan->shape_name }} - {{ $scan->size }} - {{ $scan->qty }} pcs - {{ $scan->lot_number }}
                         </div>
                     </div>
-                    <div style="display:flex;align-items:center;gap:8px;">
-                        <span
-                            class="badge {{ $scan->keterangan === 'OK' ? 'badge-valid' : 'badge-invalid' }}">{{ $scan->keterangan }}</span>
-                        <button class="btn-icon" style="color:var(--danger);padding:0 4px;" type="button"
-                            onclick="confirmDeleteScan({{ $scan->id }})" title="Hapus">
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
-                                stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round"
-                                    d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
-                            </svg>
-                        </button>
+                    <div class="recent-actions">
+                        <div class="recent-actions-main">
+                            <span
+                                class="badge {{ $scan->keterangan === 'OK' ? 'badge-valid' : 'badge-invalid' }}">{{ $scan->keterangan }}</span>
+                            <button class="btn-icon" style="color:var(--danger);padding:0 4px;" type="button"
+                                onclick="confirmDeleteScan({{ $scan->id }}, '{{ $scan->barcode_material }}')" title="Hapus">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+                                    stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round"
+                                        d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+                                </svg>
+                            </button>
+                        </div>
+                        <div class="recent-action-meta mono">{{ $scan->location?->name }} &bull; {{ $scan->created_at?->format('H:i:s') }}</div>
                     </div>
                 </div>
             @empty
@@ -312,38 +333,22 @@
             @endforelse
         </div>
         <div id="recentPagination" class="recent-pagination"
-            style="display:{{ $recentMeta['total'] > 0 ? 'flex' : 'none' }};justify-content:space-between;align-items:center;gap:8px;padding-top:10px;border-top:1px solid var(--border-light);">
-            <button class="btn" type="button" id="recentPrevBtn" onclick="loadRecent(currentRecentPage - 1)">Previous</button>
-            <span id="recentPageInfo" style="font-size:12px;color:var(--text-secondary);text-align:center;">
-                Page {{ $recentMeta['page'] }} / {{ max($recentMeta['last_page'], 1) }} - {{ $recentMeta['total'] }} rows
-            </span>
-            <button class="btn" type="button" id="recentNextBtn" onclick="loadRecent(currentRecentPage + 1)">Next</button>
-        </div>
-    </div>
-
-    <div class="modal-overlay" id="duplicateModal">
-        <div class="modal-content">
-            <div class="modal-header"><strong>Warning</strong></div>
-            <div class="modal-body">
-                Barcode sudah pernah discan sebelumnya. Tetap simpan?
+            style="display:{{ $recentMeta['total'] > 0 ? 'flex' : 'none' }}; flex-direction:row !important; flex-wrap:nowrap !important; justify-content:space-between; align-items:center; padding-top:16px; border-top:1px solid var(--border-light); margin-top:8px;">
+            <div style="font-size:13px; color:var(--text-secondary); font-weight:500; white-space:nowrap; flex-shrink:1; overflow:hidden; text-overflow:ellipsis;">
+                <span id="recentPageInfo">Page {{ $recentMeta['page'] }} of {{ max($recentMeta['last_page'], 1) }}</span>
             </div>
-            <div class="modal-footer">
-                <button class="btn" type="button" onclick="closeDuplicateModal()">Batal</button>
-                <button class="btn btn-primary" type="button" onclick="confirmDuplicate()">Ya</button>
+            <div style="display:flex; flex-direction:row; gap:8px; flex-shrink:0;">
+                <button class="btn" type="button" id="recentPrevBtn" onclick="loadRecent(currentRecentPage - 1)" style="display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; min-height: 36px; padding: 0; border-radius: 8px; background: #fff; border: 1px solid var(--border); color: var(--text);">
+                    <svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" width="16" height="16"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"></path></svg>
+                </button>
+                <button class="btn" type="button" id="recentNextBtn" onclick="loadRecent(currentRecentPage + 1)" style="display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; min-height: 36px; padding: 0; border-radius: 8px; background: #fff; border: 1px solid var(--border); color: var(--text);">
+                    <svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" width="16" height="16"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"></path></svg>
+                </button>
             </div>
         </div>
     </div>
 
-    <div class="modal-overlay" id="deleteModal">
-        <div class="modal-content">
-            <div class="modal-header"><strong style="color:var(--danger);">Hapus Scan</strong></div>
-            <div class="modal-body">Yakin ingin menghapus hasil scan ini?</div>
-            <div class="modal-footer">
-                <button class="btn" type="button" onclick="closeDeleteModal()">Batal</button>
-                <button class="btn btn-danger" type="button" id="confirmDeleteBtn">Hapus</button>
-            </div>
-        </div>
-    </div>
+
 
     @push('scripts')
         <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
@@ -361,28 +366,66 @@
                 const plantId = document.getElementById('plantId').value;
                 const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
 
-                fetch('{{ route("scan.setup.store") }}', {
+                fetch('{{ route("scan.setup.store", [], false) }}', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
+                        'Accept': 'application/json',
                         'X-CSRF-TOKEN': csrfToken
                     },
                     body: JSON.stringify({
                         plant_id: plantId,
                         location_id: newLocationId
                     })
-                }).catch(err => console.error('Failed to update session location', err));
+                })
+                    .then(async response => {
+                        const payload = await response.json();
+                        if (!response.ok) throw payload;
+                        return payload;
+                    })
+                    .then(() => {
+                        loadRecent(1);
+                        document.getElementById('qrInput').focus();
+                    })
+                    .catch(error => {
+                        showToast(error.message || 'Gagal mengganti filter location.', 'error');
+                    });
             }
 
+            window.updateSetupData = function(newPlantId, newPlantName, newLocationId, locationsHtml) {
+                document.getElementById('plantId').value = newPlantId;
+                
+                const plantNameDisplay = document.getElementById('plantNameDisplay');
+                if (plantNameDisplay) plantNameDisplay.textContent = newPlantName;
+
+                const locationSelect = document.getElementById('locationId');
+                if (locationSelect && locationsHtml) {
+                    locationSelect.innerHTML = locationsHtml;
+                    locationSelect.value = newLocationId;
+                } else if (locationSelect) {
+                    locationSelect.value = newLocationId;
+                }
+
+                if (typeof loadRecent === 'function') {
+                    loadRecent(1);
+                }
+            };
+
             function submitScan(forceSave = false, qrText = null, source = 'manual') {
+                if (scanningLocked) return;
+                scanningLocked = true;
+
                 const qrInput = document.getElementById('qrInput');
                 const qr = (qrText || qrInput.value).trim();
-                if (!qr) return;
+                if (!qr) {
+                    scanningLocked = false;
+                    return;
+                }
 
                 pendingQr = qr;
                 pendingSource = source;
 
-                fetch('{{ route("api.scan.store") }}', {
+                fetch('{{ route("api.scan.store", [], false) }}', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
                     body: JSON.stringify({
@@ -399,22 +442,50 @@
                         return payload;
                     })
                     .then(payload => {
-                        if (document.getElementById('duplicateModal').classList.contains('active')) {
-                            closeDuplicateModal();
-                        }
+
                         document.getElementById('counterToday').textContent = String(parseInt(document.getElementById('counterToday').textContent || '0') + 1);
                         loadRecent(1);
                         qrInput.value = '';
                         qrInput.focus();
-                        showToast(payload.message);
+                        
+                        showToast(payload.message || 'Scan berhasil disimpan.', 'success');
+                        scanningLocked = false;
                     })
                     .catch(error => {
                         if (error.duplicate) {
-                            scanningLocked = true;
-                            document.getElementById('duplicateModal').classList.add('active');
+                            const swal = window.top.Swal || Swal;
+                            swal.fire({
+                                title: 'Warning',
+                                html: error.message || 'Barcode sudah pernah discan sebelumnya. Tetap simpan?',
+                                icon: 'warning',
+                                showCancelButton: true,
+                                confirmButtonText: 'Ya, Simpan',
+                                cancelButtonText: 'Batal',
+                                reverseButtons: true
+                            }).then((result) => {
+                                if (result.isConfirmed) {
+                                    scanningLocked = false;
+                                    confirmDuplicate();
+                                } else {
+                                    qrInput.value = '';
+                                    qrInput.focus();
+                                    scanningLocked = false;
+                                }
+                            });
                             return;
                         }
-                        showToast(error.message || 'Scan gagal.', 'error');
+                        const swal = window.top.Swal || Swal;
+                        swal.fire({
+                            title: 'Gagal',
+                            text: error.message || 'Scan gagal.',
+                            icon: 'error',
+                            confirmButtonColor: '#2b2d30',
+                            confirmButtonText: 'Tutup'
+                        }).then(() => {
+                            qrInput.value = '';
+                            qrInput.focus();
+                            scanningLocked = false;
+                        });
                     });
             }
 
@@ -446,19 +517,21 @@
 
                 return `
                 <div class="recent-row" id="scan-row-${data.id}" style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border-light);">
-                    <div style="flex:1;">
+                    <div style="flex:1;min-width:0;">
                         <div class="recent-main-line">
                             <span class="recent-number">${rowNumber}</span>
                             <span class="recent-barcode mono" style="font-weight:700;color:var(--primary);">${escapeHtml(data.barcode_material)}</span>
-                            <span class="recent-time mono">${escapeHtml(data.location)} &bull; ${escapeHtml(recentTime(data.created_at))}</span>
                         </div>
                         <div class="recent-detail" style="font-size:11px;color:var(--text-secondary);padding-left:38px;">${escapeHtml(recentSummary(data))}</div>
                     </div>
-                    <div style="display:flex;align-items:center;gap:8px;">
-                        <span class="badge ${statusClass}">${escapeHtml(data.keterangan)}</span>
-                        <button class="btn-icon" style="color:var(--danger);padding:0 4px;" type="button" onclick="confirmDeleteScan(${data.id})" title="Hapus">
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>
-                        </button>
+                    <div class="recent-actions">
+                        <div class="recent-actions-main">
+                            <span class="badge ${statusClass}">${escapeHtml(data.keterangan)}</span>
+                            <button class="btn-icon" style="color:var(--danger);padding:0 4px;" type="button" onclick="confirmDeleteScan(${data.id}, '${escapeHtml(data.barcode_material)}')" title="Hapus">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>
+                            </button>
+                        </div>
+                        <div class="recent-action-meta mono">${escapeHtml(data.location)} &bull; ${escapeHtml(recentTime(data.created_at))}</div>
                     </div>
                 </div>
             `;
@@ -488,7 +561,7 @@
                 const nextBtn = document.getElementById('recentNextBtn');
 
                 pagination.style.display = meta.total > 0 ? 'flex' : 'none';
-                pageInfo.textContent = `Page ${currentRecentPage} / ${recentLastPage} - ${meta.total || 0} rows`;
+                pageInfo.textContent = `Page ${currentRecentPage} of ${recentLastPage}`;
                 prevBtn.disabled = currentRecentPage <= 1;
                 nextBtn.disabled = currentRecentPage >= recentLastPage;
             }
@@ -496,7 +569,7 @@
             function loadRecent(page = 1) {
                 const targetPage = Math.max(parseInt(page, 10) || 1, 1);
 
-                fetch(`{{ route("api.scan.recent") }}?page=${targetPage}`, {
+                fetch(`{{ route("api.scan.recent", [], false) }}?page=${targetPage}`, {
                     headers: { Accept: 'application/json' }
                 })
                     .then(async response => {
@@ -512,29 +585,39 @@
 
                         renderRecentRows(payload.data, payload.meta);
                         updateRecentPagination(payload.meta);
+                        
+                        if (payload.total_today !== undefined) {
+                            const counter = document.getElementById('counterToday');
+                            if (counter) counter.textContent = payload.total_today;
+                        }
                     })
                     .catch(error => {
                         showToast(error.message || 'Gagal memuat hasil scan terbaru.', 'error');
                     });
             }
 
-            function closeDuplicateModal() {
-                document.getElementById('duplicateModal').classList.remove('active');
-                scanningLocked = false;
-            }
-
             let scanToDelete = null;
 
-            function confirmDeleteScan(id) {
+            function confirmDeleteScan(id, barcode) {
                 scanToDelete = id;
-                document.getElementById('deleteModal').classList.add('active');
-                document.getElementById('confirmDeleteBtn').onclick = () => performDelete();
-            }
-
-            function closeDeleteModal() {
-                document.getElementById('deleteModal').classList.remove('active');
-                scanToDelete = null;
-                document.getElementById('qrInput').focus();
+                const swal = window.top.Swal || Swal;
+                swal.fire({
+                    title: 'Hapus Scan?',
+                    html: `Apakah Anda yakin ingin menghapus data scan <b>${escapeHtml(barcode)}</b>?`,
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonText: 'Ya, Hapus',
+                    cancelButtonText: 'Batal',
+                    confirmButtonColor: '#b92525',
+                    reverseButtons: true
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        performDelete();
+                    } else {
+                        scanToDelete = null;
+                        document.getElementById('qrInput').focus();
+                    }
+                });
             }
 
             function performDelete() {
@@ -542,7 +625,6 @@
 
                 const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
                 const idToDel = scanToDelete;
-                closeDeleteModal();
 
                 fetch(`/api/scan/${idToDel}`, {
                     method: 'DELETE',
@@ -569,15 +651,30 @@
                     });
             }
 
-            function showCamera() {
-                if (!window.Html5Qrcode) {
-                    showToast('Library kamera belum tersedia.', 'error');
-                    return;
-                }
+            function renderCameraError(message) {
+                document.getElementById('reader').innerHTML = `<div style="padding:32px;text-align:center;color:var(--text-muted);">${escapeHtml(message)}</div>`;
+                showToast(message, 'error');
+            }
 
+            function showCamera() {
                 document.getElementById('readerWrap').style.display = 'block';
                 document.getElementById('showCameraBtn').style.display = 'none';
                 document.getElementById('hideCameraBtn').style.display = 'inline-flex';
+
+                if (!window.isSecureContext) {
+                    renderCameraError('Kamera hanya bisa dipakai melalui HTTPS atau localhost. Gunakan URL HTTPS untuk testing di HP.');
+                    return;
+                }
+
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    renderCameraError('Browser tidak menyediakan akses kamera. Gunakan input manual atau scanner gun.');
+                    return;
+                }
+
+                if (!window.Html5Qrcode) {
+                    renderCameraError('Library kamera belum tersedia. Periksa koneksi internet atau buka ulang halaman.');
+                    return;
+                }
 
                 if (!html5Scanner) {
                     html5Scanner = new Html5Qrcode('reader');
@@ -589,17 +686,25 @@
                     { facingMode: 'environment' },
                     { fps: 8, qrbox: { width: 220, height: 220 } },
                     decodedText => {
-                        if (scanningLocked || document.getElementById('duplicateModal').classList.contains('active')) return;
-                        scanningLocked = true;
+                        if (scanningLocked) return;
                         document.getElementById('qrInput').value = decodedText;
                         submitScan(false, decodedText, 'camera');
-                        setTimeout(() => scanningLocked = false, 1500);
                     },
                     () => { }
                 ).then(() => {
                     cameraRunning = true;
-                }).catch(() => {
-                    document.getElementById('reader').innerHTML = '<div style="padding:32px;text-align:center;color:var(--text-muted);">Kamera tidak tersedia. Gunakan input manual atau scanner gun.</div>';
+                }).catch(error => {
+                    let message = 'Kamera tidak tersedia. Gunakan input manual atau scanner gun.';
+
+                    if (error && error.name === 'NotAllowedError') {
+                        message = 'Izin kamera ditolak. Aktifkan permission kamera di browser.';
+                    } else if (error && error.name === 'NotFoundError') {
+                        message = 'Kamera tidak ditemukan di perangkat ini.';
+                    } else if (error && error.name === 'NotReadableError') {
+                        message = 'Kamera sedang dipakai aplikasi lain atau tidak bisa dibuka.';
+                    }
+
+                    renderCameraError(message);
                 });
             }
 
@@ -617,9 +722,22 @@
                 });
             }
 
+            let manualScanTimeout = null;
+            document.getElementById('qrInput').addEventListener('input', event => {
+                const val = event.target.value.trim();
+                // Format QR is `<barcode>|<lot>|<qty>` so it must contain '|'
+                if (val.includes('|') && val.length > 5) {
+                    if (manualScanTimeout) clearTimeout(manualScanTimeout);
+                    manualScanTimeout = setTimeout(() => {
+                        submitScan(false);
+                    }, 200);
+                }
+            });
+
             document.getElementById('qrInput').addEventListener('keydown', event => {
                 if (event.key === 'Enter') {
                     event.preventDefault();
+                    if (manualScanTimeout) clearTimeout(manualScanTimeout);
                     submitScan(false);
                 }
             });

@@ -197,21 +197,21 @@
 
 
     function deleteItem(id) {
-        if (!confirm('Yakin ingin menghapus plant ini?')) return;
-
-        fetch(`/admin/master/plants/${id}`, {
-            method: 'DELETE',
-            headers: {
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
-                'Accept': 'application/json',
-            },
-        })
-        .then(r => r.json())
-        .then(data => {
-            if (data.success) {
-                showToast(data.message);
-                document.getElementById(`plant-${id}`).remove();
-            }
+        confirmAction('Yakin ingin menghapus plant ini?', () => {
+            fetch(`/admin/master/plants/${id}`, {
+                method: 'DELETE',
+                headers: {
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                    'Accept': 'application/json',
+                },
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    showToast(data.message);
+                    document.getElementById(`plant-${id}`).remove();
+                }
+            });
         });
     }
 </script>

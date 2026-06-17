@@ -50,7 +50,9 @@ class BarcodeParserService
         $length = (int) substr($secondary, 4, 4);
 
         if ($length <= 0 || $primary <= 0) {
-            return $this->invalid('Format barcode tidak valid.');
+            // Kita hapus pengecekan awal ini, karena akan divalidasi spesifik per shape (RF/RR) di bawah.
+            // Namun, untuk length dan primary, di kedua shape wajib > 0, jadi tetap bisa dipertahankan atau dipindah ke bawah.
+            // Lebih baik kita delegasikan ke pengecekan per-shape di bawah agar pesan errornya spesifik.
         }
 
         $result = [
@@ -69,8 +71,8 @@ class BarcodeParserService
         ];
 
         if ($shapeCode === 'RF') {
-            if ($firstSecondary <= 0) {
-                return $this->invalid('Format barcode tidak valid.');
+            if ($primary <= 0 || $firstSecondary <= 0 || $length <= 0) {
+                return $this->invalid('Format barcode tidak valid. RF membutuhkan thickness, width, dan length yang lebih besar dari 0.');
             }
 
             $result['thickness'] = $primary;
@@ -80,6 +82,13 @@ class BarcodeParserService
         }
 
         if ($shapeCode === 'RR') {
+            if ($firstSecondary > 0) {
+                return $this->invalid('Format barcode tidak valid. RR tidak boleh memiliki nilai width.');
+            }
+            if ($primary <= 0 || $length <= 0) {
+                return $this->invalid('Format barcode tidak valid. RR membutuhkan diameter dan length yang lebih besar dari 0.');
+            }
+
             $result['diameter'] = $primary;
 
             return $result;

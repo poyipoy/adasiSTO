@@ -149,7 +149,7 @@
             if (!activeEditor || Date.now() < suppressOutsideUntil) return;
 
             const target = $(event.target);
-            if (target.closest('.inline-scan-editor,.js-row-edit,.js-row-delete,.enterprise-toolbar').length) {
+            if (target.closest('.inline-scan-editor,.js-row-edit,.js-row-delete,.enterprise-toolbar,.swal2-container').length) {
                 return;
             }
 
@@ -162,7 +162,7 @@
     });
 
     function reloadTable(confirmClose = true) {
-        if (confirmClose && !closeActiveEditor(true)) {
+        if (confirmClose && !closeActiveEditor(true, () => reloadTable(false))) {
             suppressOutsideUntil = Date.now() + 250;
             return;
         }
@@ -170,7 +170,7 @@
     }
 
     function openCreate() {
-        if (!closeActiveEditor(true)) {
+        if (!closeActiveEditor(true, () => openCreate())) {
             suppressOutsideUntil = Date.now() + 250;
             return;
         }
@@ -189,7 +189,7 @@
         const row = window.masterRows[id];
         if (!row) return;
 
-        if (!closeActiveEditor(true)) {
+        if (!closeActiveEditor(true, () => openEdit(id))) {
             suppressOutsideUntil = Date.now() + 250;
             return;
         }
@@ -206,10 +206,27 @@
         focusFirstInput();
     }
 
-    function closeActiveEditor(confirmDirty = true) {
+    function closeActiveEditor(confirmDirty = true, onConfirm = null) {
         if (!activeEditor) return true;
 
-        if (confirmDirty && isEditorDirty() && !confirm('Batalkan perubahan data?')) {
+        if (confirmDirty && isEditorDirty()) {
+            Swal.fire({
+                title: 'Batalkan perubahan?',
+                text: 'Data yang belum disimpan akan hilang.',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#f43f5e',
+                cancelButtonColor: '#64748b',
+                confirmButtonText: 'Ya, batalkan',
+                cancelButtonText: 'Kembali edit',
+                background: '#ffffff',
+                color: '#1f2937'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    clearActiveEditor();
+                    if (onConfirm) onConfirm();
+                }
+            });
             return false;
         }
 
@@ -413,12 +430,13 @@
     }
 
     function deleteRecord(id) {
-        if (!confirm('Hapus data ini?')) return;
-        fetch(`${apiBase}/${id}`, { method: 'DELETE', headers: { Accept: 'application/json' } })
-            .then(r => r.json()).then(response => {
-                if (response.success) { showToast(response.message); masterTable.ajax.reload(null, false); }
-                else showToast(response.message || 'Gagal hapus data.', 'error');
-            });
+        confirmAction('Hapus data ini?', () => {
+            fetch(`${apiBase}/${id}`, { method: 'DELETE', headers: { Accept: 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content } })
+                .then(r => r.json()).then(response => {
+                    if (response.success) { showToast(response.message); masterTable.ajax.reload(null, false); }
+                    else showToast(response.message || 'Gagal hapus data.', 'error');
+                });
+        });
     }
 </script>
 @endpush

@@ -5,9 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>Login — STO System</title>
+    <link rel="icon" type="image/png" href="{{ asset('assets/images/logo-adasi.png') }}?v=2">
+    <link rel="shortcut icon" type="image/png" href="{{ asset('assets/images/logo-adasi.png') }}?v=2">
+    <link rel="apple-touch-icon" href="{{ asset('assets/images/logo-adasi.png') }}?v=2">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ asset('assets/css/adasi-splash.css') }}">
     <style>
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -17,16 +21,22 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            background: #111214 url('{{ asset('assets/images/adasi-login-bg.jpg') }}') center/cover no-repeat;
             color: #1f2933;
             font-size: 13px;
         }
 
+        .login-bg {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: #111214 url('{{ asset('assets/images/adasi-login-bg.jpg') }}') center/cover no-repeat;
+            z-index: -2;
+        }
+
         .login-overlay {
-            position: absolute;
+            position: fixed;
             top: 0; left: 0; right: 0; bottom: 0;
             background: rgba(17, 18, 20, 0.7);
-            z-index: 0;
+            z-index: -1;
         }
 
         .login-wrapper {
@@ -102,6 +112,36 @@
 
         .form-control::placeholder { color: #a0aabf; }
 
+        .password-container {
+            position: relative;
+        }
+
+        .password-toggle {
+            position: absolute;
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: #a0aabf;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            margin: 0;
+            outline: none;
+            transition: color 0.15s;
+        }
+
+        .password-toggle:hover {
+            color: #525e6c;
+        }
+
+        .password-container .form-control {
+            padding-right: 36px;
+        }
+
         .btn-login {
             width: 100%;
             padding: 10px;
@@ -146,12 +186,76 @@
             color: #ffffff;
             text-decoration: underline;
         }
+
+        .forgot-password {
+            display: block;
+            text-align: right;
+            margin-top: 6px;
+            font-size: 11px;
+            color: #0072ce;
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        .forgot-password:hover {
+            text-decoration: underline;
+        }
+
+        .contact-admin-card {
+            display: none;
+            background: #ffffff;
+            border-radius: 10px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+            padding: 40px 32px;
+            text-align: center;
+        }
+
+        .contact-icon {
+            width: 48px;
+            height: 48px;
+            background: #eef2f6;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 16px;
+            color: #0072ce;
+        }
+
+        .contact-title {
+            font-size: 15px;
+            font-weight: 700;
+            color: #1d252c;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .contact-desc {
+            font-size: 13px;
+            color: #525e6c;
+            margin-bottom: 24px;
+            line-height: 1.5;
+        }
+
+        .btn-back {
+            background: transparent;
+            border: 1px solid #bfc4ce;
+            color: #525e6c;
+        }
+
+        .btn-back:hover {
+            background: #f5f7f9;
+        }
     </style>
 </head>
 <body>
+    @include('partials.adasi-splash')
+
+    <div class="login-bg"></div>
     <div class="login-overlay"></div>
     <div class="login-wrapper">
-        <div class="login-card">
+        <div class="login-card" id="loginCard">
             <div class="brand">
                 <img src="{{ asset('assets/images/logo-adasi.png') }}" alt="ADASI Logo">
                 <h1>STO System</h1>
@@ -164,7 +268,7 @@
             </div>
             @endif
 
-            <form method="POST" action="{{ route('login.store') }}">
+            <form method="POST" action="{{ route('login.store', [], false) }}">
                 @csrf
                 <div class="form-group">
                     <label class="form-label" for="username">Username</label>
@@ -173,7 +277,16 @@
 
                 <div class="form-group">
                     <label class="form-label" for="password">Password</label>
-                    <input type="password" id="password" name="password" class="form-control" placeholder="••••••••" required>
+                    <div class="password-container">
+                        <input type="password" id="password" name="password" class="form-control" placeholder="••••••••" required>
+                        <button type="button" class="password-toggle" onclick="togglePassword()" tabindex="-1" aria-label="Toggle password visibility">
+                            <svg id="eye-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="16" height="16">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                            </svg>
+                        </button>
+                    </div>
+                    <a href="#" class="forgot-password" onclick="showContactAdmin(event)">Lupa Password?</a>
                 </div>
 
                 <button type="submit" class="btn-login">
@@ -182,6 +295,43 @@
             </form>
         </div>
 
+        <div class="contact-admin-card" id="contactAdminCard">
+            <div class="contact-icon">
+                <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="24" height="24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+            </div>
+            <h2 class="contact-title">Lupa Password?</h2>
+            <p class="contact-desc">Silakan hubungi Administrator IT atau atasan Anda untuk melakukan perubahan atau reset password.</p>
+            <button class="btn-login btn-back" onclick="showLogin()">Kembali ke Login</button>
+        </div>
+
     </div>
+
+    <script>
+        function showContactAdmin(e) {
+            e.preventDefault();
+            document.getElementById('loginCard').style.display = 'none';
+            document.getElementById('contactAdminCard').style.display = 'block';
+        }
+
+        function showLogin() {
+            document.getElementById('contactAdminCard').style.display = 'none';
+            document.getElementById('loginCard').style.display = 'block';
+        }
+
+        function togglePassword() {
+            const pwdInput = document.getElementById('password');
+            const eyeIcon = document.getElementById('eye-icon');
+            
+            if (pwdInput.type === 'password') {
+                pwdInput.type = 'text';
+                eyeIcon.innerHTML = `<path stroke-linecap="round" stroke-linejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />`;
+            } else {
+                pwdInput.type = 'password';
+                eyeIcon.innerHTML = `<path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>`;
+            }
+        }
+    </script>
 </body>
 </html>

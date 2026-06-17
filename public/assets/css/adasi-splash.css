@@ -1,0 +1,64 @@
+#adasi-splash {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: #ffffff;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 999999;
+    transition: opacity 0.5s ease-out;
+}
+
+.adasi-splash-text {
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    font-size: 5rem;
+    font-weight: 900;
+    color: #ff0000;
+    display: flex;
+    letter-spacing: 5px;
+}
+
+.adasi-splash-text span {
+    display: inline-block;
+    animation: floatLetter 1.2s ease-in-out infinite;
+}
+
+@keyframes floatLetter {
+    0%,
+    100% {
+        transform: translateY(0);
+    }
+
+    50% {
+        transform: translateY(-20px);
+    }
+}
+
+.adasi-splash-hidden {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.adasi-splash-skip #adasi-splash {
+    display: none;
+}
+
+@media (max-width: 768px) {
+    .adasi-splash-text {
+        font-size: 3.5rem;
+    }
+
+    @keyframes floatLetter {
+        0%,
+        100% {
+            transform: translateY(0);
+        }
+
+        50% {
+            transform: translateY(-15px);
+        }
+    }
+}

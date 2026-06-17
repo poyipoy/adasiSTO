@@ -165,9 +165,10 @@
     }
 
     function deleteItem(id) {
-        if (!confirm('Yakin?')) return;
-        fetch(`/admin/master/keterangan/${id}`, { method: 'DELETE', headers: { 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content, 'Accept': 'application/json' } })
-        .then(r => r.json()).then(d => { if (d.success) { showToast(d.message); location.reload(); } });
+        confirmAction('Yakin ingin menghapus data ini?', () => {
+            fetch(`/admin/master/keterangan/${id}`, { method: 'DELETE', headers: { 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content, 'Accept': 'application/json' } })
+            .then(r => r.json()).then(d => { if (d.success) { showToast(d.message); location.reload(); } });
+        });
     }
 </script>
 @endpush

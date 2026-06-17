@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{{ $title ?? 'STO - Scan To Office' }}</title>
+    <link rel="icon" type="image/png" href="{{ asset('assets/images/logo-adasi.png') }}?v=2">
+    <link rel="shortcut icon" type="image/png" href="{{ asset('assets/images/logo-adasi.png') }}?v=2">
+    <link rel="apple-touch-icon" href="{{ asset('assets/images/logo-adasi.png') }}?v=2">
     <meta name="description" content="Sistem Stock Opname Material berbasis QR Code / Barcode">
 
     {{-- Google Fonts --}}
@@ -844,6 +847,8 @@
     {{-- jQuery & DataTables --}}
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <script src="https://cdn.datatables.net/1.13.7/js/jquery.dataTables.min.js"></script>
+    {{-- SweetAlert2 --}}
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
     <script>
         // CSRF token for AJAX
@@ -851,17 +856,37 @@
             headers: { 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content }
         });
 
-        // Toast notification
+        // SweetAlert Notification
         function showToast(message, type = 'success') {
-            const container = document.getElementById('toastContainer');
-            const toast = document.createElement('div');
-            toast.className = `toast toast-${type}`;
-            toast.innerHTML = `
-                <span>${type === 'success' ? '✓' : '✕'}</span>
-                <span>${message}</span>
-            `;
-            container.appendChild(toast);
-            setTimeout(() => toast.remove(), 4000);
+            Swal.fire({
+                icon: type,
+                title: type === 'success' ? 'Berhasil!' : 'Perhatian!',
+                text: message,
+                timer: 3000,
+                showConfirmButton: false,
+                background: '#ffffff',
+                color: '#1f2937'
+            });
+        }
+
+        // Global Confirm Action
+        function confirmAction(message, callback) {
+            Swal.fire({
+                title: 'Konfirmasi',
+                text: message,
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#f43f5e',
+                cancelButtonColor: '#64748b',
+                confirmButtonText: 'Ya, Lanjutkan',
+                cancelButtonText: 'Batal',
+                background: '#ffffff',
+                color: '#1f2937'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    callback();
+                }
+            });
         }
 
         // Mobile sidebar
