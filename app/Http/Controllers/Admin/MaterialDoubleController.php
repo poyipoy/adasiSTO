@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\DeleteMaterialDoubleRequest;
 use App\Http\Requests\MaterialDoubleGroupRequest;
+use App\Models\ExportRequest;
 use App\Models\Location;
 use App\Models\MasterMaterial;
 use App\Models\MaterialDoubleValidation;
@@ -12,17 +13,22 @@ use App\Models\Plant;
 use App\Models\ScanResult;
 use App\Models\StoCode;
 use App\Services\ActivityLogService;
+use App\Services\ExportService;
 use App\Services\ScanService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
+use Throwable;
 
 class MaterialDoubleController extends Controller
 {
     public function __construct(
         private ScanService $scanService,
+        private ExportService $exportService,
         private ActivityLogService $activityLog,
     ) {}
 
@@ -40,7 +46,7 @@ class MaterialDoubleController extends Controller
 
     public function datatable(Request $request): JsonResponse
     {
-        $query = $this->duplicateGroupQuery($request);
+        $query = $this->duplicateGroupQuery($request->all());
 
         $search = $request->input('search.value');
         if ($search) {
@@ -88,6 +94,7 @@ class MaterialDoubleController extends Controller
                     'duplicate_count' => (int) $item->duplicate_count,
                     'is_validated' => $item->validated_at !== null,
                     'validated_at' => $item->validated_at,
+                    'validated_by_name' => $item->validated_by_name,
                 ];
             })->values(),
         ]);
@@ -181,6 +188,14 @@ class MaterialDoubleController extends Controller
             ], 422);
         }
 
+        $totalInGroup = $this->detailQuery($payload)->count();
+        if ($requestedIds->count() >= $totalInGroup) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Anda tidak bisa menghapus semua data sekaligus. Sisakan minimal 1 data utama.',
+            ], 422);
+        }
+
         foreach ($requestedIds as $scanResultId) {
             $this->scanService->deleteByAdmin($request->user(), $scanResultId);
         }
@@ -192,7 +207,73 @@ class MaterialDoubleController extends Controller
         ]);
     }
 
-    private function duplicateGroupQuery(Request $request): Builder
+    public function queueExport(Request $request): JsonResponse
+    {
+        try {
+            $exportRequest = $this->exportService->queueMaterialDoubleExport($request->user(), 'excel', $request->all());
+
+            $this->activityLog->record($request->user(), 'export.material_double.requested', $exportRequest, metadata: [
+                'format' => $exportRequest->format,
+                'filters' => $exportRequest->filters,
+                'async' => true,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Export sedang diproses. File akan tersedia saat status selesai.',
+                'data' => $this->exportService->serializeExportRequest($exportRequest),
+            ], 202);
+        } catch (\InvalidArgumentException $exception) {
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage(),
+            ], 422);
+        } catch (Throwable $exception) {
+            Log::error('Async material double export queue failed', [
+                'user_id' => $request->user()?->id,
+                'exception' => $exception::class,
+            ]);
+
+            $this->activityLog->record($request->user(), 'export.material_double.failed', metadata: [
+                'filters' => $this->exportService->exportFilters($request->all()),
+                'async' => true,
+                'exception' => $exception::class,
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Export gagal dimulai.',
+            ], 500);
+        }
+    }
+
+    public function exportStatus(Request $request): JsonResponse
+    {
+        $exports = $this->exportService
+            ->recentMaterialDoubleExports($request->user())
+            ->map(fn (ExportRequest $exportRequest) => $this->exportService->serializeExportRequest($exportRequest))
+            ->values();
+
+        return response()->json([
+            'success' => true,
+            'data' => $exports,
+        ]);
+    }
+
+    public function downloadExport(Request $request, ExportRequest $exportRequest)
+    {
+        abort_unless($exportRequest->user_id === $request->user()->id, 403);
+        abort_unless($exportRequest->isCompleted(), 404);
+        abort_unless($exportRequest->file_path && Storage::disk($exportRequest->file_disk)->exists($exportRequest->file_path), 404);
+
+        return Storage::disk($exportRequest->file_disk)->download(
+            $exportRequest->file_path,
+            $exportRequest->file_name,
+            ['Content-Type' => $exportRequest->mime_type ?: 'application/octet-stream'],
+        );
+    }
+
+    public function duplicateGroupQuery(array $filters): Builder
     {
         $query = ScanResult::query()
             ->leftJoin('plants', 'scan_results.plant_id', '=', 'plants.id')
@@ -202,6 +283,7 @@ class MaterialDoubleController extends Controller
                     ->on('mdv.plant_id', '=', 'scan_results.plant_id')
                     ->on('mdv.location_id', '=', 'scan_results.location_id');
             })
+            ->leftJoin('users as mdv_user', 'mdv.validated_by', '=', 'mdv_user.id')
             ->selectRaw('
                 scan_results.barcode_material,
                 scan_results.material_name,
@@ -216,7 +298,8 @@ class MaterialDoubleController extends Controller
                 plants.name as plant_name,
                 locations.name as location_name,
                 COUNT(*) as duplicate_count,
-                MAX(mdv.validated_at) as validated_at
+                MAX(mdv.validated_at) as validated_at,
+                MAX(mdv_user.name) as validated_by_name
             ')
             ->groupBy(
                 'scan_results.barcode_material',
@@ -234,7 +317,7 @@ class MaterialDoubleController extends Controller
             )
             ->havingRaw('COUNT(*) > 1');
 
-        $this->applyScanFilters($query, $request->all(), tablePrefix: 'scan_results.');
+        $this->applyScanFilters($query, $filters, tablePrefix: 'scan_results.');
 
         return $query;
     }

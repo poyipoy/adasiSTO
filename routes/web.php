@@ -97,7 +97,11 @@ Route::middleware(['auth', 'role:admin'])
         Route::get('/api/material-double/detail', [MaterialDoubleController::class, 'showDuplicateDetail'])->middleware('throttle:datatable')->name('api.material-double.detail');
         Route::post('/api/material-double/validate', [MaterialDoubleController::class, 'validateDuplicate'])->name('api.material-double.validate');
         Route::delete('/api/material-double/delete-selected', [MaterialDoubleController::class, 'deleteSelected'])->name('api.material-double.delete-selected');
-
+        Route::post('/api/material-double/export', [MaterialDoubleController::class, 'queueExport'])
+            ->middleware('throttle:export')
+            ->name('api.material-double.export.queue');
+        Route::get('/api/material-double/export/status', [MaterialDoubleController::class, 'exportStatus'])->name('api.material-double.export.status');
+        Route::get('/api/material-double/export/{exportRequest}/download', [MaterialDoubleController::class, 'downloadExport'])->name('api.material-double.export.download');
         Route::post('/export/scan-results/{format}', [DashboardController::class, 'queueExport'])
             ->whereIn('format', ['excel', 'pdf'])
             ->middleware('throttle:export')

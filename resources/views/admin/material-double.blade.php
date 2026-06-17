@@ -3,6 +3,8 @@
 <div class="enterprise-toolbar">
     <button class="btn btn-icon" type="button" onclick="reloadMaterialDouble()" title="Refresh">Refresh</button>
     <button class="btn btn-icon" type="button" onclick="resetMaterialDoubleFilters()" title="Reset">Reset</button>
+    <div class="toolbar-sep"></div>
+    <button class="btn btn-success" type="button" id="exportExcel" onclick="queueExport()">Export Excel</button>
 </div>
 
 <div class="card" style="border-top:0;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
@@ -139,6 +141,15 @@
     let activeDuplicateGroup = null;
     const selectedDuplicateIds = new Set();
     const materialDoubleCsrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+    
+    let exportPollingTimer = null;
+    let exportPollingFailureCount = 0;
+    const maxExportPollingFailures = 3;
+    const pendingAutoDownloadExportIds = new Set();
+    const autoDownloadedExportIds = new Set();
+    
+    const exportQueueUrl = '{{ route("admin.api.material-double.export.queue", [], false) }}';
+    const exportStatusUrl = '{{ route("admin.api.material-double.export.status", [], false) }}';
 
     function materialDoubleFilters() {
         return {
@@ -181,6 +192,7 @@
     }
 
     function reloadMaterialDouble() {
+        updateExportLinks();
         materialDoubleTable.ajax.reload(null, false);
     }
 
@@ -191,20 +203,37 @@
 
     function renderAction(row) {
         if (row.is_validated) {
-            return `<div class="material-double-actions" data-row='${escapeAttr(JSON.stringify(row))}'>
+            return `<div class="material-double-actions" 
+                data-barcode="${escapeAttr(row.barcode_material)}" 
+                data-plantid="${row.plant_id}" 
+                data-locationid="${row.location_id}" 
+                data-plant="${escapeAttr(row.plant)}" 
+                data-location="${escapeAttr(row.location)}">
                 <button class="btn btn-success" type="button" disabled style="opacity: 0.6; cursor: not-allowed;">Valid</button>
                 <button class="btn btn-danger" type="button" disabled style="opacity: 0.6; cursor: not-allowed;">Tidak Valid</button>
             </div>`;
         }
 
-        return `<div class="material-double-actions" data-row='${escapeAttr(JSON.stringify(row))}'>
+        return `<div class="material-double-actions" 
+            data-barcode="${escapeAttr(row.barcode_material)}" 
+            data-plantid="${row.plant_id}" 
+            data-locationid="${row.location_id}" 
+            data-plant="${escapeAttr(row.plant)}" 
+            data-location="${escapeAttr(row.location)}">
             <button class="btn btn-success" type="button" onclick="validateDuplicateGroup(this)">Valid</button>
             <button class="btn btn-danger" type="button" onclick="openDuplicateDetail(this)">Tidak Valid</button>
         </div>`;
     }
 
     function rowFromAction(button) {
-        return JSON.parse($(button).closest('.material-double-actions').attr('data-row'));
+        const wrapper = $(button).closest('.material-double-actions');
+        return {
+            barcode_material: wrapper.attr('data-barcode'),
+            plant_id: wrapper.attr('data-plantid'),
+            location_id: wrapper.attr('data-locationid'),
+            plant: wrapper.attr('data-plant'),
+            location: wrapper.attr('data-location')
+        };
     }
 
     function validateDuplicateGroup(button) {
@@ -298,6 +327,11 @@
             return;
         }
 
+        if (ids.length >= activeDuplicateGroup.duplicate_count) {
+            Swal.fire('Peringatan', 'Anda tidak bisa menghapus semua data sekaligus. Sisakan minimal 1 data utama.', 'warning');
+            return;
+        }
+
         Swal.fire({
             title: 'Apakah Anda yakin ingin menghapus data yang dipilih?',
             text: 'Data yang dihapus tidak dapat dikembalikan.',
@@ -357,6 +391,175 @@
         }
     }
 
+    function updateExportLinks() {
+        refreshExportStatus();
+    }
+
+    function queueExport() {
+        setExportButtonsDisabled(true);
+
+        fetch(exportQueueUrl, {
+            method: 'POST',
+            headers: requestHeaders(),
+            body: JSON.stringify(materialDoubleFilters()),
+        })
+        .then(async response => {
+            const data = await response.json();
+            if (!response.ok) throw data;
+            return data;
+        })
+        .then(payload => {
+            if (payload.data?.id) {
+                pendingAutoDownloadExportIds.add(Number(payload.data.id));
+            }
+
+            Swal.fire({
+                toast: true,
+                position: 'bottom-end',
+                showConfirmButton: false,
+                timer: 3000,
+                icon: 'success',
+                title: payload.message
+            });
+            exportPollingFailureCount = 0;
+            refreshExportStatus();
+            startExportPolling();
+        })
+        .catch(error => {
+            Swal.fire({
+                toast: true,
+                position: 'bottom-end',
+                showConfirmButton: false,
+                timer: 3000,
+                icon: 'error',
+                title: error.message || 'Export gagal dimulai.'
+            });
+        })
+        .finally(() => setExportButtonsDisabled(false));
+    }
+
+    function refreshExportStatus() {
+        fetch(exportStatusUrl, { headers: { Accept: 'application/json' } })
+            .then(async response => {
+                const payload = await response.json();
+                if (!response.ok) throw payload;
+                return payload;
+            })
+            .then(payload => {
+                exportPollingFailureCount = 0;
+                const exports = payload.data || [];
+                triggerAutoDownloads(exports);
+
+                const waitingForAutoDownload = exports.some(item => {
+                    const id = Number(item.id);
+
+                    return pendingAutoDownloadExportIds.has(id)
+                        && ['queued', 'processing'].includes(item.status);
+                });
+
+                if (waitingForAutoDownload) {
+                    startExportPolling();
+                } else {
+                    stopExportPolling();
+                }
+            })
+            .catch(() => handleExportPollingFailure());
+    }
+
+    function handleExportPollingFailure() {
+        if (pendingAutoDownloadExportIds.size === 0) {
+            stopExportPolling();
+            return;
+        }
+
+        exportPollingFailureCount++;
+
+        if (exportPollingFailureCount < maxExportPollingFailures) {
+            return;
+        }
+
+        stopExportPolling();
+        pendingAutoDownloadExportIds.clear();
+        exportPollingFailureCount = 0;
+        Swal.fire({
+            toast: true,
+            position: 'bottom-end',
+            showConfirmButton: false,
+            timer: 3000,
+            icon: 'error',
+            title: 'Status export gagal dimuat. Silakan coba export ulang.'
+        });
+    }
+
+    function triggerAutoDownloads(exports) {
+        exports.forEach(item => {
+            const id = Number(item.id);
+
+            if (!pendingAutoDownloadExportIds.has(id)) {
+                return;
+            }
+
+            if (item.status === 'failed') {
+                pendingAutoDownloadExportIds.delete(id);
+                Swal.fire({
+                    toast: true,
+                    position: 'bottom-end',
+                    showConfirmButton: false,
+                    timer: 3000,
+                    icon: 'error',
+                    title: item.message || 'Export gagal diproses.'
+                });
+                return;
+            }
+
+            if (item.status !== 'completed' || !item.download_url || autoDownloadedExportIds.has(id)) {
+                return;
+            }
+
+            pendingAutoDownloadExportIds.delete(id);
+            autoDownloadedExportIds.add(id);
+            autoDownloadExport(item.download_url);
+            Swal.fire({
+                toast: true,
+                position: 'bottom-end',
+                showConfirmButton: false,
+                timer: 3000,
+                icon: 'success',
+                title: 'Export selesai. Download dimulai.'
+            });
+        });
+    }
+
+    function autoDownloadExport(downloadUrl) {
+        let frame = document.getElementById('exportAutoDownloadFrame');
+
+        if (!frame) {
+            frame = document.createElement('iframe');
+            frame.id = 'exportAutoDownloadFrame';
+            frame.hidden = true;
+            frame.style.display = 'none';
+            document.body.appendChild(frame);
+        }
+
+        frame.src = downloadUrl;
+    }
+
+    function startExportPolling() {
+        if (exportPollingTimer) return;
+        exportPollingTimer = setInterval(() => refreshExportStatus(), 3000);
+    }
+
+    function stopExportPolling() {
+        if (!exportPollingTimer) return;
+        clearInterval(exportPollingTimer);
+        exportPollingTimer = null;
+    }
+
+    function setExportButtonsDisabled(disabled) {
+        const btn = document.getElementById('exportExcel');
+        if (btn) btn.disabled = disabled;
+    }
+
     $(document).ready(function() {
         materialDoubleTable = $('#materialDoubleTable').DataTable({
             processing: true,
@@ -376,7 +579,19 @@
                 { data: 'plant' },
                 { data: 'location' },
                 { data: 'duplicate_count' },
-                { data: 'is_validated', render: val => val ? '<span class="badge" style="background:#28a745;color:#fff;">Valid</span>' : '<span class="badge" style="background:#ffc107;color:#000;">Menunggu</span>' },
+                { 
+                    data: 'is_validated', 
+                    render: (val, type, row) => {
+                        if (val) {
+                            return `<div style="display:flex;flex-direction:column;gap:2px;">
+                                <span class="badge" style="background:#28a745;color:#fff;width:fit-content;">Valid</span>
+                                <small style="color:var(--text-secondary);font-size:10px;">Oleh: ${escapeHtml(row.validated_by_name)}</small>
+                                <small style="color:var(--text-secondary);font-size:10px;">${escapeHtml(row.validated_at)}</small>
+                            </div>`;
+                        }
+                        return '<span class="badge" style="background:#ffc107;color:#000;">Menunggu</span>';
+                    } 
+                },
                 { data: null, orderable: false, searchable: false, render: row => renderAction(row) },
             ],
             language: { emptyTable: 'Tidak ada material double ditemukan.' }
@@ -390,6 +605,8 @@
                 selectedDuplicateIds.delete(id);
             }
         });
+        
+        updateExportLinks();
     });
 </script>
 @endpush

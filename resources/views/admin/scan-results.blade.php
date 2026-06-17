@@ -519,13 +519,27 @@
                 pendingAutoDownloadExportIds.add(Number(payload.data.id));
             }
 
-            showToast(payload.message);
+            Swal.fire({
+                toast: true,
+                position: 'bottom-end',
+                showConfirmButton: false,
+                timer: 3000,
+                icon: 'success',
+                title: payload.message
+            });
             exportPollingFailureCount = 0;
             refreshExportStatus();
             startExportPolling();
         })
         .catch(error => {
-            showToast(error.message || 'Export gagal dimulai.', 'error');
+            Swal.fire({
+                toast: true,
+                position: 'bottom-end',
+                showConfirmButton: false,
+                timer: 3000,
+                icon: 'error',
+                title: error.message || 'Export gagal dimulai.'
+            });
         })
         .finally(() => setExportButtonsDisabled(false));
     }
@@ -573,7 +587,14 @@
         stopExportPolling();
         pendingAutoDownloadExportIds.clear();
         exportPollingFailureCount = 0;
-        showToast('Status export gagal dimuat. Silakan coba export ulang.', 'error');
+        Swal.fire({
+            toast: true,
+            position: 'bottom-end',
+            showConfirmButton: false,
+            timer: 3000,
+            icon: 'error',
+            title: 'Status export gagal dimuat. Silakan coba export ulang.'
+        });
     }
 
     function triggerAutoDownloads(exports) {
@@ -586,7 +607,14 @@
 
             if (item.status === 'failed') {
                 pendingAutoDownloadExportIds.delete(id);
-                showToast(item.message || 'Export gagal diproses.', 'error');
+                Swal.fire({
+                    toast: true,
+                    position: 'bottom-end',
+                    showConfirmButton: false,
+                    timer: 3000,
+                    icon: 'error',
+                    title: item.message || 'Export gagal diproses.'
+                });
                 return;
             }
 
@@ -597,7 +625,14 @@
             pendingAutoDownloadExportIds.delete(id);
             autoDownloadedExportIds.add(id);
             autoDownloadExport(item.download_url);
-            showToast('Export selesai. Download dimulai.');
+            Swal.fire({
+                toast: true,
+                position: 'bottom-end',
+                showConfirmButton: false,
+                timer: 3000,
+                icon: 'success',
+                title: 'Export selesai. Download dimulai.'
+            });
         });
     }
 

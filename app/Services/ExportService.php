@@ -3,7 +3,9 @@
 namespace App\Services;
 
 use App\Exports\ScanResultsExport;
+use App\Exports\MaterialDoubleExport;
 use App\Jobs\ExportScanResultsJob;
+use App\Jobs\ExportMaterialDoubleJob;
 use App\Models\ExportRequest;
 use App\Models\ScanResult;
 use App\Models\User;
@@ -146,6 +148,79 @@ class ExportService
         }
     }
 
+    public function queueMaterialDoubleExport(User $user, string $format, array $input): ExportRequest
+    {
+        $format = $this->normalizeFormat($format);
+        $filters = $this->exportFilters($input);
+        
+        if ($format !== 'excel') {
+            throw new InvalidArgumentException('Hanya format excel yang didukung untuk material double.');
+        }
+
+        $exportRequest = ExportRequest::create([
+            'user_id' => $user->id,
+            'report' => 'material_double',
+            'format' => $format,
+            'status' => ExportRequest::STATUS_QUEUED,
+            'filters' => $filters,
+            'file_disk' => config('sto.export_disk', 'local'),
+            'file_name' => 'STO_Material_Double_' . now()->format('Ymd_His') . '.xlsx',
+            'mime_type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'queued_at' => now(),
+        ]);
+
+        ExportMaterialDoubleJob::dispatch($exportRequest->id);
+
+        return $exportRequest;
+    }
+
+    public function generateQueuedMaterialDoubleExport(ExportRequest $exportRequest): ExportRequest
+    {
+        $exportRequest->forceFill([
+            'status' => ExportRequest::STATUS_PROCESSING,
+            'started_at' => now(),
+            'failed_at' => null,
+            'error_message' => null,
+        ])->save();
+
+        try {
+            $filters = $exportRequest->filters ?: [];
+            $path = 'exports/material-double/' . $exportRequest->id . '-' . $exportRequest->file_name;
+
+            Excel::store(new MaterialDoubleExport($filters), $path, $exportRequest->file_disk);
+
+            if (!Storage::disk($exportRequest->file_disk)->exists($path)) {
+                throw new RuntimeException('File export gagal dibuat.');
+            }
+
+            $exportRequest->forceFill([
+                'status' => ExportRequest::STATUS_COMPLETED,
+                'file_path' => $path,
+                'completed_at' => now(),
+            ])->save();
+
+            return $exportRequest->refresh();
+        } catch (Throwable $exception) {
+            $exportRequest->forceFill([
+                'status' => ExportRequest::STATUS_FAILED,
+                'failed_at' => now(),
+                'error_message' => 'Export gagal diproses.',
+            ])->save();
+
+            throw $exception;
+        }
+    }
+
+    public function recentMaterialDoubleExports(User $user, int $limit = 5): Collection
+    {
+        return ExportRequest::query()
+            ->where('user_id', $user->id)
+            ->where('report', 'material_double')
+            ->latest('created_at')
+            ->limit($limit)
+            ->get();
+    }
+
     public function serializeExportRequest(ExportRequest $exportRequest): array
     {
         return [
@@ -160,7 +235,9 @@ class ExportService
             'failed_at' => $exportRequest->failed_at?->format('Y-m-d H:i:s'),
             'message' => $this->statusMessage($exportRequest),
             'download_url' => $exportRequest->isCompleted()
-                ? route('admin.export.scan-results.download', $exportRequest)
+                ? ($exportRequest->report === 'material_double'
+                    ? route('admin.api.material-double.export.download', $exportRequest)
+                    : route('admin.export.scan-results.download', $exportRequest))
                 : null,
         ];
     }
