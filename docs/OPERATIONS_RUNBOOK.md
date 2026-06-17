@@ -6,6 +6,7 @@
 - Set `APP_DEBUG=false`.
 - Set a generated `APP_KEY`.
 - Set `APP_URL` to the public HTTPS URL.
+- Set `TRUSTED_PROXIES` to the reverse proxy or load balancer IP list. Use `*` only when proxy headers are controlled by trusted infrastructure.
 - Use MySQL with a dedicated database user.
 - Use `SESSION_DRIVER=database`.
 - Use `SESSION_ENCRYPT=true`.
@@ -14,6 +15,7 @@
 - Use `QUEUE_CONNECTION=database` or Redis in production.
 - Use `LOG_CHANNEL=stack` and `LOG_STACK=daily`.
 - Keep `STO_HEALTH_EXPOSE_ENVIRONMENT=false` unless internal monitoring needs environment visibility.
+- If seeders are executed in production, immediately change the default seeded passwords for `admin`, `operator1`, and `operator2`.
 
 ## Deployment Commands
 
@@ -21,12 +23,17 @@ Run these after deploying application code and environment changes:
 
 ```bash
 composer install --no-dev --optimize-autoloader
+npm ci
+npm run vendor:publish
+npm run build
 php artisan migrate --force
 php artisan config:cache
 php artisan route:cache
 php artisan view:cache
 php artisan optimize
 ```
+
+The Blade views load DataTables, jQuery, SweetAlert2, Chart.js, Html5 QR Code, and Inter from `public/vendor`. Do not skip `npm run vendor:publish` unless those files are already present from the build artifact.
 
 For troubleshooting after an incident, clear cached bootstrap files:
 
@@ -53,6 +60,8 @@ php artisan queue:restart
 ## Export Storage
 
 The export disk is controlled by `STO_EXPORT_DISK`.
+
+Scan result exports are queued. Direct browser export routes enqueue an `export_requests` row and require a queue worker to generate the final file.
 
 Single server:
 

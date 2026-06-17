@@ -16,9 +16,13 @@ class StoreScanRequest extends FormRequest
     {
         return [
             'qr' => ['required', 'string', 'max:150'],
-            'plant_id' => ['required', 'integer', Rule::exists('plants', 'id')->where('is_active', true)],
+            'plant_id' => [
+                'required',
+                'integer',
+                Rule::exists('plants', 'id')->where(fn ($query) => $query->where('is_active', true))
+            ],
             'location_id' => ['required', 'integer', 'exists:locations,id'],
-            'scan_source' => ['nullable', 'string', 'in:camera,scanner_gun,manual'],
+            'scan_source' => ['nullable', 'string', 'in:camera,camera-select,scanner_gun,manual'],
             'force_save' => ['sometimes', 'boolean'],
         ];
     }
@@ -31,10 +35,12 @@ class StoreScanRequest extends FormRequest
             }
 
             $locationBelongsToPlant = \App\Models\Location::query()
-                ->where('id', $this->integer('location_id'))
-                ->where('user_id', $this->user()->id)
-                ->where('plant_id', $this->integer('plant_id'))
-                ->where('is_active', true)
+                ->where([
+                    'id' => $this->integer('location_id'),
+                    'user_id' => $this->user()->id,
+                    'plant_id' => $this->integer('plant_id'),
+                    'is_active' => true,
+                ])
                 ->exists();
 
             if (!$locationBelongsToPlant) {

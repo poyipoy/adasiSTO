@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\DeleteMaterialDoubleRequest;
 use App\Http\Requests\MaterialDoubleGroupRequest;
+use App\Http\Requests\MaterialDoubleScanRequest;
 use App\Models\ExportRequest;
 use App\Models\Location;
 use App\Models\MasterMaterial;
@@ -38,7 +39,7 @@ class MaterialDoubleController extends Controller
 
         return view('admin.material-double', [
             'plants' => Plant::active()->orderBy('name')->limit($filterLimit)->get(),
-            'locations' => Location::active()->with(['plant'])->orderBy('name')->limit($filterLimit)->get(),
+            'locations' => Location::active()->select('name')->distinct()->orderBy('name')->limit($filterLimit)->get(),
             'materials' => MasterMaterial::active()->orderBy('material_code')->limit($filterLimit)->get(),
             'stoCodes' => StoCode::orderByDesc('is_active')->orderByDesc('created_at')->limit($filterLimit)->pluck('code'),
         ]);
@@ -144,24 +145,7 @@ class MaterialDoubleController extends Controller
     {
         $payload = $request->validated();
 
-        $validation = MaterialDoubleValidation::updateOrCreate(
-            [
-                'barcode_material' => $payload['barcode_material'],
-                'plant_id' => $payload['plant_id'],
-                'location_id' => $payload['location_id'],
-            ],
-            [
-                'validated_by' => $request->user()->id,
-                'validated_at' => now(),
-            ]
-        );
-
-        $this->activityLog->record($request->user(), 'material_double.validated', $validation, newValues: [
-            'barcode_material' => $validation->barcode_material,
-            'plant_id' => $validation->plant_id,
-            'location_id' => $validation->location_id,
-            'validated_at' => $validation->validated_at?->format('Y-m-d H:i:s'),
-        ]);
+        $this->markDuplicateValidated($request, $payload);
 
         return response()->json([
             'success' => true,
@@ -200,11 +184,27 @@ class MaterialDoubleController extends Controller
             $this->scanService->deleteByAdmin($request->user(), $scanResultId);
         }
 
+        $this->markDuplicateValidated($request, $payload);
+
         return response()->json([
             'success' => true,
-            'message' => 'Data duplicate terpilih berhasil dihapus.',
+            'message' => 'Data duplicate terpilih berhasil dihapus dan duplicate QR berhasil diverifikasi.',
             'deleted_count' => $requestedIds->count(),
         ]);
+    }
+
+    public function scan(MaterialDoubleScanRequest $request): JsonResponse
+    {
+        $result = $this->scanService->storeMaterialDoubleScan($request->user(), $request->validated());
+
+        if (!$result['success']) {
+            return response()->json(
+                collect($result)->except('status')->all(),
+                $result['status'] ?? 422
+            );
+        }
+
+        return response()->json($result, 201);
     }
 
     public function queueExport(Request $request): JsonResponse
@@ -266,7 +266,10 @@ class MaterialDoubleController extends Controller
         abort_unless($exportRequest->isCompleted(), 404);
         abort_unless($exportRequest->file_path && Storage::disk($exportRequest->file_disk)->exists($exportRequest->file_path), 404);
 
-        return Storage::disk($exportRequest->file_disk)->download(
+        /** @var \Illuminate\Filesystem\FilesystemAdapter $disk */
+        $disk = Storage::disk($exportRequest->file_disk);
+
+        return $disk->download(
             $exportRequest->file_path,
             $exportRequest->file_name,
             ['Content-Type' => $exportRequest->mime_type ?: 'application/octet-stream'],
@@ -319,6 +322,14 @@ class MaterialDoubleController extends Controller
 
         $this->applyScanFilters($query, $filters, tablePrefix: 'scan_results.');
 
+        if (!empty($filters['status'])) {
+            if ($filters['status'] === 'valid') {
+                $query->havingRaw('MAX(mdv.validated_at) IS NOT NULL');
+            } elseif ($filters['status'] === 'need_check') {
+                $query->havingRaw('MAX(mdv.validated_at) IS NULL');
+            }
+        }
+
         return $query;
     }
 
@@ -344,8 +355,10 @@ class MaterialDoubleController extends Controller
             $query->where($tablePrefix . 'plant_id', $filters['plant_id']);
         }
 
-        if (!empty($filters['location_id'])) {
-            $query->where($tablePrefix . 'location_id', $filters['location_id']);
+        if (!empty($filters['location_name'])) {
+            $query->whereHas('location', function($q) use ($filters) {
+                $q->where('name', $filters['location_name']);
+            });
         }
 
         if (!empty($filters['material_code'])) {
@@ -389,5 +402,29 @@ class MaterialDoubleController extends Controller
         } else {
             $query->orderByDesc('duplicate_count');
         }
+    }
+
+    private function markDuplicateValidated(Request $request, array $payload): MaterialDoubleValidation
+    {
+        $validation = MaterialDoubleValidation::updateOrCreate(
+            [
+                'barcode_material' => $payload['barcode_material'],
+                'plant_id' => $payload['plant_id'],
+                'location_id' => $payload['location_id'],
+            ],
+            [
+                'validated_by' => $request->user()->id,
+                'validated_at' => now(),
+            ]
+        );
+
+        $this->activityLog->record($request->user(), 'material_double.validated', $validation, newValues: [
+            'barcode_material' => $validation->barcode_material,
+            'plant_id' => $validation->plant_id,
+            'location_id' => $validation->location_id,
+            'validated_at' => $validation->validated_at?->format('Y-m-d H:i:s'),
+        ]);
+
+        return $validation;
     }
 }

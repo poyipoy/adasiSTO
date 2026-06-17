@@ -100,6 +100,23 @@
         border-color: var(--danger);
         box-shadow: 0 0 0 1px rgba(217, 45, 32, 0.12);
     }
+
+    @media (max-width: 768px) {
+        #masterTable {
+            table-layout: auto;
+        }
+        .inline-input,
+        .inline-select {
+            height: 36px;
+            padding: 6px 8px;
+            font-size: 13px;
+        }
+        .inline-actions .btn {
+            padding: 6px 8px;
+            font-size: 12px;
+            min-height: 36px;
+        }
+    }
 </style>
 @endpush
 

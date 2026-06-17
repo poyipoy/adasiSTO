@@ -636,36 +636,39 @@ Material Salah
 
 ---
 
-# 12. Export Endpoints
+# 12. Material Double Endpoints
 
-## 12.1 GET /admin/export/scan-results/excel
+## 12.1 GET /admin/api/material-double
+DataTables endpoint for material double.
 
-Query:
+## 12.2 GET /admin/api/material-double/detail
+DataTables endpoint for duplicate group detail.
+Requires: `barcode_material`, `plant_id`, `location_id`.
 
-```text
-sto_code
-plant_id
-location_id
-user_id
-material_code
-lot_number
-date_from
-date_to
-```
+## 12.3 POST /admin/api/material-double/validate
+Validate duplicate group.
 
-Rule:
-
-Export follows active filters.
+## 12.4 DELETE /admin/api/material-double/delete-selected
+Delete selected duplicate items. Requires at least 1 item remaining.
 
 ---
 
-## 12.2 GET /admin/export/scan-results/pdf
+# 13. Export Queue Endpoints
 
-Same filters as Excel.
+## 13.1 POST /admin/export/{module}/{format}
+Initiate an export job.
+Modules: `scan-results`, `material-double`
+Formats: `excel`, `pdf`
+
+## 13.2 GET /admin/export/{module}/status
+Check status of recent exports.
+
+## 13.3 GET /admin/export/{module}/{exportRequest}/download
+Download completed export file.
 
 ---
 
-# 13. Error Messages
+# 14. Error Messages
 
 ## Invalid QR
 
@@ -699,7 +702,7 @@ Anda tidak memiliki akses.
 
 ---
 
-# 14. Security Rules
+# 15. Security Rules
 
 All scanner endpoints:
 
@@ -723,7 +726,7 @@ where('user_id', auth()->id())
 
 ---
 
-# 15. Final API Principle
+# 16. Final API Principle
 
 API harus:
 

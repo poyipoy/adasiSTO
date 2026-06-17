@@ -167,6 +167,47 @@
         height: 200px;
         width: 100%;
     }
+
+    @media (max-width: 768px) {
+        .dashboard-header {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 12px;
+        }
+        .dashboard-title {
+            font-size: 20px;
+        }
+        .dashboard-actions {
+            width: 100%;
+        }
+        .dashboard-actions .btn {
+            flex: 1;
+        }
+        .overview-grid {
+            grid-template-columns: 1fr;
+            gap: 12px;
+        }
+        .stat-card {
+            padding: 14px;
+        }
+        .stat-card-value {
+            font-size: 22px;
+        }
+        .usage-card {
+            flex-direction: column;
+            align-items: center;
+        }
+        .usage-chart {
+            width: 120px;
+            height: 120px;
+        }
+        .usage-stats {
+            width: 100%;
+        }
+        .chart-container {
+            height: 180px;
+        }
+    }
 </style>
 @endpush
 
@@ -331,9 +372,6 @@
 </div>
 
 @push('scripts')
-<!-- DataTables JS -->
-<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
 <script>
     $(document).ready(function() {
         const urlParams = new URLSearchParams(window.location.search);

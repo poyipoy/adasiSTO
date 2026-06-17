@@ -96,6 +96,9 @@ Route::middleware(['auth', 'role:admin'])
         Route::get('/api/material-double', [MaterialDoubleController::class, 'datatable'])->middleware('throttle:datatable')->name('api.material-double');
         Route::get('/api/material-double/detail', [MaterialDoubleController::class, 'showDuplicateDetail'])->middleware('throttle:datatable')->name('api.material-double.detail');
         Route::post('/api/material-double/validate', [MaterialDoubleController::class, 'validateDuplicate'])->name('api.material-double.validate');
+        Route::post('/api/material-double/scan', [MaterialDoubleController::class, 'scan'])
+            ->middleware('throttle:scan-write')
+            ->name('api.material-double.scan');
         Route::delete('/api/material-double/delete-selected', [MaterialDoubleController::class, 'deleteSelected'])->name('api.material-double.delete-selected');
         Route::post('/api/material-double/export', [MaterialDoubleController::class, 'queueExport'])
             ->middleware('throttle:export')
@@ -108,8 +111,12 @@ Route::middleware(['auth', 'role:admin'])
             ->name('export.scan-results.queue');
         Route::get('/export/scan-results/status', [DashboardController::class, 'exportStatus'])->name('export.scan-results.status');
         Route::get('/export/scan-results/{exportRequest}/download', [DashboardController::class, 'downloadExport'])->name('export.scan-results.download');
-        Route::get('/export/scan-results/excel', [DashboardController::class, 'exportExcel'])->name('export.scan-results.excel');
-        Route::get('/export/scan-results/pdf', [DashboardController::class, 'exportPdf'])->name('export.scan-results.pdf');
+        Route::get('/export/scan-results/excel', [DashboardController::class, 'exportExcel'])
+            ->middleware('throttle:export')
+            ->name('export.scan-results.excel');
+        Route::get('/export/scan-results/pdf', [DashboardController::class, 'exportPdf'])
+            ->middleware('throttle:export')
+            ->name('export.scan-results.pdf');
 
         Route::get('/master-sto', [MasterController::class, 'sto'])->name('master-sto');
         Route::get('/api/master-sto', [MasterController::class, 'stoData'])->middleware('throttle:datatable')->name('api.master-sto');

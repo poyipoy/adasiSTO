@@ -8,9 +8,7 @@
     <link rel="icon" type="image/png" href="{{ asset('assets/images/logo-adasi.png') }}?v=2">
     <link rel="shortcut icon" type="image/png" href="{{ asset('assets/images/logo-adasi.png') }}?v=2">
     <link rel="apple-touch-icon" href="{{ asset('assets/images/logo-adasi.png') }}?v=2">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ asset('vendor/@fontsource/inter/index.css') }}">
     <link rel="stylesheet" href="{{ asset('assets/css/adasi-splash.css') }}">
     <style>
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }

@@ -92,7 +92,7 @@
 </div>
 
 @push('scripts')
-<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="{{ asset('vendor/html5-qrcode/html5-qrcode.min.js') }}"></script>
 <script>
     const plantSelect = document.getElementById('plant_id');
     const locationSelect = document.getElementById('location_id');
@@ -236,7 +236,7 @@
         }
 
         if (!window.Html5Qrcode) {
-            renderLocationCameraError('Library kamera belum tersedia. Periksa koneksi internet atau buka ulang halaman.');
+            renderLocationCameraError('Library kamera belum tersedia. Periksa asset aplikasi atau buka ulang halaman.');
             return;
         }
 

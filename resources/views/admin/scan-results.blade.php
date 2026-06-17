@@ -11,7 +11,7 @@
 
 <div class="card" style="border-top:0;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
     <div style="width:130px;"><label class="form-label">Plant</label><select id="filterPlant" class="form-control"><option value="">All</option>@foreach($plants as $plant)<option value="{{ $plant->id }}">{{ $plant->name }}</option>@endforeach</select></div>
-    <div style="width:130px;"><label class="form-label">Location</label><select id="filterLocation" class="form-control"><option value="">All</option>@foreach($locations as $location)<option value="{{ $location->id }}">{{ $location->name }}</option>@endforeach</select></div>
+    <div style="width:130px;"><label class="form-label">Location</label><select id="filterLocation" class="form-control"><option value="">All</option>@foreach($locations as $location)<option value="{{ $location->name }}">{{ $location->name }}</option>@endforeach</select></div>
     <div style="width:130px;"><label class="form-label">User</label><select id="filterUser" class="form-control"><option value="">All</option>@foreach($users as $user)<option value="{{ $user->id }}">{{ $user->name }}</option>@endforeach</select></div>
     <div style="width:130px;"><label class="form-label">Material</label><select id="filterMaterial" class="form-control"><option value="">All</option>@foreach($materials as $material)<option value="{{ $material->material_code }}">{{ $material->material_code }}</option>@endforeach</select></div>
     <div style="width:130px;"><label class="form-label">Date From</label><input type="date" id="filterDateFrom" class="form-control"></div>
@@ -241,6 +241,30 @@
         border-color: var(--danger);
         box-shadow: 0 0 0 1px rgba(217, 45, 32, 0.12);
     }
+
+    @media (max-width: 768px) {
+        #adminScanTable {
+            table-layout: auto;
+        }
+        #adminScanTable colgroup {
+            display: none;
+        }
+        .inline-input,
+        .inline-select {
+            height: 36px;
+            padding: 6px 8px;
+            font-size: 13px;
+        }
+        .inline-actions .btn {
+            padding: 6px 8px;
+            font-size: 12px;
+            min-height: 36px;
+        }
+        .scan-row-actions {
+            flex-wrap: wrap;
+            gap: 4px;
+        }
+    }
 </style>
 @endpush
 
@@ -273,7 +297,7 @@
         return {
             sto_code: $('#filterSto').val(),
             plant_id: $('#filterPlant').val(),
-            location_id: $('#filterLocation').val(),
+            location_name: $('#filterLocation').val(),
             user_id: $('#filterUser').val(),
             material_code: $('#filterMaterial').val(),
             date_from: $('#filterDateFrom').val(),

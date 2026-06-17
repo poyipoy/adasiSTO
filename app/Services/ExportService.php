@@ -9,6 +9,7 @@ use App\Jobs\ExportMaterialDoubleJob;
 use App\Models\ExportRequest;
 use App\Models\ScanResult;
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Storage;
@@ -37,6 +38,12 @@ class ExportService
             $query->where('location_id', $filters['location_id']);
         }
 
+        if (!empty($filters['location_name'])) {
+            $query->whereHas('location', function ($q) use ($filters) {
+                $q->where('name', $filters['location_name']);
+            });
+        }
+
         if (!empty($filters['user_id'])) {
             $query->where('user_id', $filters['user_id']);
         }
@@ -50,11 +57,11 @@ class ExportService
         }
 
         if (!empty($filters['date_from'])) {
-            $query->whereDate('created_at', '>=', $filters['date_from']);
+            $query->where('created_at', '>=', Carbon::parse($filters['date_from'])->startOfDay());
         }
 
         if (!empty($filters['date_to'])) {
-            $query->whereDate('created_at', '<=', $filters['date_to']);
+            $query->where('created_at', '<=', Carbon::parse($filters['date_to'])->endOfDay());
         }
 
         return $query;
@@ -63,7 +70,7 @@ class ExportService
     public function exportFilters(array $input): array
     {
         return collect($input)
-            ->only(['sto_code', 'plant_id', 'location_id', 'user_id', 'material_code', 'lot_number', 'date_from', 'date_to'])
+            ->only(['sto_code', 'plant_id', 'location_id', 'location_name', 'user_id', 'material_code', 'lot_number', 'date_from', 'date_to'])
             ->filter(fn ($value) => $value !== null && $value !== '')
             ->all();
     }

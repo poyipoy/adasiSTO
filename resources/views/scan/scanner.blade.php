@@ -82,6 +82,101 @@
             font-weight: 600;
             white-space: nowrap;
         }
+        .scanner-mode-toggle {
+            display: inline-flex;
+            align-items: center;
+            border: 1px solid var(--border);
+            background: #fff;
+            min-height: 30px;
+        }
+        .scanner-mode-toggle button {
+            border: 0;
+            background: transparent;
+            color: var(--text-secondary);
+            font-size: 11px;
+            font-weight: 700;
+            padding: 0 10px;
+            height: 28px;
+            cursor: pointer;
+        }
+        .scanner-mode-toggle button.active {
+            background: var(--primary);
+            color: #fff;
+        }
+        .select-barcode-shell {
+            position: relative;
+            width: 100%;
+            min-height: 260px;
+            background: #111;
+            overflow: hidden;
+        }
+        .select-barcode-shell video,
+        .select-barcode-shell canvas {
+            width: 100%;
+            min-height: 260px;
+            display: block;
+        }
+        .select-barcode-shell video {
+            object-fit: cover;
+        }
+        .select-barcode-shell canvas {
+            position: absolute;
+            inset: 0;
+            height: 100%;
+            cursor: pointer;
+            z-index: 2;
+        }
+        .select-barcode-tap-layer {
+            position: absolute;
+            inset: 0;
+            z-index: 3;
+            pointer-events: none;
+        }
+        .select-barcode-tap-label {
+            position: absolute;
+            min-height: 30px;
+            max-width: calc(100% - 16px);
+            border: 1px solid rgba(255, 255, 255, 0.9);
+            background: var(--primary);
+            color: #fff;
+            border-radius: 3px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.28);
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: 800;
+            overflow: hidden;
+            padding: 0 8px;
+            pointer-events: auto;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .select-barcode-candidates {
+            display: grid;
+            gap: 6px;
+            padding: 8px;
+            border: 1px solid var(--border-light);
+            border-top: 0;
+            background: #fff;
+        }
+        .select-barcode-candidate {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            min-height: 32px;
+            border: 1px solid var(--border-light);
+            background: #fafbfc;
+            color: var(--primary);
+            font-weight: 700;
+            padding: 0 8px;
+            cursor: pointer;
+        }
+        .select-barcode-empty {
+            color: var(--text-secondary);
+            font-size: 12px;
+            padding: 6px 0;
+            text-align: center;
+        }
         html.is-iframe .recent-main-line {
             display: grid;
             grid-template-columns: 38px max-content;
@@ -145,6 +240,14 @@
             .scan-header .camera-buttons .btn {
                 width: 100%;
                 justify-content: center;
+            }
+            .scanner-mode-toggle {
+                width: 100%;
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+            }
+            .scanner-mode-toggle button {
+                width: 100%;
             }
 
             /* --- QR Input: full-width, save below --- */
@@ -272,6 +375,10 @@
     <div class="card" style="margin-bottom:12px;">
         <div class="scan-header" style="display:flex;justify-content:space-between;gap:8px;align-items:center;margin-bottom:8px;">
             <div class="card-title" style="margin:0;">Scan QR / Barcode</div>
+            <div class="scanner-mode-toggle" role="group" aria-label="Scanner Mode">
+                <button type="button" id="autoScanModeBtn" class="active" onclick="setScannerMode('auto')">Auto Scan</button>
+                <button type="button" id="selectBarcodeModeBtn" onclick="setScannerMode('select')">Select Barcode</button>
+            </div>
             <div class="camera-buttons" style="display:flex;gap:6px;">
                 <button class="btn" type="button" id="showCameraBtn" onclick="showCamera()">Show Camera</button>
                 <button class="btn" type="button" id="hideCameraBtn" onclick="hideCamera()" style="display:none;">Hide
@@ -351,13 +458,22 @@
 
 
     @push('scripts')
-        <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+        <script src="{{ asset('vendor/html5-qrcode/html5-qrcode.min.js') }}"></script>
         <script>
             let pendingQr = '';
             let pendingSource = 'manual';
             let scanningLocked = false;
             let html5Scanner = null;
             let cameraRunning = false;
+            let scannerMode = 'auto';
+            let selectBarcodeDetector = null;
+            let selectBarcodeStream = null;
+            let selectBarcodeVideo = null;
+            let selectBarcodeCanvas = null;
+            let selectBarcodeOverlay = null;
+            let selectBarcodeLoopId = null;
+            let selectBarcodeDetecting = false;
+            let selectBarcodeCandidates = [];
             let currentRecentPage = {{ $recentMeta['page'] }};
             let recentLastPage = {{ max($recentMeta['last_page'], 1) }};
             const initialRecentMeta = @json($recentMeta);
@@ -656,6 +772,24 @@
                 showToast(message, 'error');
             }
 
+            function setScannerMode(mode) {
+                if (!['auto', 'select'].includes(mode) || scannerMode === mode) return;
+
+                const readerVisible = document.getElementById('readerWrap').style.display !== 'none';
+                hideCamera();
+                scannerMode = mode;
+                updateScannerModeButtons();
+
+                if (readerVisible) {
+                    setTimeout(() => showCamera(), 180);
+                }
+            }
+
+            function updateScannerModeButtons() {
+                document.getElementById('autoScanModeBtn')?.classList.toggle('active', scannerMode === 'auto');
+                document.getElementById('selectBarcodeModeBtn')?.classList.toggle('active', scannerMode === 'select');
+            }
+
             function showCamera() {
                 document.getElementById('readerWrap').style.display = 'block';
                 document.getElementById('showCameraBtn').style.display = 'none';
@@ -671,8 +805,13 @@
                     return;
                 }
 
+                if (scannerMode === 'select') {
+                    showSelectBarcodeCamera();
+                    return;
+                }
+
                 if (!window.Html5Qrcode) {
-                    renderCameraError('Library kamera belum tersedia. Periksa koneksi internet atau buka ulang halaman.');
+                    renderCameraError('Library kamera belum tersedia. Periksa asset aplikasi atau buka ulang halaman.');
                     return;
                 }
 
@@ -712,6 +851,7 @@
                 document.getElementById('readerWrap').style.display = 'none';
                 document.getElementById('showCameraBtn').style.display = 'inline-flex';
                 document.getElementById('hideCameraBtn').style.display = 'none';
+                stopSelectBarcodeCamera();
 
                 if (!html5Scanner || !cameraRunning) return;
 
@@ -722,23 +862,260 @@
                 });
             }
 
-            let manualScanTimeout = null;
-            document.getElementById('qrInput').addEventListener('input', event => {
-                const val = event.target.value.trim();
-                // Format QR is `<barcode>|<lot>|<qty>` so it must contain '|'
-                if (val.includes('|') && val.length > 5) {
-                    if (manualScanTimeout) clearTimeout(manualScanTimeout);
-                    manualScanTimeout = setTimeout(() => {
-                        submitScan(false);
-                    }, 200);
+            async function showSelectBarcodeCamera() {
+                if (!('BarcodeDetector' in window)) {
+                    renderCameraError('Browser ini belum mendukung Select Barcode. Mode dikembalikan ke Auto Scan.');
+                    scannerMode = 'auto';
+                    updateScannerModeButtons();
+                    setTimeout(() => showCamera(), 200);
+                    return;
                 }
-            });
+
+                try {
+                    const preferredFormats = ['qr_code', 'code_128', 'code_39', 'code_93', 'codabar', 'ean_13', 'ean_8', 'itf', 'data_matrix'];
+                    let formats = preferredFormats;
+
+                    if (typeof BarcodeDetector.getSupportedFormats === 'function') {
+                        const supportedFormats = await BarcodeDetector.getSupportedFormats();
+                        formats = preferredFormats.filter(format => supportedFormats.includes(format));
+                    }
+
+                    if (!formats.length) {
+                        throw new Error('Tidak ada format barcode yang didukung browser.');
+                    }
+
+                    selectBarcodeDetector = new BarcodeDetector({ formats });
+                    selectBarcodeStream = await navigator.mediaDevices.getUserMedia({
+                        video: { facingMode: { ideal: 'environment' } },
+                        audio: false
+                    });
+
+                    const reader = document.getElementById('reader');
+                    reader.innerHTML = `
+                        <div class="select-barcode-shell">
+                            <video id="selectBarcodeVideo" autoplay muted playsinline></video>
+                            <canvas id="selectBarcodeCanvas"></canvas>
+                            <div id="selectBarcodeOverlay" class="select-barcode-tap-layer"></div>
+                        </div>
+                        <div id="selectBarcodeCandidates" class="select-barcode-candidates">
+                            <div class="select-barcode-empty">Arahkan kamera ke barcode, lalu tap label barcode pada tampilan kamera.</div>
+                        </div>
+                    `;
+
+                    selectBarcodeVideo = document.getElementById('selectBarcodeVideo');
+                    selectBarcodeCanvas = document.getElementById('selectBarcodeCanvas');
+                    selectBarcodeOverlay = document.getElementById('selectBarcodeOverlay');
+                    selectBarcodeVideo.srcObject = selectBarcodeStream;
+                    selectBarcodeCanvas.addEventListener('click', handleSelectBarcodeCanvasClick);
+                    await selectBarcodeVideo.play();
+                    cameraRunning = true;
+                    selectBarcodeTick();
+                } catch (error) {
+                    stopSelectBarcodeCamera();
+                    renderCameraError('Select Barcode tidak tersedia di browser ini. Mode dikembalikan ke Auto Scan.');
+                    scannerMode = 'auto';
+                    updateScannerModeButtons();
+                    setTimeout(() => showCamera(), 200);
+                }
+            }
+
+            function stopSelectBarcodeCamera() {
+                const hadSelectStream = !!selectBarcodeStream;
+
+                if (selectBarcodeLoopId) {
+                    cancelAnimationFrame(selectBarcodeLoopId);
+                    selectBarcodeLoopId = null;
+                }
+
+                if (selectBarcodeStream) {
+                    selectBarcodeStream.getTracks().forEach(track => track.stop());
+                }
+
+                selectBarcodeStream = null;
+                selectBarcodeVideo = null;
+                selectBarcodeCanvas = null;
+                selectBarcodeOverlay = null;
+                selectBarcodeDetector = null;
+                selectBarcodeCandidates = [];
+                selectBarcodeDetecting = false;
+
+                if (hadSelectStream) {
+                    cameraRunning = false;
+                }
+
+                if (hadSelectStream && scannerMode !== 'select') {
+                    const reader = document.getElementById('reader');
+                    if (reader) reader.innerHTML = '';
+                }
+            }
+
+            function selectBarcodeTick() {
+                if (!selectBarcodeStream || !selectBarcodeVideo || !selectBarcodeDetector) return;
+
+                if (selectBarcodeDetecting || selectBarcodeVideo.readyState < 2) {
+                    selectBarcodeLoopId = requestAnimationFrame(selectBarcodeTick);
+                    return;
+                }
+
+                selectBarcodeDetecting = true;
+                selectBarcodeDetector.detect(selectBarcodeVideo)
+                    .then(detections => {
+                        selectBarcodeCandidates = detections
+                            .filter(item => item.rawValue)
+                            .map(item => ({
+                                value: item.rawValue,
+                                box: item.boundingBox || null
+                            }));
+                        drawSelectBarcodeOverlay();
+                        renderSelectBarcodeChoices();
+                    })
+                    .catch(() => {})
+                    .finally(() => {
+                        selectBarcodeDetecting = false;
+                        selectBarcodeLoopId = requestAnimationFrame(selectBarcodeTick);
+                    });
+            }
+
+            function drawSelectBarcodeOverlay() {
+                if (!selectBarcodeCanvas || !selectBarcodeVideo) return;
+
+                const width = selectBarcodeVideo.videoWidth || selectBarcodeVideo.clientWidth || 320;
+                const height = selectBarcodeVideo.videoHeight || selectBarcodeVideo.clientHeight || 240;
+                selectBarcodeCanvas.width = width;
+                selectBarcodeCanvas.height = height;
+
+                const ctx = selectBarcodeCanvas.getContext('2d');
+                ctx.clearRect(0, 0, width, height);
+                ctx.lineWidth = 3;
+                ctx.font = '700 16px Inter, sans-serif';
+
+                selectBarcodeCandidates.forEach((candidate, index) => {
+                    const box = candidate.box || { x: 12, y: 12 + (index * 44), width: Math.min(width - 24, 280), height: 34 };
+
+                    ctx.strokeStyle = '#0b7bd3';
+                    ctx.fillStyle = 'rgba(11, 123, 211, 0.16)';
+                    ctx.strokeRect(box.x, box.y, box.width, box.height);
+                    ctx.fillRect(box.x, box.y, box.width, box.height);
+                });
+            }
+
+            function renderSelectBarcodeChoices() {
+                const hint = document.getElementById('selectBarcodeCandidates');
+
+                const uniqueValues = [...new Set(selectBarcodeCandidates.map(candidate => candidate.value))];
+                renderSelectBarcodeTapLabels(uniqueValues);
+
+                if (!uniqueValues.length) {
+                    if (hint) {
+                        hint.innerHTML = '<div class="select-barcode-empty">Arahkan kamera ke barcode, lalu tap label barcode pada tampilan kamera.</div>';
+                    }
+                    return;
+                }
+
+                if (hint) {
+                    hint.innerHTML = '<div class="select-barcode-empty">Barcode terdeteksi. Tap label barcode langsung pada tampilan kamera.</div>';
+                }
+            }
+
+            function renderSelectBarcodeTapLabels(uniqueValues) {
+                if (!selectBarcodeOverlay || !selectBarcodeCanvas) return;
+
+                if (!uniqueValues.length) {
+                    selectBarcodeOverlay.innerHTML = '';
+                    return;
+                }
+
+                const canvasRect = selectBarcodeCanvas.getBoundingClientRect();
+                const canvasWidth = selectBarcodeCanvas.width || canvasRect.width || 1;
+                const canvasHeight = selectBarcodeCanvas.height || canvasRect.height || 1;
+                const scaleX = canvasRect.width / canvasWidth;
+                const scaleY = canvasRect.height / canvasHeight;
+                const usedValues = new Set();
+
+                selectBarcodeOverlay.innerHTML = selectBarcodeCandidates
+                    .filter(candidate => {
+                        if (usedValues.has(candidate.value)) return false;
+                        usedValues.add(candidate.value);
+                        return uniqueValues.includes(candidate.value);
+                    })
+                    .map((candidate, index) => {
+                        const fallbackBox = {
+                            x: 12,
+                            y: 46 + (index * 40),
+                            width: Math.min(canvasWidth - 24, 280),
+                            height: 34
+                        };
+                        const box = candidate.box || fallbackBox;
+                        const left = Math.max(8, Math.round(box.x * scaleX));
+                        const top = Math.max(8, Math.round((box.y - 34) * scaleY));
+                        const maxWidth = Math.max(96, Math.min(
+                            Math.round((box.width || 180) * scaleX) + 28,
+                            Math.round(canvasRect.width - left - 8)
+                        ));
+
+                        return `
+                            <button
+                                class="select-barcode-tap-label mono"
+                                type="button"
+                                style="left:${left}px;top:${top}px;max-width:${maxWidth}px;"
+                                onclick="selectDetectedBarcode(decodeURIComponent('${encodeURIComponent(candidate.value)}'))">
+                                ${escapeHtml(candidate.value)}
+                            </button>
+                        `;
+                    })
+                    .join('');
+            }
+
+            function handleSelectBarcodeCanvasClick(event) {
+                if (!selectBarcodeCanvas || !selectBarcodeCandidates.length) return;
+
+                const rect = selectBarcodeCanvas.getBoundingClientRect();
+                const x = (event.clientX - rect.left) * (selectBarcodeCanvas.width / rect.width);
+                const y = (event.clientY - rect.top) * (selectBarcodeCanvas.height / rect.height);
+                const selected = selectBarcodeCandidates.find(candidate => {
+                    if (!candidate.box) return false;
+
+                    return x >= candidate.box.x
+                        && x <= candidate.box.x + candidate.box.width
+                        && y >= candidate.box.y - 30
+                        && y <= candidate.box.y + candidate.box.height;
+                });
+
+                if (selected) {
+                    selectDetectedBarcode(selected.value);
+                }
+            }
+
+            function selectDetectedBarcode(value) {
+                if (!value || scanningLocked) return;
+
+                document.getElementById('qrInput').value = value;
+                submitScan(false, value, 'camera-select');
+            }
+
+            let manualScanTimeout = null;
 
             document.getElementById('qrInput').addEventListener('keydown', event => {
                 if (event.key === 'Enter') {
                     event.preventDefault();
                     if (manualScanTimeout) clearTimeout(manualScanTimeout);
                     submitScan(false);
+                }
+            });
+
+            // Global listener untuk Scanner Gun
+            // Jika user men-scan tapi fokus kursor tidak di input box, otomatis pindahkan kursor
+            document.addEventListener('keydown', function(event) {
+                if (document.body.classList.contains('swal2-shown') || scanningLocked) return;
+                
+                const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
+                if (activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select') return;
+                
+                if (event.ctrlKey || event.altKey || event.metaKey) return;
+                
+                const qrInput = document.getElementById('qrInput');
+                if (qrInput && event.key.length === 1) {
+                    qrInput.focus();
                 }
             });
 

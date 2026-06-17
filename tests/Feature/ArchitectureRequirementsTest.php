@@ -216,6 +216,45 @@ class ArchitectureRequirementsTest extends TestCase
             ->assertJsonPath('data.0.status', ExportRequest::STATUS_QUEUED);
     }
 
+    public function test_legacy_export_get_endpoint_queues_request_instead_of_sync_download(): void
+    {
+        Queue::fake();
+        config(['sto.export_disk' => 'public']);
+
+        $response = $this->actingAs($this->admin)
+            ->getJson('/admin/export/scan-results/pdf?sto_code=STO2606');
+
+        $response->assertStatus(202)
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.format', 'pdf')
+            ->assertJsonPath('data.status', ExportRequest::STATUS_QUEUED);
+
+        $exportRequest = ExportRequest::firstOrFail();
+
+        $this->assertSame('pdf', $exportRequest->format);
+        $this->assertSame(ExportRequest::STATUS_QUEUED, $exportRequest->status);
+        $this->assertSame(['sto_code' => 'STO2606'], $exportRequest->filters);
+        Queue::assertPushed(ExportScanResultsJob::class, fn (ExportScanResultsJob $job) => $job->exportRequestId === $exportRequest->id);
+    }
+
+    public function test_legacy_export_get_endpoint_redirects_browser_with_flash_message(): void
+    {
+        Queue::fake();
+
+        $response = $this->actingAs($this->admin)
+            ->get('/admin/export/scan-results/excel');
+
+        $response->assertRedirect();
+        $response->assertSessionHas('success', 'Export sedang diproses. File akan tersedia saat status selesai.');
+        $this->assertDatabaseHas('export_requests', [
+            'user_id' => $this->admin->id,
+            'report' => 'scan_results',
+            'format' => 'excel',
+            'status' => ExportRequest::STATUS_QUEUED,
+        ]);
+        Queue::assertPushed(ExportScanResultsJob::class);
+    }
+
     public function test_export_job_generates_excel_file_and_marks_request_completed(): void
     {
         Storage::fake('local');

@@ -291,11 +291,12 @@ class MasterController extends Controller
     public function storeUser(UpsertUserRequest $request): JsonResponse
     {
         $data = $request->validated();
+        $data['pass'] = $data['password'];
         $data['password'] = Hash::make($data['password']);
         $data['is_active'] = $request->boolean('is_active', true);
 
         $user = User::create($data);
-        $this->activityLog->record($request->user(), 'master.user.created', $user, newValues: $user->makeHidden(['password', 'remember_token'])->toArray());
+        $this->activityLog->record($request->user(), 'master.user.created', $user, newValues: $user->makeHidden(['password', 'pass', 'remember_token'])->toArray());
 
         return $this->success('User berhasil ditambahkan.');
     }
@@ -305,17 +306,19 @@ class MasterController extends Controller
         $data = $request->validated();
 
         if (!empty($data['password'])) {
+            $data['pass'] = $data['password'];
             $data['password'] = Hash::make($data['password']);
         } else {
             unset($data['password']);
+            // Do not unset pass, it just stays the same.
         }
 
         $data['is_active'] = $request->boolean('is_active');
 
         $user = User::findOrFail($id);
-        $oldValues = $user->makeHidden(['password', 'remember_token'])->toArray();
+        $oldValues = $user->makeHidden(['password', 'pass', 'remember_token'])->toArray();
         $user->update($data);
-        $this->activityLog->record($request->user(), 'master.user.updated', $user, $oldValues, $user->fresh()->makeHidden(['password', 'remember_token'])->toArray());
+        $this->activityLog->record($request->user(), 'master.user.updated', $user, $oldValues, $user->fresh()->makeHidden(['password', 'pass', 'remember_token'])->toArray());
 
         return $this->success('User berhasil diperbarui.');
     }

@@ -100,6 +100,8 @@ class ScanService
 
                 $this->logSnapshot($scanResult, $user->id, 'created', newValue: $scanResult->toArray());
                 $this->activityLog->record($user, 'scan.created', $scanResult, newValues: $this->auditValues($scanResult));
+                
+                $this->clearMaterialDoubleValidation($parsed['barcode_material'], $payload['plant_id'], $payload['location_id']);
 
                 return [
                     'success' => true,
@@ -138,11 +140,11 @@ class ScanService
             ->latestFirst();
 
         if (!empty($filters['date_from'])) {
-            $query->whereDate('created_at', '>=', $filters['date_from']);
+            $query->where('created_at', '>=', Carbon::parse($filters['date_from'])->startOfDay());
         }
 
         if (!empty($filters['date_to'])) {
-            $query->whereDate('created_at', '<=', $filters['date_to']);
+            $query->where('created_at', '<=', Carbon::parse($filters['date_to'])->endOfDay());
         }
 
         if (!empty($filters['barcode_material'])) {
@@ -280,6 +282,17 @@ class ScanService
 
             if ($hasChanges) {
                 $this->activityLog->record($admin, 'scan.updated', $scanResult, $oldValues, $newValues);
+                
+                // Jika barcode/plant/location berubah, hapus validasi di kombinasi lama dan baru
+                if (
+                    $oldValues['barcode_material'] !== $newValues['barcode_material'] ||
+                    $oldValues['plant_id'] !== $newValues['plant_id'] ||
+                    $oldValues['location_id'] !== $newValues['location_id']
+                ) {
+                    $this->clearMaterialDoubleValidation($oldValues['barcode_material'], $oldValues['plant_id'], $oldValues['location_id']);
+                }
+                
+                $this->clearMaterialDoubleValidation($newValues['barcode_material'], $newValues['plant_id'], $newValues['location_id']);
             }
 
             return $scanResult->refresh();
@@ -313,6 +326,8 @@ class ScanService
 
             $this->logSnapshot($scanResult, $admin->id, 'created', newValue: $scanResult->toArray());
             $this->activityLog->record($admin, 'scan.created', $scanResult, newValues: $this->auditValues($scanResult));
+            
+            $this->clearMaterialDoubleValidation($barcodeMaterial, $payload['plant_id'], $location->id);
 
             return $scanResult;
         });
@@ -320,6 +335,91 @@ class ScanService
         return [
             'success' => true,
             'message' => 'Data scan berhasil ditambahkan.',
+            'data' => $this->serializeScan($scanResult->load(['user', 'plant', 'location'])),
+        ];
+    }
+
+    public function storeMaterialDoubleScan(User $admin, array $payload): array
+    {
+        $activeSto = $this->activeStoService->active();
+
+        if (!$activeSto) {
+            return [
+                'success' => false,
+                'status' => 422,
+                'message' => ActiveStoService::NO_ACTIVE_STO_MESSAGE,
+            ];
+        }
+
+        $parsed = $this->barcodeParser->parse($payload['qr']);
+
+        if (!$parsed['valid']) {
+            return [
+                'success' => false,
+                'status' => 422,
+                'message' => $parsed['message'],
+            ];
+        }
+
+        $expectedBarcode = strtoupper(trim($payload['barcode_material']));
+        if ($parsed['barcode_material'] !== $expectedBarcode) {
+            return [
+                'success' => false,
+                'status' => 422,
+                'message' => 'QR yang discan tidak sesuai dengan barcode material pada baris Material Double.',
+            ];
+        }
+
+        if ($this->isDuplicate($parsed['barcode_material'], $activeSto->code, $payload['plant_id'], $payload['location_id']) && empty($payload['force_save'])) {
+            return [
+                'success' => false,
+                'status' => 409,
+                'duplicate' => true,
+                'message' => "Barcode {$parsed['barcode_material']} (Material: {$parsed['material_name']}, Qty: {$parsed['qty']}) sudah pernah discan sebelumnya. Tetap simpan?",
+            ];
+        }
+
+        $scanResult = DB::transaction(function () use ($admin, $payload, $activeSto, $parsed) {
+            $location = Location::query()
+                ->whereKey($payload['location_id'])
+                ->where('plant_id', $payload['plant_id'])
+                ->firstOrFail();
+
+            $shapeCode = $parsed['shape_code'];
+
+            $scanResult = ScanResult::create([
+                'user_id' => $admin->id,
+                'sto_code_id' => $activeSto->id,
+                'plant_id' => $payload['plant_id'],
+                'location_id' => $location->id,
+                'sto_code' => $activeSto->code,
+                'barcode_raw' => $payload['qr'],
+                'barcode_material' => $parsed['barcode_material'],
+                'lot_number' => $parsed['lot_number'],
+                'qty' => $parsed['qty'],
+                'material_code' => $parsed['material_code'],
+                'material_name' => $parsed['material_name'],
+                'shape_code' => $shapeCode,
+                'shape_name' => $parsed['shape_name'],
+                'thickness' => $shapeCode === 'RF' ? $parsed['thickness'] : null,
+                'width' => $shapeCode === 'RF' ? $parsed['width'] : null,
+                'diameter' => $shapeCode === 'RR' ? $parsed['diameter'] : null,
+                'length' => $parsed['length'],
+                'keterangan' => $this->defaultKeterangan(),
+                'scan_source' => $payload['scan_source'] ?? 'manual',
+            ]);
+
+            $this->logSnapshot($scanResult, $admin->id, 'created', newValue: $scanResult->toArray());
+            $this->activityLog->record($admin, 'scan.created', $scanResult, newValues: $this->auditValues($scanResult));
+            
+            $this->clearMaterialDoubleValidation($parsed['barcode_material'], $payload['plant_id'], $location->id);
+
+            return $scanResult;
+        });
+
+        return [
+            'success' => true,
+            'message' => 'Scan Material Double berhasil disimpan.',
             'data' => $this->serializeScan($scanResult->load(['user', 'plant', 'location'])),
         ];
     }
@@ -473,5 +573,14 @@ class ScanService
     private function defaultKeterangan(): string
     {
         return (string) config('sto.default_keterangan', 'OK');
+    }
+
+    private function clearMaterialDoubleValidation(string $barcodeMaterial, int $plantId, int $locationId): void
+    {
+        \App\Models\MaterialDoubleValidation::query()
+            ->where('barcode_material', strtoupper(trim($barcodeMaterial)))
+            ->where('plant_id', $plantId)
+            ->where('location_id', $locationId)
+            ->delete();
     }
 }

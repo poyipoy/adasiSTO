@@ -81,7 +81,9 @@ class ScanResult extends Model
 
     public function scopeToday($query)
     {
-        return $query->whereDate('created_at', today());
+        return $query
+            ->where('created_at', '>=', now()->startOfDay())
+            ->where('created_at', '<=', now()->endOfDay());
     }
 
     public function getSizeAttribute(): string

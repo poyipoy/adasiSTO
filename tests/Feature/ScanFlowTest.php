@@ -484,6 +484,10 @@ class ScanFlowTest extends TestCase
 
         $response->assertOk()
             ->assertSee('<span class="recent-number">2</span>', false)
+            ->assertSee('Auto Scan')
+            ->assertSee('Select Barcode')
+            ->assertSee('BarcodeDetector')
+            ->assertSee('tap label barcode')
             ->assertSee('recent-action-meta', false)
             ->assertSee('CT01 &bull; ' . $newerAt->format('H:i:s'), false)
             ->assertSeeInOrder([
@@ -907,11 +911,18 @@ class ScanFlowTest extends TestCase
             ]);
 
         $delete->assertOk()
-            ->assertJsonPath('deleted_count', 1);
+            ->assertJsonPath('deleted_count', 1)
+            ->assertJsonPath('message', 'Data duplicate terpilih berhasil dihapus dan duplicate QR berhasil diverifikasi.');
 
         $this->assertDatabaseMissing('scan_results', ['id' => $targetOne->id]);
         $this->assertDatabaseHas('scan_results', ['id' => $targetTwo->id]);
         $this->assertDatabaseHas('scan_results', ['id' => $otherGroup->id]);
+        $this->assertDatabaseHas('material_double_validations', [
+            'barcode_material' => 'RF1H059-00960099B',
+            'plant_id' => $this->plant->id,
+            'location_id' => $this->location->id,
+            'validated_by' => $this->admin->id,
+        ]);
         $this->assertDatabaseHas('scan_result_logs', [
             'scan_result_id' => $targetOne->id,
             'user_id' => $this->admin->id,
@@ -937,6 +948,77 @@ class ScanFlowTest extends TestCase
             ->assertJsonPath('success', false);
 
         $this->assertDatabaseHas('scan_results', ['id' => $other->id]);
+    }
+
+    public function test_material_double_scan_returns_duplicate_warning_then_force_save_creates_admin_scan(): void
+    {
+        $this->createScan($this->scanner, 'RF1H059-00960099B|LOT001|1');
+        $this->createScan($this->scanner, 'RF1H059-00960099B|LOT002|1');
+
+        $payload = [
+            'barcode_material' => 'RF1H059-00960099B',
+            'plant_id' => $this->plant->id,
+            'location_id' => $this->location->id,
+            'qr' => 'RF1H059-00960099B|LOT003|1',
+        ];
+
+        $warning = $this->actingAs($this->admin)
+            ->postJson('/admin/api/material-double/scan', $payload);
+
+        $warning->assertStatus(409)
+            ->assertJsonPath('duplicate', true);
+
+        $created = $this->actingAs($this->admin)
+            ->postJson('/admin/api/material-double/scan', array_merge($payload, ['force_save' => true]));
+
+        $created->assertStatus(201)
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.user_id', $this->admin->id)
+            ->assertJsonPath('data.plant_id', $this->plant->id)
+            ->assertJsonPath('data.location_id', $this->location->id)
+            ->assertJsonPath('data.scan_source', 'material_double_scan');
+
+        $scan = ScanResult::query()
+            ->where('user_id', $this->admin->id)
+            ->where('lot_number', 'LOT003')
+            ->firstOrFail();
+
+        $this->assertSame($this->stoCode->id, $scan->sto_code_id);
+        $this->assertDatabaseHas('scan_result_logs', [
+            'scan_result_id' => $scan->id,
+            'user_id' => $this->admin->id,
+            'action' => 'created',
+        ]);
+    }
+
+    public function test_material_double_scan_rejects_invalid_unknown_or_mismatched_qr(): void
+    {
+        $basePayload = [
+            'barcode_material' => 'RF1H059-00960099B',
+            'plant_id' => $this->plant->id,
+            'location_id' => $this->location->id,
+        ];
+
+        $this->actingAs($this->admin)
+            ->postJson('/admin/api/material-double/scan', array_merge($basePayload, [
+                'qr' => 'invalid',
+            ]))
+            ->assertStatus(422)
+            ->assertJsonPath('success', false);
+
+        $this->actingAs($this->admin)
+            ->postJson('/admin/api/material-double/scan', array_merge($basePayload, [
+                'qr' => 'RF9Z059-00960099B|LOT001|1',
+            ]))
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'Kode material tidak ditemukan di Master Material.');
+
+        $this->actingAs($this->admin)
+            ->postJson('/admin/api/material-double/scan', array_merge($basePayload, [
+                'qr' => 'RF1H060-00960098B|LOT001|1',
+            ]))
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'QR yang discan tidak sesuai dengan barcode material pada baris Material Double.');
     }
 
     public function test_master_datatable_clamps_length_and_negative_start(): void

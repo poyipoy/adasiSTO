@@ -41,6 +41,8 @@ master_materials
 master_keterangan
 scan_results
 scan_result_logs
+export_requests
+material_double_validations
 ```
 
 Optional:

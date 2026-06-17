@@ -9,13 +9,12 @@
     <link rel="icon" type="image/png" href="{{ asset('assets/images/logo-adasi.png') }}?v=2">
     <link rel="shortcut icon" type="image/png" href="{{ asset('assets/images/logo-adasi.png') }}?v=2">
     <link rel="apple-touch-icon" href="{{ asset('assets/images/logo-adasi.png') }}?v=2">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.7/css/jquery.dataTables.min.css">
+    <link rel="stylesheet" href="{{ asset('vendor/@fontsource/inter/index.css') }}">
+    <link rel="stylesheet" href="{{ asset('vendor/datatables/jquery.dataTables.min.css') }}">
+    <link rel="stylesheet" href="{{ asset('vendor/sweetalert2/sweetalert2.min.css') }}">
     <link rel="stylesheet" href="{{ asset('assets/css/adasi-splash.css') }}">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="{{ asset('vendor/chartjs/chart.umd.min.js') }}"></script>
+    <script src="{{ asset('vendor/sweetalert2/sweetalert2.all.min.js') }}"></script>
     <script>
         if (window.self !== window.top) {
             document.documentElement.classList.add('is-iframe');
@@ -832,6 +831,53 @@
             box-shadow: 0 0 0 1px rgba(0, 114, 206, 0.15);
         }
 
+        /* --- Inline Edit Styles --- */
+        .inline-edit-wrap {
+            padding: 12px;
+            background: #f8fafc;
+            border-top: 1px solid var(--primary);
+            border-bottom: 1px solid var(--primary);
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .inline-edit-grid {
+            display: grid;
+            gap: 12px;
+        }
+
+        .ie-field {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .ie-field label {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--primary);
+        }
+
+        .ie-field input,
+        .ie-field select {
+            width: 100%;
+            height: 30px;
+            padding: 4px 8px;
+            font-size: 12px;
+            border: 1px solid var(--border);
+            border-radius: 2px;
+            background: #fff;
+        }
+
+        .inline-edit-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            padding-top: 8px;
+            border-top: 1px dashed var(--border);
+        }
+
         .table-container {
             background: var(--surface);
             border: 1px solid var(--border);
@@ -1206,6 +1252,102 @@
                 padding: 6px 8px;
                 font-size: 13px;
                 min-height: 36px;
+            }
+
+            /* --- Sidebar collapsed override for mobile --- */
+            body.sidebar-collapsed .main-wrapper {
+                margin-left: 0 !important;
+            }
+
+            /* --- Enterprise toolbar: stack vertically --- */
+            .enterprise-toolbar {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 8px;
+                padding: 12px;
+            }
+
+            .enterprise-toolbar .btn {
+                width: 100%;
+                justify-content: center;
+            }
+
+            .enterprise-toolbar .toolbar-sep {
+                display: none;
+            }
+
+            /* --- Filter card: stack filter items vertically --- */
+            .card > div[style*="width:130px"],
+            .card > div[style*="width:150px"],
+            .card > div[style*="width:120px"] {
+                width: 100% !important;
+            }
+
+            .card[style*="display:flex"],
+            .card[style*="display: flex"] {
+                flex-direction: column !important;
+                gap: 10px !important;
+            }
+
+            /* --- Table: horizontal scroll --- */
+            .table-container {
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+            }
+
+            .table-enterprise {
+                min-width: 600px;
+            }
+
+            /* --- Wide modals: full width on mobile --- */
+            .material-double-modal,
+            .material-double-scan-modal {
+                width: calc(100vw - 24px) !important;
+                max-width: calc(100vw - 24px) !important;
+            }
+
+            .modal-content {
+                max-height: 85vh;
+                overflow-y: auto;
+            }
+
+            /* --- DataTables filter/info: stack vertically --- */
+            .dataTables_wrapper .dataTables_length,
+            .dataTables_wrapper .dataTables_filter {
+                float: none !important;
+                text-align: left !important;
+                width: 100%;
+            }
+
+            .dataTables_wrapper .dataTables_filter input {
+                width: 100% !important;
+                max-width: 100% !important;
+            }
+
+            .dataTables_wrapper .dataTables_info,
+            .dataTables_wrapper .dataTables_paginate {
+                float: none !important;
+                text-align: center !important;
+                padding: 8px 10px;
+            }
+
+            .dataTables_wrapper .dataTables_paginate .paginate_button {
+                padding: 6px 10px !important;
+                margin: 2px !important;
+            }
+
+            /* --- Inline Edit responsive --- */
+            .inline-edit-grid {
+                grid-template-columns: 1fr !important;
+            }
+
+            .inline-edit-actions {
+                flex-direction: column;
+            }
+
+            .inline-edit-actions .btn {
+                width: 100%;
+                justify-content: center;
             }
         }
 
@@ -1588,9 +1730,8 @@
 
     <div class="toast-container" id="toastContainer"></div>
 
-    <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
-    <script src="https://cdn.datatables.net/1.13.7/js/jquery.dataTables.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="{{ asset('vendor/jquery/jquery.min.js') }}"></script>
+    <script src="{{ asset('vendor/datatables/jquery.dataTables.min.js') }}"></script>
     <script>
         const csrfToken = document.querySelector('meta[name="csrf-token"]').content;
 

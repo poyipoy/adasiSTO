@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers\Admin;
 
-use App\Exports\ScanResultsExport;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\AdminUpsertScanResultRequest;
 use App\Models\ExportRequest;
@@ -16,13 +15,14 @@ use App\Models\User;
 use App\Services\ActivityLogService;
 use App\Services\ExportService;
 use App\Services\ScanService;
+use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
-use Maatwebsite\Excel\Facades\Excel;
 use Throwable;
 
 class DashboardController extends Controller
@@ -36,11 +36,13 @@ class DashboardController extends Controller
     public function index(Request $request): View
     {
         $baseQuery = $this->dashboardScanQuery($request);
+        $todayStart = now()->startOfDay();
+        $todayEnd = now()->endOfDay();
+        $monthStart = now()->startOfMonth();
+        $monthEnd = now()->endOfMonth();
 
-        $totalScanToday = (clone $baseQuery)->today()->count();
-        $totalScanMonth = (clone $baseQuery)->whereYear('created_at', now()->year)
-            ->whereMonth('created_at', now()->month)
-            ->count();
+        $totalScanToday = (clone $baseQuery)->whereBetween('created_at', [$todayStart, $todayEnd])->count();
+        $totalScanMonth = (clone $baseQuery)->whereBetween('created_at', [$monthStart, $monthEnd])->count();
         $totalValid = (clone $baseQuery)->where('keterangan', 'OK')->count();
         $totalInvalid = (clone $baseQuery)->where('keterangan', '!=', 'OK')->count();
         
@@ -66,7 +68,7 @@ class DashboardController extends Controller
             ->map(fn ($item) => ['id' => $item->plant_id, 'name' => $item->plant->name ?? 'Unknown', 'total' => $item->total]);
 
         $scanPerDay = (clone $baseQuery)->selectRaw('DATE(created_at) as date, COUNT(*) as total')
-            ->where('created_at', '>=', now()->subDays(7))
+            ->where('created_at', '>=', now()->subDays(6)->startOfDay())
             ->groupBy('date')
             ->orderBy('date')
             ->get()
@@ -156,7 +158,7 @@ class DashboardController extends Controller
 
         return view('admin.scan-results', [
             'plants' => Plant::active()->orderBy('name')->limit($filterLimit)->get(),
-            'locations' => Location::active()->with(['user', 'plant'])->orderBy('name')->limit($filterLimit)->get(),
+            'locations' => Location::active()->select('name')->distinct()->orderBy('name')->limit($filterLimit)->get(),
             'users' => User::where('role', 'scanner')->where('is_active', true)->orderBy('name')->limit($filterLimit)->get(),
             'materials' => MasterMaterial::active()->orderBy('material_code')->limit($filterLimit)->get(),
             'keteranganList' => MasterKeterangan::active()->orderBy('name')->pluck('name'),
@@ -174,11 +176,11 @@ class DashboardController extends Controller
         }
 
         if ($request->filled('date_from')) {
-            $query->where('created_at', '>=', $request->input('date_from') . ' 00:00:00');
+            $query->where('created_at', '>=', Carbon::parse($request->input('date_from'))->startOfDay());
         }
 
         if ($request->filled('date_to')) {
-            $query->where('created_at', '<=', $request->input('date_to') . ' 23:59:59');
+            $query->where('created_at', '<=', Carbon::parse($request->input('date_to'))->endOfDay());
         }
 
         return $query;
@@ -412,36 +414,26 @@ class DashboardController extends Controller
         ]);
     }
 
-    public function exportExcel(Request $request)
+    public function exportExcel(Request $request): JsonResponse|RedirectResponse
     {
-        $filters = $this->exportService->exportFilters($request->all());
-        $filename = 'STO_Scan_Results_' . now()->format('Ymd_His') . '.xlsx';
-
-        $this->activityLog->record($request->user(), 'export.scan_results.requested', metadata: [
-            'format' => 'excel',
-            'filters' => $filters,
-        ]);
-
-        try {
-            return Excel::download(new ScanResultsExport($filters), $filename);
-        } catch (Throwable $exception) {
-            Log::error('Scan export failed', [
-                'user_id' => $request->user()?->id,
-                'format' => 'excel',
-                'exception' => $exception::class,
-            ]);
-
-            $this->activityLog->record($request->user(), 'export.scan_results.failed', metadata: [
-                'format' => 'excel',
-                'filters' => $filters,
-                'exception' => $exception::class,
-            ]);
-
-            throw $exception;
-        }
+        return $this->queueLegacyExport($request, 'excel');
     }
 
     public function queueExport(Request $request, string $format): JsonResponse
+    {
+        $response = $this->queueExportRequest($request, $format, redirectForBrowser: false);
+
+        if ($response instanceof JsonResponse) {
+            return $response;
+        }
+
+        return response()->json([
+            'success' => false,
+            'message' => 'Export gagal dimulai.',
+        ], 500);
+    }
+
+    private function queueExportRequest(Request $request, string $format, bool $redirectForBrowser = true): JsonResponse|RedirectResponse
     {
         try {
             $exportRequest = $this->exportService->queueScanResultsExport($request->user(), $format, $request->all());
@@ -452,16 +444,20 @@ class DashboardController extends Controller
                 'async' => true,
             ]);
 
-            return response()->json([
+            $payload = [
                 'success' => true,
                 'message' => 'Export sedang diproses. File akan tersedia saat status selesai.',
                 'data' => $this->exportService->serializeExportRequest($exportRequest),
-            ], 202);
+            ];
+
+            return $this->exportResponse($request, $payload, 202, $redirectForBrowser);
         } catch (\InvalidArgumentException $exception) {
-            return response()->json([
+            $payload = [
                 'success' => false,
                 'message' => $exception->getMessage(),
-            ], 422);
+            ];
+
+            return $this->exportResponse($request, $payload, 422, $redirectForBrowser, flashKey: 'error');
         } catch (Throwable $exception) {
             Log::error('Async scan export queue failed', [
                 'user_id' => $request->user()?->id,
@@ -476,11 +472,32 @@ class DashboardController extends Controller
                 'exception' => $exception::class,
             ]);
 
-            return response()->json([
+            $payload = [
                 'success' => false,
                 'message' => 'Export gagal dimulai.',
-            ], 500);
+            ];
+
+            return $this->exportResponse($request, $payload, 500, $redirectForBrowser, flashKey: 'error');
         }
+    }
+
+    private function queueLegacyExport(Request $request, string $format): JsonResponse|RedirectResponse
+    {
+        return $this->queueExportRequest($request, $format);
+    }
+
+    private function exportResponse(
+        Request $request,
+        array $payload,
+        int $status,
+        bool $redirectForBrowser,
+        string $flashKey = 'success'
+    ): JsonResponse|RedirectResponse {
+        if (!$redirectForBrowser || $request->expectsJson() || $request->ajax()) {
+            return response()->json($payload, $status);
+        }
+
+        return back()->with($flashKey, $payload['message']);
     }
 
     public function exportStatus(Request $request): JsonResponse
@@ -509,45 +526,8 @@ class DashboardController extends Controller
         );
     }
 
-    public function exportPdf(Request $request)
+    public function exportPdf(Request $request): JsonResponse|RedirectResponse
     {
-        $filters = $this->exportService->exportFilters($request->all());
-        $filename = 'STO_Scan_Results_' . now()->format('Ymd_His') . '.pdf';
-
-        $this->activityLog->record($request->user(), 'export.scan_results.requested', metadata: [
-            'format' => 'pdf',
-            'filters' => $filters,
-        ]);
-
-        try {
-            $rows = $this->exportService->filteredScanResults($filters)
-                ->limit((int) config('sto.export_pdf_row_limit', 5000))
-                ->get();
-
-            if (class_exists(\Barryvdh\DomPDF\Facade\Pdf::class)) {
-                $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('exports.scan-results-pdf', compact('rows', 'filters'))
-                    ->setPaper('a4', 'landscape');
-
-                return $pdf->download($filename);
-            }
-
-            return response()
-                ->view('exports.scan-results-pdf', compact('rows', 'filters'))
-                ->header('Content-Type', 'text/html');
-        } catch (Throwable $exception) {
-            Log::error('Scan export failed', [
-                'user_id' => $request->user()?->id,
-                'format' => 'pdf',
-                'exception' => $exception::class,
-            ]);
-
-            $this->activityLog->record($request->user(), 'export.scan_results.failed', metadata: [
-                'format' => 'pdf',
-                'filters' => $filters,
-                'exception' => $exception::class,
-            ]);
-
-            throw $exception;
-        }
+        return $this->queueLegacyExport($request, 'pdf');
     }
 }
