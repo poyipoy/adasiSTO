@@ -23,6 +23,7 @@ class UpsertUserRequest extends FormRequest
             'password' => $passwordRules,
             'role' => ['required', 'string', Rule::in(['admin', 'scanner'])],
             'is_active' => ['sometimes', 'boolean'],
+            'is_validator' => ['sometimes', 'boolean'],
         ];
     }
 }

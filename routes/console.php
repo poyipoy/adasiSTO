@@ -15,3 +15,8 @@ use Illuminate\Support\Facades\Schedule;
 Schedule::command('queue:work --stop-when-empty')
     ->everyMinute()
     ->withoutOverlapping();
+
+// Jadwal untuk menghapus data export lama (beserta filenya)
+Schedule::command('model:prune', [
+    '--model' => [\App\Models\ExportRequest::class],
+])->daily();

@@ -16,6 +16,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->alias([
             'role' => \App\Http\Middleware\RoleMiddleware::class,
+            'material-double-access' => \App\Http\Middleware\MaterialDoubleAccessMiddleware::class,
         ]);
 
         $middleware->redirectUsersTo(function (Request $request): string {

@@ -6,17 +6,20 @@ use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
-class AdminMiddleware
+class MaterialDoubleAccessMiddleware
 {
     public function handle(Request $request, Closure $next): Response
     {
-        if (!auth()->check() || !auth()->user()->isAdmin()) {
+        $user = $request->user();
+
+        if (!$user || !$user->is_active || !$user->canAccessMaterialDouble()) {
             if ($request->expectsJson()) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Anda tidak memiliki akses.',
                 ], 403);
             }
+
             abort(403, 'Anda tidak memiliki akses.');
         }
 

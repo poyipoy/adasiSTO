@@ -81,6 +81,57 @@
         white-space: nowrap;
     }
 
+    .inline-switch {
+        align-items: center;
+        display: inline-flex;
+        gap: 6px;
+        min-height: 26px;
+    }
+
+    .inline-switch input {
+        height: 0;
+        opacity: 0;
+        position: absolute;
+        width: 0;
+    }
+
+    .inline-switch-track {
+        background: #cbd5e1;
+        border-radius: 999px;
+        cursor: pointer;
+        height: 20px;
+        position: relative;
+        transition: background 0.18s ease;
+        width: 38px;
+    }
+
+    .inline-switch-track::after {
+        background: #fff;
+        border-radius: 50%;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+        content: '';
+        height: 16px;
+        left: 2px;
+        position: absolute;
+        top: 2px;
+        transition: transform 0.18s ease;
+        width: 16px;
+    }
+
+    .inline-switch input:checked + .inline-switch-track {
+        background: var(--primary);
+    }
+
+    .inline-switch input:checked + .inline-switch-track::after {
+        transform: translateX(18px);
+    }
+
+    .inline-switch-label {
+        color: var(--text-secondary);
+        font-size: 11px;
+        font-weight: 700;
+    }
+
     .inline-editor-error {
         display: none;
         background: #fff7f7;
@@ -146,6 +197,9 @@
                         if (column.type === 'status') {
                             return `<span class="badge ${value ? 'badge-valid' : 'badge-invalid'}">${value ? 'Active' : 'Inactive'}</span>`;
                         }
+                        if (column.type === 'boolean') {
+                            return `<span class="badge ${value ? 'badge-valid' : 'badge-invalid'}">${value ? 'On' : 'Off'}</span>`;
+                        }
                         return escapeHtml(value ?? '-');
                     }
                 })),
@@ -154,7 +208,14 @@
                     orderable: false,
                     render: function(row) {
                         window.masterRows[row.id] = row;
-                        const activate = activateBase ? `<button class="btn-icon" type="button" onclick="activateRecord(${row.id})">Activate</button>` : '';
+                        let activate = '';
+                        if (activateBase) {
+                            if (row.is_active) {
+                                activate = `<button class="btn-icon" style="color:var(--danger);" type="button" onclick="deactivateRecord(${row.id})">Nonaktifkan</button>`;
+                            } else {
+                                activate = `<button class="btn-icon" type="button" onclick="activateRecord(${row.id})">Aktifkan</button>`;
+                            }
+                        }
                         return `<div style="display:flex;gap:4px;">${activate}<button class="btn-icon js-row-edit" type="button" data-id="${row.id}" onclick="openEdit(${row.id})">Edit</button><button class="btn-icon js-row-delete" style="color:var(--danger);" type="button" onclick="deleteRecord(${row.id})">Delete</button></div>`;
                     }
                 }
@@ -199,6 +260,7 @@
         tbody.prepend(mainRow);
         activeEditor = { mode: 'create', id: null, mainRow, originalPayload: payloadSnapshot(createData) };
         attachInlineEvents();
+        applyValidatorRoleState(mainRow[0]);
         focusFirstInput();
     }
 
@@ -220,6 +282,7 @@
         parentRow.after(mainRow);
         activeEditor = { mode: 'edit', id, mainRow, originalPayload: payloadSnapshot(normalized) };
         attachInlineEvents();
+        applyValidatorRoleState(mainRow[0]);
         focusFirstInput();
     }
 
@@ -274,8 +337,10 @@
         if (!activeEditor) return {};
         const data = {};
         activeEditor.mainRow.find('.inline-field').each(function() {
-            data[this.dataset.field] = this.value;
+            if (this.disabled && this.dataset.field !== 'is_validator') return;
+            data[this.dataset.field] = this.type === 'checkbox' ? (this.checked ? '1' : '0') : this.value;
         });
+        normalizeValidatorForRole(data);
         return data;
     }
 
@@ -290,17 +355,27 @@
     function defaultCreateData() {
         const data = {};
         fields.forEach(field => {
-            if (field.type === 'checkbox') data[field.name] = 1;
+            if (field.hasOwnProperty('default')) data[field.name] = field.default;
+            else if (field.type === 'checkbox') data[field.name] = 1;
+            else if (field.type === 'switch') data[field.name] = 0;
             else if (field.name === 'role') data[field.name] = 'scanner';
             else data[field.name] = '';
         });
         return data;
     }
 
+    function normalizeValidatorForRole(data) {
+        if (data.role === 'admin' && Object.prototype.hasOwnProperty.call(data, 'is_validator')) {
+            data.is_validator = '1';
+        }
+
+        return data;
+    }
+
     function normalizeRow(row) {
         const data = {};
         fields.forEach(field => {
-            if (field.type === 'checkbox') {
+            if (field.type === 'checkbox' || field.type === 'switch') {
                 data[field.name] = row[field.name] ? 1 : 0;
             } else if (field.name === 'password') {
                 data[field.name] = '';
@@ -361,7 +436,16 @@
     function renderField(field, value) {
         if (field.type === 'select') {
             const optionsHtml = field.options.map(opt => `<option value="${escapeAttr(opt.value)}"${String(opt.value) === String(value ?? '') ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`).join('');
-            return `<select class="form-control inline-field inline-select" data-field="${field.name}">${optionsHtml}</select>`;
+            const extra = field.name === 'role' ? ' onchange="handleInlineRoleChange(this)"' : '';
+            return `<select class="form-control inline-field inline-select" data-field="${field.name}"${extra}>${optionsHtml}</select>`;
+        } else if (field.type === 'switch') {
+            const checked = String(value) === '1' || value === true ? ' checked' : '';
+            const label = String(value) === '1' || value === true ? 'On' : 'Off';
+            return `<label class="inline-switch">
+                <input class="inline-field" data-field="${field.name}" type="checkbox" value="1"${checked} onchange="syncInlineSwitchLabel(this);">
+                <span class="inline-switch-track"></span>
+                <span class="inline-switch-label">${label}</span>
+            </label>`;
         } else if (field.type === 'checkbox') {
             // Checkbox mapped to Active/Inactive dropdown
             return `<select class="form-control inline-field inline-select" data-field="${field.name}">
@@ -371,6 +455,29 @@
         } else {
             return `<input class="form-control inline-field inline-input" data-field="${field.name}" type="${field.type}" value="${escapeAttr(value)}" ${field.required ? 'required' : ''}>`;
         }
+    }
+
+    function syncInlineSwitchLabel(input) {
+        input.closest('.inline-switch').querySelector('.inline-switch-label').textContent = input.checked ? 'On' : 'Off';
+    }
+
+    function applyValidatorRoleState(row) {
+        const roleInput = row.querySelector('[data-field="role"]');
+        const validatorInput = row.querySelector('[data-field="is_validator"]');
+        if (!roleInput || !validatorInput) return;
+
+        if (roleInput.value === 'admin') {
+            validatorInput.checked = true;
+            validatorInput.disabled = true;
+        } else {
+            validatorInput.disabled = false;
+        }
+
+        syncInlineSwitchLabel(validatorInput);
+    }
+
+    function handleInlineRoleChange(select) {
+        applyValidatorRoleState(select.closest('tr'));
     }
 
     function escapeHtml(value) {
@@ -439,11 +546,23 @@
     }
 
     function activateRecord(id) {
-        fetch(`${activateBase}/${id}/activate`, { method: 'POST', headers: { Accept: 'application/json' } })
-            .then(r => r.json()).then(response => {
-                if (response.success) { showToast(response.message); masterTable.ajax.reload(null, false); }
-                else showToast(response.message || 'Gagal aktivasi.', 'error');
-            });
+        confirmAction('Aktifkan STO ini?', () => {
+            fetch(`${activateBase}/${id}/activate`, { method: 'POST', headers: { Accept: 'application/json' } })
+                .then(r => r.json()).then(response => {
+                    if (response.success) { showToast(response.message); masterTable.ajax.reload(null, false); }
+                    else showToast(response.message || 'Gagal aktivasi.', 'error');
+                });
+        });
+    }
+
+    function deactivateRecord(id) {
+        confirmAction('Nonaktifkan STO ini?', () => {
+            fetch(`${activateBase}/${id}/deactivate`, { method: 'POST', headers: { Accept: 'application/json' } })
+                .then(r => r.json()).then(response => {
+                    if (response.success) { showToast(response.message); masterTable.ajax.reload(null, false); }
+                    else showToast(response.message || 'Gagal nonaktivasi.', 'error');
+                });
+        });
     }
 
     function deleteRecord(id) {

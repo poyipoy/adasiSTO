@@ -7,16 +7,16 @@
     <a href="{{ route('scan.scanner', [], false) }}" class="btn" id="openScannerTab">Scanner</a>
 </div>
 
-<div class="card" style="border-top:0;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
-    <div style="width:150px;">
+<div class="card filter-panel" style="border-top:0;">
+    <div class="filter-item">
         <label class="form-label">Tanggal Awal</label>
         <input type="date" id="dateFrom" class="form-control">
     </div>
-    <div style="width:150px;">
+    <div class="filter-item">
         <label class="form-label">Tanggal Akhir</label>
         <input type="date" id="dateTo" class="form-control">
     </div>
-    <div style="min-width:180px;flex:1;">
+    <div class="filter-item">
         <label class="form-label">Barcode</label>
         <select id="barcodeFilter" class="form-control">
             <option value="">All</option>
@@ -25,7 +25,7 @@
             @endforeach
         </select>
     </div>
-    <div style="min-width:180px;flex:1;">
+    <div class="filter-item">
         <label class="form-label">Material</label>
         <select id="materialFilter" class="form-control">
             <option value="">All</option>
@@ -34,7 +34,7 @@
             @endforeach
         </select>
     </div>
-    <div style="min-width:160px;flex:1;">
+    <div class="filter-item">
         <label class="form-label">Plant</label>
         <select id="plantFilter" class="form-control">
             <option value="">All</option>
@@ -43,7 +43,7 @@
             @endforeach
         </select>
     </div>
-    <div style="min-width:160px;flex:1;">
+    <div class="filter-item">
         <label class="form-label">Location</label>
         <select id="locationFilter" class="form-control">
             <option value="">All</option>
@@ -52,12 +52,44 @@
             @endforeach
         </select>
     </div>
-    <div style="min-width:220px;flex:1;">
+    <div class="filter-item filter-search">
         <label class="form-label">Search</label>
         <input type="text" id="searchInput" class="form-control" placeholder="Barcode, material, lot">
     </div>
-    <button class="btn btn-primary" type="button" onclick="loadHistory()">Filter</button>
+    <div class="filter-item">
+        <button class="btn btn-primary" style="width: 100%;" type="button" onclick="loadHistory()">Filter</button>
+    </div>
 </div>
+
+@push('styles')
+<style>
+    .filter-panel {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+        gap: 12px;
+        align-items: flex-end;
+    }
+    .filter-search {
+        grid-column: span 2;
+    }
+    @media (max-width: 768px) {
+        .filter-panel {
+            grid-template-columns: 1fr 1fr;
+        }
+        .filter-search {
+            grid-column: span 2;
+        }
+    }
+    @media (max-width: 480px) {
+        .filter-panel {
+            grid-template-columns: 1fr;
+        }
+        .filter-search {
+            grid-column: span 1;
+        }
+    }
+</style>
+@endpush
 
 <div class="table-container" style="border-top:0;">
     <table class="table-enterprise">

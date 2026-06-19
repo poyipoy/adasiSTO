@@ -15,7 +15,7 @@ use App\Models\ScanResult;
 use App\Models\StoCode;
 use App\Models\User;
 use App\Services\ActivityLogService;
-use App\Services\STOService;
+use App\Services\ActiveStoService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -25,7 +25,7 @@ use Illuminate\View\View;
 class MasterController extends Controller
 {
     public function __construct(
-        private STOService $stoService,
+        private ActiveStoService $activeStoService,
         private ActivityLogService $activityLog,
     ) {}
 
@@ -80,7 +80,7 @@ class MasterController extends Controller
         $this->activityLog->record($request->user(), 'master.sto.created', $stoCode, newValues: $stoCode->toArray());
 
         if ($request->boolean('is_active')) {
-            $this->stoService->activate($stoCode, $request->user());
+            $this->activeStoService->activate($stoCode, $request->user());
         }
 
         return $this->success('STO berhasil ditambahkan.');
@@ -95,7 +95,7 @@ class MasterController extends Controller
         $this->activityLog->record($request->user(), 'master.sto.updated', $stoCode, $oldValues, $stoCode->toArray());
 
         if ($request->boolean('is_active')) {
-            $this->stoService->activate($stoCode, $request->user());
+            $this->activeStoService->activate($stoCode, $request->user());
         } elseif ($stoCode->is_active && $request->has('is_active')) {
             $oldActiveValues = $stoCode->toArray();
             $stoCode->update(['is_active' => false]);
@@ -107,9 +107,22 @@ class MasterController extends Controller
 
     public function activateSto(int $id): JsonResponse
     {
-        $this->stoService->activate(StoCode::findOrFail($id), request()->user());
+        $this->activeStoService->activate(StoCode::findOrFail($id), request()->user());
 
         return $this->success('STO berhasil diaktifkan.');
+    }
+
+    public function deactivateSto(int $id): JsonResponse
+    {
+        $stoCode = StoCode::findOrFail($id);
+        
+        if ($stoCode->is_active) {
+            $oldActiveValues = $stoCode->toArray();
+            $stoCode->update(['is_active' => false]);
+            $this->activityLog->record(request()->user(), 'master.sto.updated', $stoCode, $oldActiveValues, $stoCode->fresh()->toArray());
+        }
+
+        return $this->success('STO berhasil dinonaktifkan.');
     }
 
     public function destroySto(int $id): JsonResponse
@@ -283,6 +296,7 @@ class MasterController extends Controller
                 'name' => $user->name,
                 'username' => $user->username,
                 'role' => $user->role,
+                'is_validator' => $user->isValidator(),
                 'is_active' => $user->is_active,
             ]
         );
@@ -294,6 +308,7 @@ class MasterController extends Controller
         $data['pass'] = $data['password'];
         $data['password'] = Hash::make($data['password']);
         $data['is_active'] = $request->boolean('is_active', true);
+        $data['is_validator'] = $data['role'] === 'admin' || ($data['role'] === 'scanner' && $request->boolean('is_validator'));
 
         $user = User::create($data);
         $this->activityLog->record($request->user(), 'master.user.created', $user, newValues: $user->makeHidden(['password', 'pass', 'remember_token'])->toArray());
@@ -314,6 +329,7 @@ class MasterController extends Controller
         }
 
         $data['is_active'] = $request->boolean('is_active');
+        $data['is_validator'] = $data['role'] === 'admin' || ($data['role'] === 'scanner' && $request->boolean('is_validator'));
 
         $user = User::findOrFail($id);
         $oldValues = $user->makeHidden(['password', 'pass', 'remember_token'])->toArray();
@@ -442,6 +458,7 @@ class MasterController extends Controller
                     ['data' => 'name', 'label' => 'Name'],
                     ['data' => 'username', 'label' => 'Username'],
                     ['data' => 'role', 'label' => 'Role'],
+                    ['data' => 'is_validator', 'label' => 'Validator', 'type' => 'boolean'],
                     ['data' => 'is_active', 'label' => 'Status', 'type' => 'status'],
                 ],
                 'fields' => [
@@ -452,7 +469,8 @@ class MasterController extends Controller
                         ['value' => 'admin', 'label' => 'Admin'],
                         ['value' => 'scanner', 'label' => 'Scanner'],
                     ]],
-                    ['name' => 'is_active', 'label' => 'Active', 'type' => 'checkbox'],
+                    ['name' => 'is_validator', 'label' => 'Validator', 'type' => 'switch'],
+                    ['name' => 'is_active', 'label' => 'Active', 'type' => 'switch', 'default' => 1],
                 ],
             ],
         ];

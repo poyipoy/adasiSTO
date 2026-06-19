@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Location;
 use App\Models\MasterKeterangan;
 use App\Models\MasterMaterial;
+use App\Models\MaterialDoubleValidation;
 use App\Models\Plant;
 use App\Models\ScanResult;
 use App\Models\ScanResultLog;
@@ -77,7 +78,6 @@ class ScanFlowTest extends TestCase
             ->assertJsonPath('data.name', 'Rack A1');
 
         $this->assertDatabaseHas('locations', [
-            'user_id' => $this->scanner->id,
             'plant_id' => $this->plant->id,
             'name' => 'Rack A1',
         ]);
@@ -94,12 +94,17 @@ class ScanFlowTest extends TestCase
             ->assertSee('html5-qrcode.min.js', false);
     }
 
-    public function test_location_rack_list_only_shows_current_user_locations(): void
+    public function test_location_rack_list_shows_shared_locations_for_selected_plant(): void
     {
-        $otherLocation = Location::create([
-            'user_id' => $this->otherScanner->id,
+        $sharedLocation = Location::create([
             'plant_id' => $this->plant->id,
             'name' => 'Other Rack',
+            'is_active' => true,
+        ]);
+        $otherPlant = Plant::create(['name' => 'Deltamas', 'is_active' => true]);
+        $otherPlantLocation = Location::create([
+            'plant_id' => $otherPlant->id,
+            'name' => 'Other Plant Rack',
             'is_active' => true,
         ]);
 
@@ -107,14 +112,15 @@ class ScanFlowTest extends TestCase
 
         $response->assertOk()
             ->assertJsonFragment(['id' => $this->location->id, 'name' => 'CT01'])
-            ->assertJsonMissing(['id' => $otherLocation->id, 'name' => 'Other Rack']);
+            ->assertJsonFragment(['id' => $sharedLocation->id, 'name' => 'Other Rack'])
+            ->assertJsonMissing(['id' => $otherPlantLocation->id, 'name' => 'Other Plant Rack']);
     }
 
-    public function test_scanner_cannot_store_scan_using_other_user_location(): void
+    public function test_scanner_cannot_store_scan_using_location_from_different_plant(): void
     {
+        $otherPlant = Plant::create(['name' => 'Deltamas', 'is_active' => true]);
         $otherLocation = Location::create([
-            'user_id' => $this->otherScanner->id,
-            'plant_id' => $this->plant->id,
+            'plant_id' => $otherPlant->id,
             'name' => 'Other Rack',
             'is_active' => true,
         ]);
@@ -129,7 +135,6 @@ class ScanFlowTest extends TestCase
     public function test_scanner_can_delete_own_unused_location_rack(): void
     {
         $location = Location::create([
-            'user_id' => $this->scanner->id,
             'plant_id' => $this->plant->id,
             'name' => 'Temporary Rack',
             'is_active' => true,
@@ -143,19 +148,19 @@ class ScanFlowTest extends TestCase
         $this->assertDatabaseMissing('locations', ['id' => $location->id]);
     }
 
-    public function test_scanner_cannot_delete_other_user_location_rack(): void
+    public function test_scanner_can_delete_unused_shared_location_rack(): void
     {
-        $otherLocation = Location::create([
-            'user_id' => $this->otherScanner->id,
+        $sharedLocation = Location::create([
             'plant_id' => $this->plant->id,
-            'name' => 'Other Rack',
+            'name' => 'Shared Temporary Rack',
             'is_active' => true,
         ]);
 
-        $response = $this->actingAs($this->scanner)->deleteJson("/api/locations/{$otherLocation->id}");
+        $response = $this->actingAs($this->scanner)->deleteJson("/api/locations/{$sharedLocation->id}");
 
-        $response->assertForbidden();
-        $this->assertDatabaseHas('locations', ['id' => $otherLocation->id]);
+        $response->assertOk()
+            ->assertJsonPath('success', true);
+        $this->assertDatabaseMissing('locations', ['id' => $sharedLocation->id]);
     }
 
     public function test_scanner_cannot_delete_location_rack_used_by_scan(): void
@@ -223,7 +228,6 @@ class ScanFlowTest extends TestCase
         $response->assertOk();
         $this->assertDatabaseHas('scan_results', ['id' => $scan->id, 'keterangan' => 'Lot Salah']);
         $this->assertDatabaseHas('locations', [
-            'user_id' => $this->scanner->id,
             'plant_id' => $this->plant->id,
             'name' => 'CT02',
         ]);
@@ -330,7 +334,6 @@ class ScanFlowTest extends TestCase
         ]);
 
         $this->assertDatabaseHas('locations', [
-            'user_id' => $this->otherScanner->id,
             'plant_id' => $this->plant->id,
             'name' => 'Round Rack',
         ]);
@@ -672,6 +675,101 @@ class ScanFlowTest extends TestCase
             ->assertDontSee('Surabaya');
     }
 
+    public function test_scanner_material_summary_is_role_aware(): void
+    {
+        $validator = User::factory()->validator()->create();
+        $validatorLocation = Location::create([
+            'user_id' => $validator->id,
+            'plant_id' => $this->plant->id,
+            'name' => 'Validator Rack',
+            'is_active' => true,
+        ]);
+
+        $this->createScan($this->scanner, 'RF1H059-00960099B|LOT001|1');
+        $this->createScan($this->otherScanner, 'RR2P051-00000835B|LOT002|1', [
+            'material_code' => '2P',
+            'material_name' => 'SKD61',
+            'shape_code' => 'RR',
+            'shape_name' => 'Round',
+            'thickness' => null,
+            'width' => null,
+            'diameter' => 51,
+            'length' => 835,
+        ]);
+        $this->createScan($validator, 'RF1H060-00960098B|LOT003|1', [
+            'location_id' => $validatorLocation->id,
+        ]);
+
+        $scannerResponse = $this->actingAs($this->scanner)
+            ->getJson('/api/scan/material-summary?draw=1&start=0&length=25');
+
+        $scannerResponse->assertOk()
+            ->assertJsonFragment(['barcode_material' => 'RF1H059-00960099B'])
+            ->assertJsonMissing(['barcode_material' => 'RR2P051-00000835B'])
+            ->assertJsonMissing(['barcode_material' => 'RF1H060-00960098B']);
+
+        $validatorResponse = $this->actingAs($validator)
+            ->getJson('/api/scan/material-summary?draw=1&start=0&length=25');
+
+        $validatorResponse->assertOk()
+            ->assertJsonFragment(['barcode_material' => 'RF1H059-00960099B'])
+            ->assertJsonFragment(['barcode_material' => 'RR2P051-00000835B'])
+            ->assertJsonFragment(['barcode_material' => 'RF1H060-00960098B']);
+    }
+
+    public function test_scanner_overview_is_role_aware_and_validator_metrics_follow_material_double_groups(): void
+    {
+        $this->admin->forceFill(['name' => 'Admin Validator'])->save();
+        $validator = User::factory()->validator()->create(['name' => 'Validator One']);
+        $secondLocation = Location::create([
+            'user_id' => $this->scanner->id,
+            'plant_id' => $this->plant->id,
+            'name' => 'CT02',
+            'is_active' => true,
+        ]);
+
+        $this->createScan($this->scanner, 'RF1H059-00960099B|LOT001|1');
+        $this->createScan($this->scanner, 'RF1H059-00960099B|LOT002|1');
+        $this->createScan($this->otherScanner, 'RF1H059-00960099B|LOT003|1', ['location_id' => $secondLocation->id]);
+        $this->createScan($this->otherScanner, 'RF1H059-00960099B|LOT004|1', ['location_id' => $secondLocation->id]);
+
+        MaterialDoubleValidation::create([
+            'barcode_material' => 'RF1H059-00960099B',
+            'plant_id' => $this->plant->id,
+            'location_id' => $this->location->id,
+            'validated_by' => $validator->id,
+            'validated_at' => now(),
+        ]);
+        MaterialDoubleValidation::create([
+            'barcode_material' => 'RF1H059-00960099B',
+            'plant_id' => $this->plant->id,
+            'location_id' => $secondLocation->id,
+            'validated_by' => $this->admin->id,
+            'validated_at' => now(),
+        ]);
+
+        $scannerResponse = $this->actingAs($this->scanner)->getJson('/api/scan/overview');
+
+        $scannerResponse->assertOk()
+            ->assertJsonPath('data.scan_overview.duplicate_scans', 1)
+            ->assertJsonPath('data.validator_overview', null);
+
+        $materialDoubleResponse = $this->actingAs($this->admin)
+            ->getJson('/admin/api/material-double?draw=1&start=0&length=10');
+
+        $materialDoubleResponse->assertOk()
+            ->assertJsonPath('recordsFiltered', 2);
+
+        $validatorResponse = $this->actingAs($validator)->getJson('/api/scan/overview');
+
+        $validatorResponse->assertOk()
+            ->assertJsonPath('data.validator_overview.total_barcode', 2)
+            ->assertJsonPath('data.validator_overview.valid', 2)
+            ->assertJsonPath('data.validator_overview.need_check', 0)
+            ->assertJsonFragment(['name' => 'Validator One', 'total' => 1])
+            ->assertJsonFragment(['name' => 'Admin Validator', 'total' => 1]);
+    }
+
     public function test_duplicate_scan_can_be_saved_as_new_row_if_confirmed(): void
     {
         $this->actingAs($this->scanner)->postJson('/api/scan/store', $this->payload())->assertOk();
@@ -708,8 +806,78 @@ class ScanFlowTest extends TestCase
             ->assertJsonPath('data.0.no', 105);
     }
 
-    public function test_admin_can_open_material_double_page_and_scanner_cannot_access_endpoint(): void
+    public function test_user_management_forces_admin_validator_and_allows_scanner_toggle(): void
     {
+        $this->actingAs($this->admin)
+            ->postJson('/admin/api/users', [
+                'name' => 'Validator Scanner',
+                'username' => 'validator-scanner',
+                'password' => 'password',
+                'role' => 'scanner',
+                'is_active' => true,
+                'is_validator' => true,
+            ])
+            ->assertOk();
+
+        $validator = User::where('username', 'validator-scanner')->firstOrFail();
+        $this->assertTrue($validator->is_validator);
+
+        $this->actingAs($this->admin)
+            ->getJson('/admin/api/users?draw=1&start=0&length=25')
+            ->assertOk()
+            ->assertJsonFragment([
+                'username' => 'validator-scanner',
+                'is_validator' => true,
+            ]);
+
+        $this->actingAs($this->admin)
+            ->postJson('/admin/api/users', [
+                'name' => 'Forced Admin',
+                'username' => 'forced-admin',
+                'password' => 'password',
+                'role' => 'admin',
+                'is_active' => true,
+                'is_validator' => false,
+            ])
+            ->assertOk();
+
+        $forcedAdmin = User::where('username', 'forced-admin')->firstOrFail();
+        $this->assertTrue($forcedAdmin->is_validator);
+        $this->assertTrue($forcedAdmin->isValidator());
+
+        $this->actingAs($this->admin)
+            ->putJson("/admin/api/users/{$validator->id}", [
+                'name' => 'Validator Scanner',
+                'username' => 'validator-scanner',
+                'password' => '',
+                'role' => 'admin',
+                'is_active' => true,
+                'is_validator' => false,
+            ])
+            ->assertOk();
+
+        $this->assertTrue($validator->fresh()->is_validator);
+        $this->assertTrue($validator->fresh()->isValidator());
+
+        $this->actingAs($this->admin)
+            ->putJson("/admin/api/users/{$forcedAdmin->id}", [
+                'name' => 'Forced Admin',
+                'username' => 'forced-admin',
+                'password' => '',
+                'role' => 'scanner',
+                'is_active' => true,
+                'is_validator' => false,
+            ])
+            ->assertOk();
+
+        $this->assertFalse($forcedAdmin->fresh()->is_validator);
+        $this->assertFalse($forcedAdmin->fresh()->isValidator());
+    }
+
+    public function test_admin_and_scanner_validator_can_open_material_double_but_regular_scanner_cannot(): void
+    {
+        $validator = User::factory()->validator()->create();
+
         $this->actingAs($this->admin)
             ->get('/admin/material-double')
             ->assertOk()
@@ -718,6 +886,15 @@ class ScanFlowTest extends TestCase
         $this->actingAs($this->scanner)
             ->getJson('/admin/api/material-double?draw=1&start=0&length=10')
             ->assertForbidden();
+
+        $this->actingAs($validator)
+            ->get('/admin/material-double')
+            ->assertOk()
+            ->assertSee('Material Double');
+
+        $this->actingAs($validator)
+            ->getJson('/admin/api/material-double?draw=1&start=0&length=10')
+            ->assertOk();
     }
 
     public function test_material_double_datatable_only_returns_duplicate_groups_per_qr_plant_location_and_clamps_length(): void
@@ -1110,7 +1287,53 @@ class ScanFlowTest extends TestCase
 
         $response->assertOk()
             ->assertSee('dashboardDataTable')
+            ->assertSee('Validator Overview')
+            ->assertSee('Validation by Validator')
             ->assertDontSee($scan->barcode_material);
+    }
+
+    public function test_admin_dashboard_validator_metrics_follow_dashboard_filters(): void
+    {
+        $this->admin->forceFill(['name' => 'Admin Validator'])->save();
+        $validatorTwo = User::factory()->validator()->create(['name' => 'Validator Two']);
+
+        $includedOne = $this->createScan($this->scanner, 'RF1H059-00960099B|LOT001|1');
+        $includedTwo = $this->createScan($this->scanner, 'RF1H059-00960099B|LOT002|1');
+        $includedOne->forceFill(['created_at' => '2026-06-11 08:00:00', 'updated_at' => '2026-06-11 08:00:00'])->save();
+        $includedTwo->forceFill(['created_at' => '2026-06-11 08:05:00', 'updated_at' => '2026-06-11 08:05:00'])->save();
+
+        $excludedOne = $this->createScan($this->scanner, 'RF1H060-00960098B|LOT003|1');
+        $excludedTwo = $this->createScan($this->scanner, 'RF1H060-00960098B|LOT004|1');
+        $excludedOne->forceFill(['created_at' => '2026-06-12 08:00:00', 'updated_at' => '2026-06-12 08:00:00'])->save();
+        $excludedTwo->forceFill(['created_at' => '2026-06-12 08:05:00', 'updated_at' => '2026-06-12 08:05:00'])->save();
+
+        MaterialDoubleValidation::create([
+            'barcode_material' => 'RF1H059-00960099B',
+            'plant_id' => $this->plant->id,
+            'location_id' => $this->location->id,
+            'validated_by' => $this->admin->id,
+            'validated_at' => '2026-06-11 09:00:00',
+        ]);
+        MaterialDoubleValidation::create([
+            'barcode_material' => 'RF1H060-00960098B',
+            'plant_id' => $this->plant->id,
+            'location_id' => $this->location->id,
+            'validated_by' => $validatorTwo->id,
+            'validated_at' => '2026-06-12 09:00:00',
+        ]);
+
+        $query = http_build_query([
+            'plant_id' => $this->plant->id,
+            'date_from' => '2026-06-11',
+            'date_to' => '2026-06-11',
+        ]);
+
+        $response = $this->actingAs($this->admin)->get("/admin/dashboard?{$query}");
+
+        $response->assertOk()
+            ->assertSeeInOrder(['Validator Overview', 'Total Barcode', '1', 'Valid', '1', 'Need Check', '0'])
+            ->assertSee('"name":"Admin Validator","total":1', false)
+            ->assertDontSee('Validator Two');
     }
 
     public function test_admin_dashboard_latest_scan_endpoint_is_server_side_and_clamped_to_fifty_rows(): void
@@ -1292,12 +1515,14 @@ class ScanFlowTest extends TestCase
     private function createScan(User $user, string $qr = 'RF1H059-00960099B|ST2605|1', array $override = []): ScanResult
     {
         $barcodeMaterial = explode('|', $qr)[0];
-        $location = $user->is($this->scanner)
+        $location = !empty($override['location_id'])
+            ? Location::findOrFail($override['location_id'])
+            : ($user->is($this->scanner)
             ? $this->location
             : Location::firstOrCreate(
-                ['user_id' => $user->id, 'plant_id' => $this->plant->id, 'name' => 'Rack ' . $user->id],
+                ['plant_id' => $override['plant_id'] ?? $this->plant->id, 'name' => 'Rack ' . $user->id],
                 ['is_active' => true]
-            );
+            ));
 
         return ScanResult::create(array_merge([
             'user_id' => $user->id,

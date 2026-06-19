@@ -29,7 +29,6 @@ class StoreSetupRequest extends FormRequest
 
             $locationBelongsToPlant = \App\Models\Location::query()
                 ->where('id', $this->integer('location_id'))
-                ->where('user_id', $this->user()->id)
                 ->where('plant_id', $this->integer('plant_id'))
                 ->where('is_active', true)
                 ->exists();

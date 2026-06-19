@@ -10,6 +10,7 @@
     <link rel="shortcut icon" type="image/png" href="{{ asset('assets/images/logo-adasi.png') }}?v=2">
     <link rel="apple-touch-icon" href="{{ asset('assets/images/logo-adasi.png') }}?v=2">
     <link rel="stylesheet" href="{{ asset('vendor/@fontsource/inter/index.css') }}">
+    <link href='https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css' rel='stylesheet'>
     <link rel="stylesheet" href="{{ asset('vendor/datatables/jquery.dataTables.min.css') }}">
     <link rel="stylesheet" href="{{ asset('vendor/sweetalert2/sweetalert2.min.css') }}">
     <link rel="stylesheet" href="{{ asset('assets/css/adasi-splash.css') }}">
@@ -1455,7 +1456,7 @@
 <body>
     @include('partials.adasi-splash')
 
-    @php($currentSto = app(\App\Services\STOService::class)->active())
+    @php($currentSto = app(\App\Services\ActiveStoService::class)->active())
     <header class="topbar">
         <div class="topbar-left">
             <img src="{{ asset('assets/images/logo-adasi.png') }}" alt="ADASI" class="topbar-logo">
@@ -1645,7 +1646,7 @@
                 </div>
             @else
                 <div
-                    class="sidebar-section {{ request()->routeIs('scan.setup') || request()->routeIs('scan.scanner') || request()->routeIs('scan.history') ? 'is-open has-active' : '' }}">
+                    class="sidebar-section {{ request()->routeIs('scan.overview') || request()->routeIs('scan.setup') || request()->routeIs('scan.scanner') || request()->routeIs('scan.history') || request()->routeIs('scan.material-summary') || request()->routeIs('admin.material-double*') ? 'is-open has-active' : '' }}">
                     <button type="button" class="sidebar-section-toggle" data-sidebar-toggle title="Scan Material">
                         <svg class="sidebar-section-icon" fill="none" stroke="currentColor" stroke-width="2"
                             viewBox="0 0 24 24">
@@ -1659,6 +1660,14 @@
                     </button>
                     <div class="sidebar-section-items">
                         <div class="sidebar-section-items-inner">
+                        <a href="{{ route('scan.overview', [], false) }}"
+                            class="nav-item {{ request()->routeIs('scan.overview') ? 'active' : '' }}" title="Overview">
+                            <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round"
+                                    d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"></path>
+                            </svg>
+                            <span>Overview</span>
+                        </a>
                         <a href="{{ route('scan.setup', [], false) }}"
                             class="nav-item {{ request()->routeIs('scan.setup') ? 'active' : '' }}" title="Setup STO"><svg
                                 fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -1682,6 +1691,26 @@
                                 <path stroke-linecap="round" stroke-linejoin="round"
                                     d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                             </svg> <span>Scan History</span></a>
+                        <a href="{{ route('scan.material-summary', [], false) }}"
+                            class="nav-item {{ request()->routeIs('scan.material-summary') ? 'active' : '' }}"
+                            title="Material Summary"><svg fill="none" stroke="currentColor" stroke-width="2"
+                                viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round"
+                                    d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707L13.293 3.293A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z">
+                                </path>
+                            </svg> <span>Material Summary</span></a>
+                        @if(auth()->user()->canAccessMaterialDouble())
+                            <a href="{{ route('admin.material-double', [], false) }}"
+                                class="nav-item {{ request()->routeIs('admin.material-double*') ? 'active' : '' }}"
+                                title="Material Double">
+                                <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round"
+                                        d="M8 7h8M8 12h8M8 17h5M4 5a2 2 0 012-2h10l4 4v12a2 2 0 01-2 2H6a2 2 0 01-2-2V5z">
+                                    </path>
+                                </svg>
+                                <span>Material Double</span>
+                            </a>
+                        @endif
                         </div>
                     </div>
                 </div>
@@ -1821,6 +1850,9 @@
 
         // TAB SYSTEM MANAGER
         if (window.self === window.top) {
+            const currentUserId = {{ auth()->id() ?? 'null' }};
+            const recentMenusKey = currentUserId ? `recentMenus_${currentUserId}` : 'recentMenus';
+
             const tabManager = {
                 init() {
                     this.bindSidebarToggles();
@@ -1831,21 +1863,21 @@
 
                 saveRecentMenu(menu) {
                     try {
-                        let recent = JSON.parse(localStorage.getItem('recentMenus')) || [];
+                        let recent = JSON.parse(localStorage.getItem(recentMenusKey)) || [];
                         if (!Array.isArray(recent)) recent = [];
                         recent = recent.filter(m => m.url !== menu.url);
                         recent.unshift(menu);
                         if (recent.length > 20) recent.pop();
-                        localStorage.setItem('recentMenus', JSON.stringify(recent));
+                        localStorage.setItem(recentMenusKey, JSON.stringify(recent));
                     } catch (e) {
                         console.error('Error saving recent menu:', e);
-                        localStorage.removeItem('recentMenus');
+                        localStorage.removeItem(recentMenusKey);
                     }
                 },
 
                 getRecentMenus() {
                     try {
-                        let recent = JSON.parse(localStorage.getItem('recentMenus')) || [];
+                        let recent = JSON.parse(localStorage.getItem(recentMenusKey)) || [];
                         return Array.isArray(recent) ? recent : [];
                     } catch (e) {
                         return [];

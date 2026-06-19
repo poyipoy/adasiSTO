@@ -14,6 +14,7 @@ use App\Models\StoCode;
 use App\Models\User;
 use App\Services\ActivityLogService;
 use App\Services\ExportService;
+use App\Services\OverviewService;
 use App\Services\ScanService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -31,6 +32,7 @@ class DashboardController extends Controller
         private ScanService $scanService,
         private ExportService $exportService,
         private ActivityLogService $activityLog,
+        private OverviewService $overviewService,
     ) {}
 
     public function index(Request $request): View
@@ -73,6 +75,9 @@ class DashboardController extends Controller
             ->orderBy('date')
             ->get()
             ->map(fn ($item) => ['date' => $item->date, 'total' => $item->total]);
+        $dashboardFilters = $request->only(['plant_id', 'date_from', 'date_to']);
+        $validatorOverview = $this->overviewService->validatorOverview($dashboardFilters);
+        $validationByScanner = $this->overviewService->validationByScanner($dashboardFilters);
 
         return view('admin.dashboard', compact(
             'totalScanToday',
@@ -82,7 +87,9 @@ class DashboardController extends Controller
             'totalInvalid',
             'scanPerUser',
             'scanPerPlant',
-            'scanPerDay'
+            'scanPerDay',
+            'validatorOverview',
+            'validationByScanner',
         ));
     }
 
@@ -111,15 +118,16 @@ class DashboardController extends Controller
 
         $search = trim((string) $request->input('search.value', ''));
         if ($search !== '') {
-            $baseQuery->where(function ($query) use ($search) {
-                $query->where('barcode_material', 'like', "%{$search}%")
-                    ->orWhere('material_name', 'like', "%{$search}%")
-                    ->orWhere('material_code', 'like', "%{$search}%")
-                    ->orWhere('lot_number', 'like', "%{$search}%")
-                    ->orWhere('sto_code', 'like', "%{$search}%")
-                    ->orWhereHas('user', fn ($userQuery) => $userQuery->where('name', 'like', "%{$search}%"))
-                    ->orWhereHas('plant', fn ($plantQuery) => $plantQuery->where('name', 'like', "%{$search}%"))
-                    ->orWhereHas('location', fn ($locationQuery) => $locationQuery->where('name', 'like', "%{$search}%"));
+            $searchString = str_replace(['%', '_'], ['\\%', '\\_'], $search);
+            $baseQuery->where(function ($query) use ($searchString) {
+                $query->where('barcode_material', 'like', "%{$searchString}%")
+                    ->orWhere('material_name', 'like', "%{$searchString}%")
+                    ->orWhere('material_code', 'like', "%{$searchString}%")
+                    ->orWhere('lot_number', 'like', "%{$searchString}%")
+                    ->orWhere('sto_code', 'like', "%{$searchString}%")
+                    ->orWhereHas('user', fn ($userQuery) => $userQuery->where('name', 'like', "%{$searchString}%"))
+                    ->orWhereHas('plant', fn ($plantQuery) => $plantQuery->where('name', 'like', "%{$searchString}%"))
+                    ->orWhereHas('location', fn ($locationQuery) => $locationQuery->where('name', 'like', "%{$searchString}%"));
             });
         }
 
@@ -193,14 +201,14 @@ class DashboardController extends Controller
 
         $search = $request->input('search.value');
         if ($search) {
-            $baseQuery->where(function ($query) use ($search) {
-                $query->where('barcode_material', 'like', "%{$search}%")
-                    ->orWhere('barcode_raw', 'like', "%{$search}%")
-                    ->orWhere('material_name', 'like', "%{$search}%")
-                    ->orWhere('material_code', 'like', "%{$search}%")
-                    ->orWhere('lot_number', 'like', "%{$search}%")
-                    ->orWhere('sto_code', 'like', "%{$search}%")
-                    ->orWhereHas('user', fn ($userQuery) => $userQuery->where('name', 'like', "%{$search}%"));
+            $searchString = str_replace(['%', '_'], ['\\%', '\\_'], $search);
+            $baseQuery->where(function ($query) use ($searchString) {
+                $query->where('barcode_material', 'like', "%{$searchString}%")
+                    ->orWhere('material_name', 'like', "%{$searchString}%")
+                    ->orWhere('material_code', 'like', "%{$searchString}%")
+                    ->orWhere('lot_number', 'like', "%{$searchString}%")
+                    ->orWhere('sto_code', 'like', "%{$searchString}%")
+                    ->orWhereHas('user', fn ($userQuery) => $userQuery->where('name', 'like', "%{$searchString}%"));
             });
         }
 
@@ -326,11 +334,13 @@ class DashboardController extends Controller
         }
 
         if ($request->filled('material_code')) {
-            $query->where('material_code', 'like', '%' . $request->material_code . '%');
+            $searchMatCode = str_replace(['%', '_'], ['\\%', '\\_'], $request->material_code);
+            $query->where('material_code', 'like', '%' . $searchMatCode . '%');
         }
 
         if ($request->filled('material_name')) {
-            $query->where('material_name', 'like', '%' . $request->material_name . '%');
+            $searchMatName = str_replace(['%', '_'], ['\\%', '\\_'], $request->material_name);
+            $query->where('material_name', 'like', '%' . $searchMatName . '%');
         }
 
         if ($request->filled('shape_code')) {
@@ -347,10 +357,11 @@ class DashboardController extends Controller
 
         $search = $request->input('search.value');
         if ($search) {
-            $query->where(function ($q) use ($search) {
-                $q->where('barcode_material', 'like', "%{$search}%")
-                    ->orWhere('material_name', 'like', "%{$search}%")
-                    ->orWhere('material_code', 'like', "%{$search}%");
+            $searchString = str_replace(['%', '_'], ['\\%', '\\_'], $search);
+            $query->where(function ($q) use ($searchString) {
+                $q->where('barcode_material', 'like', "%{$searchString}%")
+                    ->orWhere('material_name', 'like', "%{$searchString}%")
+                    ->orWhere('material_code', 'like', "%{$searchString}%");
             });
         }
 

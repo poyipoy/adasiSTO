@@ -30,17 +30,23 @@ class UserFactory extends Factory
             'password' => static::$password ??= Hash::make('password'),
             'role' => 'scanner',
             'is_active' => true,
+            'is_validator' => false,
             'remember_token' => Str::random(10),
         ];
     }
 
     public function admin(): static
     {
-        return $this->state(fn () => ['role' => 'admin']);
+        return $this->state(fn () => ['role' => 'admin', 'is_validator' => true]);
     }
 
     public function scanner(): static
     {
         return $this->state(fn () => ['role' => 'scanner']);
+    }
+
+    public function validator(): static
+    {
+        return $this->state(fn () => ['role' => 'scanner', 'is_validator' => true]);
     }
 }

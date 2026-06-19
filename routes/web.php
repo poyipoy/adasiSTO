@@ -61,10 +61,13 @@ Route::post('/logout', function (Request $request) {
 })->middleware('auth')->name('logout');
 
 Route::middleware(['auth', 'role:scanner'])->group(function () {
+    Route::get('/scan/overview', [ScanController::class, 'overview'])->name('scan.overview');
+    Route::get('/api/scan/overview', [ScanController::class, 'overviewData'])->middleware('throttle:datatable')->name('api.scan.overview');
     Route::get('/scan/setup', [ScanController::class, 'setup'])->name('scan.setup');
     Route::post('/scan/setup', [ScanController::class, 'storeSetup'])->name('scan.setup.store');
     Route::get('/scan/scanner', [ScanController::class, 'scanner'])->name('scan.scanner');
     Route::get('/scan/history', [ScanController::class, 'historyPage'])->name('scan.history');
+    Route::get('/scan/material-summary', [ScanController::class, 'materialSummary'])->name('scan.material-summary');
 
     Route::get('/api/locations', [ScanController::class, 'locations'])->middleware('throttle:datatable')->name('api.locations');
     Route::post('/api/locations', [ScanController::class, 'storeLocation'])->middleware('throttle:scan-write')->name('api.locations.store');
@@ -74,8 +77,28 @@ Route::middleware(['auth', 'role:scanner'])->group(function () {
     Route::post('/api/scan/store', [ScanController::class, 'store'])->middleware('throttle:scan-write')->name('api.scan.store');
     Route::get('/api/scan/recent', [ScanController::class, 'recent'])->middleware('throttle:datatable')->name('api.scan.recent');
     Route::get('/api/scan/history', [ScanController::class, 'history'])->middleware('throttle:datatable')->name('api.scan.history');
+    Route::get('/api/scan/material-summary', [ScanController::class, 'materialSummaryData'])->middleware('throttle:datatable')->name('api.scan.material-summary');
     Route::delete('/api/scan/{id}', [ScanController::class, 'destroy'])->middleware('throttle:scan-write')->name('api.scan.destroy');
 });
+
+Route::middleware(['auth', 'material-double-access'])
+    ->prefix('admin')
+    ->name('admin.')
+    ->group(function () {
+        Route::get('/material-double', [MaterialDoubleController::class, 'index'])->name('material-double');
+        Route::get('/api/material-double', [MaterialDoubleController::class, 'datatable'])->middleware('throttle:datatable')->name('api.material-double');
+        Route::get('/api/material-double/detail', [MaterialDoubleController::class, 'showDuplicateDetail'])->middleware('throttle:datatable')->name('api.material-double.detail');
+        Route::post('/api/material-double/validate', [MaterialDoubleController::class, 'validateDuplicate'])->name('api.material-double.validate');
+        Route::post('/api/material-double/scan', [MaterialDoubleController::class, 'scan'])
+            ->middleware('throttle:scan-write')
+            ->name('api.material-double.scan');
+        Route::delete('/api/material-double/delete-selected', [MaterialDoubleController::class, 'deleteSelected'])->name('api.material-double.delete-selected');
+        Route::post('/api/material-double/export', [MaterialDoubleController::class, 'queueExport'])
+            ->middleware('throttle:export')
+            ->name('api.material-double.export.queue');
+        Route::get('/api/material-double/export/status', [MaterialDoubleController::class, 'exportStatus'])->name('api.material-double.export.status');
+        Route::get('/api/material-double/export/{exportRequest}/download', [MaterialDoubleController::class, 'downloadExport'])->name('api.material-double.export.download');
+    });
 
 Route::middleware(['auth', 'role:admin'])
     ->prefix('admin')
@@ -92,19 +115,6 @@ Route::middleware(['auth', 'role:admin'])
 
         Route::get('/material-summary', [DashboardController::class, 'materialSummary'])->name('material-summary');
         Route::get('/api/material-summary', [DashboardController::class, 'materialSummaryData'])->middleware('throttle:datatable')->name('api.material-summary');
-        Route::get('/material-double', [MaterialDoubleController::class, 'index'])->name('material-double');
-        Route::get('/api/material-double', [MaterialDoubleController::class, 'datatable'])->middleware('throttle:datatable')->name('api.material-double');
-        Route::get('/api/material-double/detail', [MaterialDoubleController::class, 'showDuplicateDetail'])->middleware('throttle:datatable')->name('api.material-double.detail');
-        Route::post('/api/material-double/validate', [MaterialDoubleController::class, 'validateDuplicate'])->name('api.material-double.validate');
-        Route::post('/api/material-double/scan', [MaterialDoubleController::class, 'scan'])
-            ->middleware('throttle:scan-write')
-            ->name('api.material-double.scan');
-        Route::delete('/api/material-double/delete-selected', [MaterialDoubleController::class, 'deleteSelected'])->name('api.material-double.delete-selected');
-        Route::post('/api/material-double/export', [MaterialDoubleController::class, 'queueExport'])
-            ->middleware('throttle:export')
-            ->name('api.material-double.export.queue');
-        Route::get('/api/material-double/export/status', [MaterialDoubleController::class, 'exportStatus'])->name('api.material-double.export.status');
-        Route::get('/api/material-double/export/{exportRequest}/download', [MaterialDoubleController::class, 'downloadExport'])->name('api.material-double.export.download');
         Route::post('/export/scan-results/{format}', [DashboardController::class, 'queueExport'])
             ->whereIn('format', ['excel', 'pdf'])
             ->middleware('throttle:export')
@@ -123,6 +133,7 @@ Route::middleware(['auth', 'role:admin'])
         Route::post('/api/master-sto', [MasterController::class, 'storeSto'])->name('api.master-sto.store');
         Route::put('/api/master-sto/{id}', [MasterController::class, 'updateSto'])->name('api.master-sto.update');
         Route::post('/api/master-sto/{id}/activate', [MasterController::class, 'activateSto'])->name('api.master-sto.activate');
+        Route::post('/api/master-sto/{id}/deactivate', [MasterController::class, 'deactivateSto'])->name('api.master-sto.deactivate');
         Route::delete('/api/master-sto/{id}', [MasterController::class, 'destroySto'])->name('api.master-sto.destroy');
 
         Route::get('/master-plant', [MasterController::class, 'plants'])->name('master-plant');

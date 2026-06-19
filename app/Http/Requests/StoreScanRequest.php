@@ -37,7 +37,6 @@ class StoreScanRequest extends FormRequest
             $locationBelongsToPlant = \App\Models\Location::query()
                 ->where([
                     'id' => $this->integer('location_id'),
-                    'user_id' => $this->user()->id,
                     'plant_id' => $this->integer('plant_id'),
                     'is_active' => true,
                 ])

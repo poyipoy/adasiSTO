@@ -1,3 +1,4 @@
+{{-- [DISABLED] Legacy file. This logic is handled by generic.blade.php. Do not use. --}}
 <x-layouts.app :title="'Master Plant'">
 
 {{-- Toolbar --}}

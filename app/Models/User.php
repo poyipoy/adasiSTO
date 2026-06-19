@@ -18,9 +18,11 @@ class User extends Authenticatable
         'password',
         'role',
         'is_active',
+        'is_validator',
     ];
 
     protected $hidden = [
+        'pass',
         'password',
         'remember_token',
     ];
@@ -31,6 +33,7 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'is_active' => 'boolean',
+            'is_validator' => 'boolean',
         ];
     }
 
@@ -56,11 +59,6 @@ class User extends Authenticatable
         return $this->hasMany(ExportRequest::class);
     }
 
-    public function locations(): HasMany
-    {
-        return $this->hasMany(Location::class);
-    }
-
     // ─── Helpers ───
 
     public function isAdmin(): bool
@@ -71,5 +69,15 @@ class User extends Authenticatable
     public function isScanner(): bool
     {
         return $this->role === 'scanner';
+    }
+
+    public function isValidator(): bool
+    {
+        return $this->isAdmin() || ($this->isScanner() && $this->is_validator);
+    }
+
+    public function canAccessMaterialDouble(): bool
+    {
+        return $this->isAdmin() || $this->isValidator();
     }
 }

@@ -142,7 +142,7 @@
                 <input id="materialDoubleScanQr" class="form-control mono" placeholder="RF1H059-00960099B|ST2605|1" autocomplete="off">
             </div>
             <div style="font-size:11px;color:var(--text-secondary);margin-top:4px;">
-                Plant dan Location mengikuti baris Material Double yang dipilih. PIC mengikuti admin yang melakukan scan.
+                Plant dan Location mengikuti baris Material Double yang dipilih. PIC mengikuti user yang melakukan scan.
             </div>
         </div>
         <div class="modal-footer">
@@ -831,6 +831,24 @@
             });
     }
 
+    const BARCODE_COLORS = [
+        { border: '#0b7bd3', fill: 'rgba(11, 123, 211, 0.16)', btn: '#0b7bd3' },
+        { border: '#10b981', fill: 'rgba(16, 185, 129, 0.16)', btn: '#10b981' },
+        { border: '#f59e0b', fill: 'rgba(245, 158, 11, 0.16)', btn: '#f59e0b' },
+        { border: '#8b5cf6', fill: 'rgba(139, 92, 246, 0.16)', btn: '#8b5cf6' },
+        { border: '#ef4444', fill: 'rgba(239, 68, 68, 0.16)', btn: '#ef4444' },
+        { border: '#ec4899', fill: 'rgba(236, 72, 153, 0.16)', btn: '#ec4899' },
+        { border: '#14b8a6', fill: 'rgba(20, 184, 166, 0.16)', btn: '#14b8a6' },
+    ];
+
+    function getBarcodeColor(value) {
+        let hash = 0;
+        for (let i = 0; i < value.length; i++) {
+            hash = value.charCodeAt(i) + ((hash << 5) - hash);
+        }
+        return BARCODE_COLORS[Math.abs(hash) % BARCODE_COLORS.length];
+    }
+
     function drawMaterialDoubleSelectBarcodeOverlay() {
         if (!materialDoubleSelectBarcodeCanvas || !materialDoubleSelectBarcodeVideo) return;
 
@@ -846,9 +864,10 @@
 
         materialDoubleSelectBarcodeCandidates.forEach((candidate, index) => {
             const box = candidate.box || { x: 12, y: 12 + (index * 44), width: Math.min(width - 24, 280), height: 34 };
+            const color = getBarcodeColor(candidate.value);
 
-            ctx.strokeStyle = '#0b7bd3';
-            ctx.fillStyle = 'rgba(11, 123, 211, 0.16)';
+            ctx.strokeStyle = color.border;
+            ctx.fillStyle = color.fill;
             ctx.strokeRect(box.x, box.y, box.width, box.height);
             ctx.fillRect(box.x, box.y, box.width, box.height);
         });
@@ -907,12 +926,14 @@
                     Math.round((box.width || 180) * scaleX) + 28,
                     Math.round(canvasRect.width - left - 8)
                 ));
+                
+                const color = getBarcodeColor(candidate.value);
 
                 return `
                     <button
                         class="select-barcode-tap-label mono"
                         type="button"
-                        style="left:${left}px;top:${top}px;max-width:${maxWidth}px;"
+                        style="left:${left}px;top:${top}px;max-width:${maxWidth}px;background:${color.btn};border-color:${color.btn};"
                         onclick="materialDoubleSelectDetectedBarcode(decodeURIComponent('${encodeURIComponent(candidate.value)}'))">
                         ${escapeHtml(candidate.value)}
                     </button>
@@ -1248,10 +1269,44 @@
             }
         });
 
+        let materialDoubleManualScanTimeout = null;
+        let materialDoubleLastKeyTime = Date.now();
+        let materialDoubleTypingSpeedIsHuman = false;
+
         $('#materialDoubleScanQr').on('keydown', function(event) {
             if (event.key === 'Enter') {
                 event.preventDefault();
+                if (materialDoubleManualScanTimeout) clearTimeout(materialDoubleManualScanTimeout);
                 submitMaterialDoubleScan(false);
+                return;
+            }
+
+            if (event.key.length === 1) {
+                const now = Date.now();
+                const diff = now - materialDoubleLastKeyTime;
+                const val = event.target.value;
+                if (val.length > 0 && diff > 50) {
+                    materialDoubleTypingSpeedIsHuman = true;
+                }
+                materialDoubleLastKeyTime = now;
+            }
+        });
+
+        $('#materialDoubleScanQr').on('input', function(event) {
+            if (materialDoubleManualScanTimeout) clearTimeout(materialDoubleManualScanTimeout);
+            
+            const val = event.target.value.trim();
+            
+            if (val.length === 0) {
+                materialDoubleTypingSpeedIsHuman = false;
+                return;
+            }
+
+            // Auto submit jika input dari scanner gun (cepat, bukan manusia)
+            if (val.length > 2 && !materialDoubleTypingSpeedIsHuman) {
+                materialDoubleManualScanTimeout = setTimeout(() => {
+                    submitMaterialDoubleScan(false);
+                }, 250);
             }
         });
 

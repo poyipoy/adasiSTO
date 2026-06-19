@@ -2,7 +2,7 @@
 
 namespace App\Exports;
 
-use App\Http\Controllers\Admin\MaterialDoubleController;
+use App\Services\MaterialDoubleQueryService;
 use Maatwebsite\Excel\Concerns\Exportable;
 use Maatwebsite\Excel\Concerns\FromQuery;
 use Maatwebsite\Excel\Concerns\WithHeadings;
@@ -18,7 +18,7 @@ class MaterialDoubleExport implements FromQuery, WithHeadings, WithMapping
 
     public function query()
     {
-        return app(MaterialDoubleController::class)
+        return app(MaterialDoubleQueryService::class)
             ->duplicateGroupQuery($this->filters)
             ->orderByDesc('duplicate_count')
             ->orderByDesc('scan_results.barcode_material');

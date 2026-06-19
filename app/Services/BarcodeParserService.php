@@ -49,11 +49,6 @@ class BarcodeParserService
         $firstSecondary = (int) substr($secondary, 0, 4);
         $length = (int) substr($secondary, 4, 4);
 
-        if ($length <= 0 || $primary <= 0) {
-            // Kita hapus pengecekan awal ini, karena akan divalidasi spesifik per shape (RF/RR) di bawah.
-            // Namun, untuk length dan primary, di kedua shape wajib > 0, jadi tetap bisa dipertahankan atau dipindah ke bawah.
-            // Lebih baik kita delegasikan ke pengecekan per-shape di bawah agar pesan errornya spesifik.
-        }
 
         $result = [
             'valid' => true,

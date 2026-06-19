@@ -8,7 +8,7 @@ class MaterialDoubleGroupRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return $this->user()?->isAdmin() === true;
+        return $this->user()?->canAccessMaterialDouble() === true;
     }
 
     public function rules(): array

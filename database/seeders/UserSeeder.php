@@ -15,6 +15,7 @@ class UserSeeder extends Seeder
             'password' => Hash::make('password'),
             'role' => 'admin',
             'is_active' => true,
+            'is_validator' => true,
         ]);
 
         User::updateOrCreate(['username' => 'operator1'], [
@@ -22,6 +23,7 @@ class UserSeeder extends Seeder
             'password' => Hash::make('password'),
             'role' => 'scanner',
             'is_active' => true,
+            'is_validator' => false,
         ]);
 
         User::updateOrCreate(['username' => 'operator2'], [
@@ -29,6 +31,7 @@ class UserSeeder extends Seeder
             'password' => Hash::make('password'),
             'role' => 'scanner',
             'is_active' => true,
+            'is_validator' => false,
         ]);
     }
 }

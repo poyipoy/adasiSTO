@@ -10,7 +10,8 @@ use App\Http\Requests\StoreSetupRequest;
 use App\Models\Location;
 use App\Models\Plant;
 use App\Models\ScanResult;
-use App\Services\STOService;
+use App\Services\ActiveStoService;
+use App\Services\OverviewService;
 use App\Services\ScanService;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\JsonResponse;
@@ -24,12 +25,53 @@ class ScanController extends Controller
 
     public function __construct(
         private ScanService $scanService,
-        private STOService $stoService,
+        private ActiveStoService $activeStoService,
+        private OverviewService $overviewService,
     ) {}
+
+    public function overview(Request $request): View
+    {
+        $scopeUser = $request->user();
+        $scanOverview = $this->overviewService->scanOverview($scopeUser);
+        $scanPerDay = $this->overviewService->scanPerDay($scopeUser);
+        
+        $validatorOverview = $request->user()->isValidator()
+            ? $this->overviewService->validatorOverview()
+            : null;
+        $validationByScanner = $request->user()->isValidator()
+            ? $this->overviewService->validationByScanner()
+            : collect();
+
+        return view('scan.overview', compact(
+            'scanOverview',
+            'scanPerDay',
+            'validatorOverview',
+            'validationByScanner',
+        ));
+    }
+
+    public function overviewData(Request $request): JsonResponse
+    {
+        $scopeUser = $request->user();
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'scan_overview' => $this->overviewService->scanOverview($scopeUser),
+                'scan_per_day' => $this->overviewService->scanPerDay($scopeUser),
+                'validator_overview' => $request->user()->isValidator()
+                    ? $this->overviewService->validatorOverview()
+                    : null,
+                'validation_by_scanner' => $request->user()->isValidator()
+                    ? $this->overviewService->validationByScanner()
+                    : null,
+            ],
+        ]);
+    }
 
     public function setup(): View
     {
-        $activeSto = $this->stoService->active();
+        $activeSto = $this->activeStoService->active();
         $plants = Plant::active()->orderBy('name')->get();
         $scanContext = session('scan_context');
 
@@ -38,13 +80,13 @@ class ScanController extends Controller
 
     public function storeSetup(StoreSetupRequest $request)
     {
-        $activeSto = $this->stoService->active();
+        $activeSto = $this->activeStoService->active();
 
         if (!$activeSto) {
             if ($request->wantsJson()) {
-                return response()->json(['success' => false, 'message' => STOService::NO_ACTIVE_STO_MESSAGE], 422);
+                return response()->json(['success' => false, 'message' => ActiveStoService::NO_ACTIVE_STO_MESSAGE], 422);
             }
-            return back()->with('error', STOService::NO_ACTIVE_STO_MESSAGE);
+            return back()->with('error', ActiveStoService::NO_ACTIVE_STO_MESSAGE);
         }
 
         session([
@@ -63,11 +105,11 @@ class ScanController extends Controller
 
     public function scanner(Request $request): View
     {
-        $activeSto = $this->stoService->active();
+        $activeSto = $this->activeStoService->active();
         $scanContext = session('scan_context');
 
         if (!$activeSto) {
-            return view('scan.no-session', ['message' => STOService::NO_ACTIVE_STO_MESSAGE]);
+            return view('scan.no-session', ['message' => ActiveStoService::NO_ACTIVE_STO_MESSAGE]);
         }
 
         if (!$scanContext) {
@@ -76,7 +118,6 @@ class ScanController extends Controller
 
         $plant = Plant::findOrFail($scanContext['plant_id']);
         $location = Location::active()
-            ->forUser(auth()->id())
             ->where('plant_id', $plant->id)
             ->findOrFail($scanContext['location_id']);
 
@@ -89,7 +130,6 @@ class ScanController extends Controller
             ->count();
 
         $locations = Location::active()
-            ->forUser(auth()->id())
             ->where('plant_id', $plant->id)
             ->orderBy('name')
             ->get();
@@ -104,6 +144,85 @@ class ScanController extends Controller
         return view('scan.results', compact('filterOptions'));
     }
 
+    public function materialSummary(): View
+    {
+        return view('scan.material-summary', [
+            'plants' => Plant::active()->orderBy('name')->get(),
+        ]);
+    }
+
+    public function materialSummaryData(Request $request): JsonResponse
+    {
+        $scopeUser = $request->user()->isValidator() ? null : $request->user();
+        $query = $this->overviewService->materialSummaryQuery($scopeUser, $request->all());
+
+        $search = $request->input('search.value');
+        if ($search) {
+            $searchString = str_replace(['%', '_'], ['\\%', '\\_'], $search);
+            $query->where(function ($q) use ($searchString) {
+                $q->where('barcode_material', 'like', "%{$searchString}%")
+                    ->orWhere('material_name', 'like', "%{$searchString}%")
+                    ->orWhere('material_code', 'like', "%{$searchString}%");
+            });
+        }
+
+        $filteredRecords = \Illuminate\Support\Facades\DB::query()
+            ->fromSub((clone $query), 'scanner_material_summary_count')
+            ->count();
+
+        $maxLength = max((int) config('sto.datatable_max_length', 100), 1);
+        $start = max((int) $request->input('start', 0), 0);
+        $length = min(max((int) $request->input('length', 25), 1), $maxLength);
+
+        $orderInfo = $request->input('order.0');
+        $columns = $request->input('columns');
+
+        if ($orderInfo && isset($columns[$orderInfo['column']])) {
+            $columnData = $columns[$orderInfo['column']]['data'];
+            $dir = $orderInfo['dir'] === 'asc' ? 'asc' : 'desc';
+            $sortableColumns = [
+                'barcode_material' => 'barcode_material',
+                'material_code' => 'material_code',
+                'material_name' => 'material_name',
+                'shape_name' => 'shape_name',
+                'qty_total' => 'qty_total',
+                'scan_count' => 'scan_count',
+            ];
+
+            if (isset($sortableColumns[$columnData])) {
+                $query->orderBy($sortableColumns[$columnData], $dir);
+            } else {
+                $query->orderByDesc('scan_count');
+            }
+        } else {
+            $query->orderByDesc('scan_count');
+        }
+
+        $data = $query->skip($start)->take($length)->get();
+
+        return response()->json([
+            'draw' => (int) $request->input('draw'),
+            'recordsTotal' => $filteredRecords,
+            'recordsFiltered' => $filteredRecords,
+            'data' => $data->map(function ($item, int $index) use ($filteredRecords, $start) {
+                $size = $item->shape_code === 'RF'
+                    ? "{$item->thickness} x {$item->width} x {$item->length}"
+                    : "⌀{$item->diameter} x {$item->length}";
+
+                return [
+                    'no' => $filteredRecords - $start - $index,
+                    'barcode_material' => $item->barcode_material,
+                    'material_code' => $item->material_code,
+                    'material_name' => $item->material_name,
+                    'shape_name' => $item->shape_name,
+                    'size' => $size,
+                    'qty_total' => (int) $item->qty_total,
+                    'scan_count' => (int) $item->scan_count,
+                ];
+            })->values(),
+        ]);
+    }
+
     public function locations(Request $request): JsonResponse
     {
         $request->validate([
@@ -111,7 +230,6 @@ class ScanController extends Controller
         ]);
 
         $locations = Location::active()
-            ->forUser($request->user()->id)
             ->where('plant_id', $request->integer('plant_id'))
             ->orderBy('name')
             ->get(['id', 'plant_id', 'name']);
@@ -125,7 +243,6 @@ class ScanController extends Controller
     public function storeLocation(StoreLocationRequest $request): JsonResponse
     {
         $location = Location::create([
-            'user_id' => $request->user()->id,
             'plant_id' => $request->integer('plant_id'),
             'name' => $request->string('name')->toString(),
             'is_active' => true,
@@ -145,15 +262,6 @@ class ScanController extends Controller
     public function destroyLocation(Request $request, int $id): JsonResponse
     {
         $location = Location::findOrFail($id);
-
-        if ((int) $location->user_id !== (int) $request->user()->id) {
-            Log::warning('Unauthorized location delete attempt', [
-                'user_id' => $request->user()->id,
-                'location_id' => $location->id,
-            ]);
-
-            abort(403);
-        }
 
         if (ScanResult::where('location_id', $location->id)->exists()) {
             return response()->json([
@@ -191,12 +299,12 @@ class ScanController extends Controller
 
     public function checkDuplicate(CheckDuplicateScanRequest $request): JsonResponse
     {
-        $activeSto = $this->stoService->active();
+        $activeSto = $this->activeStoService->active();
 
         if (!$activeSto) {
             return response()->json([
                 'success' => false,
-                'message' => STOService::NO_ACTIVE_STO_MESSAGE,
+                'message' => ActiveStoService::NO_ACTIVE_STO_MESSAGE,
             ], 422);
         }
 

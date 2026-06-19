@@ -168,6 +168,30 @@
         width: 100%;
     }
 
+    .scrollable-wrapper {
+        height: 250px;
+        overflow-y: auto;
+        overflow-x: hidden;
+        padding-right: 10px;
+        margin-bottom: 10px;
+    }
+    
+    /* Scrollbar styling untuk wrapper */
+    .scrollable-wrapper::-webkit-scrollbar {
+        width: 6px;
+    }
+    .scrollable-wrapper::-webkit-scrollbar-track {
+        background: var(--bg-color);
+        border-radius: 10px;
+    }
+    .scrollable-wrapper::-webkit-scrollbar-thumb {
+        background: #cbd5e1;
+        border-radius: 10px;
+    }
+    .scrollable-wrapper::-webkit-scrollbar-thumb:hover {
+        background: #94a3b8;
+    }
+
     @media (max-width: 768px) {
         .dashboard-header {
             flex-direction: column;
@@ -232,7 +256,7 @@
     <div class="left-col">
         <div class="card" style="padding: 24px; border-radius: 16px;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 24px;">
-                <div class="card-title" style="margin:0; font-size: 18px;">Activity Overview</div>
+                <div class="card-title" style="margin:0; font-size: 18px;"><i class='bx bx-line-chart' style="margin-right: 8px; color: var(--primary);"></i> Activity Overview</div>
                 <div style="display:flex; gap:10px;">
                     <button class="btn btn-sm" style="background:var(--bg-color); border:1px solid var(--border); color:var(--text); border-radius:8px;" onclick="window.location.href='{{ route('admin.scan-results') }}'"><i class='bx bx-list-ul'></i> View History</button>
                 </div>
@@ -247,15 +271,25 @@
                 </div>
                 <div>
                     <div style="font-size:14px; font-weight:600; color:var(--text); margin-bottom:12px;">Scan per User</div>
-                    <div class="chart-container">
-                        <canvas id="chartUser"></canvas>
+                    <div class="scrollable-wrapper">
+                        <div class="chart-container" id="chartUserContainer">
+                            <canvas id="chartUser"></canvas>
+                        </div>
+                    </div>
+                </div>
+                <div>
+                    <div style="font-size:14px; font-weight:600; color:var(--text); margin-bottom:12px;">Validation by Validator</div>
+                    <div class="scrollable-wrapper">
+                        <div class="chart-container" id="chartValidatorContainer">
+                            <canvas id="chartValidator"></canvas>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
 
         <div class="card" style="border-radius: 16px;">
-            <div class="card-title" style="font-size: 18px;">Latest Scan</div>
+            <div class="card-title" style="font-size: 18px;"><i class='bx bx-list-ul' style="margin-right: 8px; color: var(--text);"></i> Latest Scan</div>
             <div class="table-container">
                 <table class="table-enterprise" id="dashboardDataTable" style="width: 100%;">
                     <thead>
@@ -272,7 +306,7 @@
     <!-- Right Column -->
     <div class="right-col">
         <div class="card" style="padding: 24px; border-radius: 16px;">
-            <div class="card-title" style="margin-bottom: 24px; font-size: 18px;">Plant Usage</div>
+            <div class="card-title" style="margin-bottom: 24px; font-size: 18px;"><i class='bx bx-buildings' style="margin-right: 8px; color: var(--warning);"></i> Plant Usage</div>
             <div class="usage-card">
                 <div class="usage-chart">
                     <canvas id="chartPlant"></canvas>
@@ -303,7 +337,7 @@
         </div>
 
         <div class="card" style="background: transparent; box-shadow: none; padding: 0;">
-            <div class="card-title" style="margin-bottom: 16px; padding-left: 4px; font-size: 18px;">Scan Overview</div>
+            <div class="card-title" style="margin-bottom: 16px; padding-left: 4px; font-size: 18px;"><i class='bx bx-scan' style="margin-right: 6px; color: var(--primary);"></i> Scan Overview</div>
             <div class="overview-grid">
                 <div class="stat-card">
                     <div class="stat-icon" style="background: rgba(0, 114, 206, 0.1); color: var(--primary);">
@@ -335,6 +369,35 @@
                     </div>
                     <div class="stat-card-title">Invalid Scans</div>
                     <div class="stat-card-value">{{ number_format($totalInvalid) }}</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card" style="background: transparent; box-shadow: none; padding: 0;">
+            <div class="card-title" style="margin-bottom: 16px; padding-left: 4px; font-size: 18px;"><i class='bx bx-check-double' style="margin-right: 6px; color: var(--success);"></i> Validator Overview</div>
+            <div class="overview-grid">
+                <div class="stat-card">
+                    <div class="stat-icon" style="background: rgba(0, 114, 206, 0.1); color: var(--primary);">
+                        <i class='bx bx-barcode'></i>
+                    </div>
+                    <div class="stat-card-title">Total Barcode</div>
+                    <div class="stat-card-value">{{ number_format($validatorOverview['total_barcode']) }}</div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-icon" style="background: rgba(34, 160, 107, 0.1); color: var(--success);">
+                        <i class='bx bx-check-shield'></i>
+                    </div>
+                    <div class="stat-card-title">Valid</div>
+                    <div class="stat-card-value">{{ number_format($validatorOverview['valid']) }}</div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-icon" style="background: rgba(229, 161, 0, 0.1); color: var(--warning);">
+                        <i class='bx bx-error-circle'></i>
+                    </div>
+                    <div class="stat-card-title">Need Check</div>
+                    <div class="stat-card-value">{{ number_format($validatorOverview['need_check']) }}</div>
                 </div>
             </div>
         </div>
@@ -421,6 +484,11 @@
     const scanPerUser = @json($scanPerUser);
     const scanPerPlant = @json($scanPerPlant);
     const scanPerDay = @json($scanPerDay);
+    const validationByScanner = @json($validationByScanner);
+
+    // Calculate dynamic height for user charts (min 200px or 35px per user)
+    const chartUserHeight = Math.max(200, scanPerUser.length * 35);
+    document.getElementById('chartUserContainer').style.height = chartUserHeight + 'px';
 
     new Chart(document.getElementById('chartUser'), {
         type: 'bar',
@@ -435,6 +503,25 @@
             maintainAspectRatio: false
         }
     });
+
+    if (document.getElementById('chartValidator')) {
+        const chartValidatorHeight = Math.max(200, validationByScanner.length * 35);
+        document.getElementById('chartValidatorContainer').style.height = chartValidatorHeight + 'px';
+
+        new Chart(document.getElementById('chartValidator'), {
+            type: 'bar',
+            data: { labels: validationByScanner.map(item => item.name), datasets: [{ data: validationByScanner.map(item => item.total), backgroundColor: stoColors[2], borderRadius: 6 }] },
+            options: {
+                indexAxis: 'y',
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { beginAtZero: true, grid: { display: false } },
+                    y: { grid: { display: false } }
+                },
+                maintainAspectRatio: false
+            }
+        });
+    }
 
     new Chart(document.getElementById('chartPlant'), {
         type: 'doughnut',

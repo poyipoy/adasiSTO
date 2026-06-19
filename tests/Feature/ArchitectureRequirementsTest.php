@@ -40,7 +40,6 @@ class ArchitectureRequirementsTest extends TestCase
         $this->stoCode = StoCode::create(['code' => 'STO2606', 'is_active' => true]);
         $this->plant = Plant::create(['name' => 'Cikarang', 'is_active' => true]);
         $this->location = Location::create([
-            'user_id' => $this->scanner->id,
             'plant_id' => $this->plant->id,
             'name' => 'CT01',
             'is_active' => true,
@@ -326,12 +325,14 @@ class ArchitectureRequirementsTest extends TestCase
     private function createScan(User $user, string $qr = 'RF1H059-00960099B|ST2605|1', array $override = []): ScanResult
     {
         $barcodeMaterial = explode('|', $qr)[0];
-        $location = $user->is($this->scanner)
+        $location = !empty($override['location_id'])
+            ? Location::findOrFail($override['location_id'])
+            : ($user->is($this->scanner)
             ? $this->location
             : Location::firstOrCreate(
-                ['user_id' => $user->id, 'plant_id' => $this->plant->id, 'name' => 'Rack ' . $user->id],
+                ['plant_id' => $override['plant_id'] ?? $this->plant->id, 'name' => 'Rack ' . $user->id],
                 ['is_active' => true]
-            );
+            ));
 
         return ScanResult::create(array_merge([
             'user_id' => $user->id,

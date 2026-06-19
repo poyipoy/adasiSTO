@@ -262,7 +262,7 @@ class ScanService
 
             $oldValues = $this->auditValues($scanResult);
             $stoCode = StoCode::findOrFail($payload['sto_code_id']);
-            $location = $this->resolveLocation($payload['user_id'], $payload['plant_id'], $payload['location_name']);
+            $location = $this->resolveLocation($payload['plant_id'], $payload['location_name']);
 
             $scanResult->forceFill($this->manualScanAttributes($payload, $stoCode, $location));
             $scanResult->created_at = Carbon::parse($payload['created_at']);
@@ -317,8 +317,8 @@ class ScanService
             ];
         }
 
-        $scanResult = DB::transaction(function () use ($admin, $payload, $stoCode) {
-            $location = $this->resolveLocation($payload['user_id'], $payload['plant_id'], $payload['location_name']);
+        $scanResult = DB::transaction(function () use ($admin, $payload, $stoCode, $barcodeMaterial) {
+            $location = $this->resolveLocation($payload['plant_id'], $payload['location_name']);
             $scanResult = new ScanResult($this->manualScanAttributes($payload, $stoCode, $location));
             $scanResult->created_at = Carbon::parse($payload['created_at']);
             $scanResult->updated_at = now();
@@ -406,7 +406,7 @@ class ScanService
                 'diameter' => $shapeCode === 'RR' ? $parsed['diameter'] : null,
                 'length' => $parsed['length'],
                 'keterangan' => $this->defaultKeterangan(),
-                'scan_source' => $payload['scan_source'] ?? 'manual',
+                'scan_source' => 'material_double_scan',
             ]);
 
             $this->logSnapshot($scanResult, $admin->id, 'created', newValue: $scanResult->toArray());
@@ -476,11 +476,10 @@ class ScanService
         });
     }
 
-    private function resolveLocation(int $userId, int $plantId, string $locationName): Location
+    private function resolveLocation(int $plantId, string $locationName): Location
     {
         return Location::updateOrCreate(
             [
-                'user_id' => $userId,
                 'plant_id' => $plantId,
                 'name' => trim($locationName),
             ],

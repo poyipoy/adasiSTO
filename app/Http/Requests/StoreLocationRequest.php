@@ -21,7 +21,6 @@ class StoreLocationRequest extends FormRequest
                 'string',
                 'max:100',
                 Rule::unique('locations', 'name')->where(fn ($query) => $query
-                    ->where('user_id', $this->user()->id)
                     ->where('plant_id', $this->integer('plant_id'))),
             ],
         ];
