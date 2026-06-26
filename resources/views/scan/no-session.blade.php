@@ -5,7 +5,7 @@
         <p style="color: var(--text-secondary); margin-bottom: 14px;">
             {{ $message ?? 'Silakan setup STO terlebih dahulu sebelum memulai scan.' }}
         </p>
-        <a href="{{ route('scan.setup', [], false) }}" class="btn btn-primary">Setup STO</a>
+        <a href="{{ route('scan.setup') }}" class="btn btn-primary">Setup STO</a>
     </div>
 </div>
 </x-layouts.app>

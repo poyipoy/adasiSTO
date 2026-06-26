@@ -21,8 +21,8 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->redirectUsersTo(function (Request $request): string {
             return $request->user()?->isAdmin()
-                ? route('admin.dashboard', [], false)
-                : route('scan.setup', [], false);
+                ? route('admin.dashboard')
+                : route('scan.setup');
         });
     })
     ->withExceptions(function (Exceptions $exceptions): void {

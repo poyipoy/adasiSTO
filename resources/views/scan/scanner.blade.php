@@ -482,7 +482,7 @@
                 const plantId = document.getElementById('plantId').value;
                 const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
 
-                fetch('{{ route("scan.setup.store", [], false) }}', {
+                fetch('{{ route("scan.setup.store") }}', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -530,6 +530,7 @@
             function submitScan(forceSave = false, qrText = null, source = 'manual') {
                 if (scanningLocked) return;
                 scanningLocked = true;
+                typingSpeedIsHuman = false;
 
                 const qrInput = document.getElementById('qrInput');
                 const qr = (qrText || qrInput.value).trim();
@@ -541,7 +542,7 @@
                 pendingQr = qr;
                 pendingSource = source;
 
-                fetch('{{ route("api.scan.store", [], false) }}', {
+                fetch('{{ route("api.scan.store") }}', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
                     body: JSON.stringify({
@@ -685,7 +686,7 @@
             function loadRecent(page = 1) {
                 const targetPage = Math.max(parseInt(page, 10) || 1, 1);
 
-                fetch(`{{ route("api.scan.recent", [], false) }}?page=${targetPage}`, {
+                fetch(`{{ route("api.scan.recent") }}?page=${targetPage}`, {
                     headers: { Accept: 'application/json' }
                 })
                     .then(async response => {
@@ -1142,7 +1143,8 @@
                     const now = Date.now();
                     const diff = now - lastKeyTime;
                     const val = event.target.value;
-                    if (val.length > 0 && diff > 50) {
+                    // Tingkatkan batas kecepatan ke 100ms untuk mengakomodasi scanner yang lambat
+                    if (val.length > 0 && diff > 100) {
                         typingSpeedIsHuman = true;
                     }
                     lastKeyTime = now;
@@ -1163,7 +1165,7 @@
                 if (val.length > 2 && !typingSpeedIsHuman) {
                     manualScanTimeout = setTimeout(() => {
                         submitScan(false);
-                    }, 250);
+                    }, 400); // 400ms buffer supaya tidak terpotong kalau ada jeda transfer data usb
                 }
             });
 
@@ -1178,7 +1180,17 @@
                 if (event.ctrlKey || event.altKey || event.metaKey) return;
                 
                 const qrInput = document.getElementById('qrInput');
-                if (qrInput && event.key.length === 1) {
+                if (!qrInput) return;
+
+                if (event.key === 'Enter') {
+                    if (qrInput.value.trim().length > 0) {
+                        event.preventDefault();
+                        submitScan(false);
+                    }
+                    return;
+                }
+
+                if (event.key.length === 1) {
                     qrInput.focus();
                 }
             });

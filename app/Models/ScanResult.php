@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Services\ActiveStoService;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -10,6 +12,23 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class ScanResult extends Model
 {
     use HasFactory;
+
+    /**
+     * Global Scope: Otomatis memfilter seluruh query ScanResult
+     * agar hanya menampilkan data milik periode STO yang sedang aktif.
+     * Data periode STO lama tetap ada di database (arsip),
+     * namun tidak akan muncul di UI manapun.
+     */
+    protected static function booted(): void
+    {
+        static::addGlobalScope('active_sto', function (Builder $builder) {
+            $activeSto = app(ActiveStoService::class)->active();
+
+            if ($activeSto) {
+                $builder->where('scan_results.sto_code_id', $activeSto->id);
+            }
+        });
+    }
 
     protected $fillable = [
         'user_id',
@@ -71,19 +90,19 @@ class ScanResult extends Model
 
     public function scopeForUser($query, int $userId)
     {
-        return $query->where('user_id', $userId);
+        return $query->where('scan_results.user_id', $userId);
     }
 
     public function scopeLatestFirst($query)
     {
-        return $query->orderBy('created_at', 'desc')->orderBy('id', 'desc');
+        return $query->orderBy('scan_results.created_at', 'desc')->orderBy('scan_results.id', 'desc');
     }
 
     public function scopeToday($query)
     {
         return $query
-            ->where('created_at', '>=', now()->startOfDay())
-            ->where('created_at', '<=', now()->endOfDay());
+            ->where('scan_results.created_at', '>=', now()->startOfDay())
+            ->where('scan_results.created_at', '<=', now()->endOfDay());
     }
 
     public function getSizeAttribute(): string

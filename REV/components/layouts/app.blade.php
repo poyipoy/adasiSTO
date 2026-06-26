@@ -1801,34 +1801,140 @@
             return nativeFetch(resource, options);
         };
 
+        // Unified Adasi Alert
+        function adasiAlert(options) {
+            const type = options.type || 'alert'; // 'confirm' or 'alert' or 'success' or 'error'
+            const titleText = options.title || (type === 'success' ? 'Berhasil' : (type === 'error' ? 'Error' : 'Konfirmasi'));
+            const message = options.message || '';
+            const onYes = options.onYes;
+            const onNo = options.onNo;
+
+            if (!document.getElementById('adasi-dialog-style')) {
+                const style = document.createElement('style');
+                style.id = 'adasi-dialog-style';
+                style.innerHTML = `
+                    .adasi-overlay { position: fixed; inset: 0; background: rgba(100, 100, 100, 0.45); display: flex; justify-content: center; align-items: center; z-index: 9999; }
+                    .adasi-modal { background: #ffffff; border: 1px solid #c8c8c8; width: 540px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18); border-radius: 0; position: relative; }
+                    .adasi-modal-header { display: flex; align-items: center; gap: 10px; padding: 16px 20px 14px; }
+                    .adasi-modal-header .icon { font-size: 20px; line-height: 1; flex-shrink: 0; }
+                    .adasi-modal-header .title { font-size: 15px; font-weight: 600; letter-spacing: 0.01em; font-family: "Segoe UI", Arial, sans-serif; flex-grow: 1; }
+                    .adasi-modal-close { background: none; border: none; font-size: 18px; cursor: pointer; color: #555; padding: 0; line-height: 1; }
+                    .adasi-modal-close:hover { color: #000; }
+                    .adasi-modal-body { padding: 6px 20px 22px; }
+                    .adasi-modal-body p { font-size: 13.5px; color: #2d2d2d; line-height: 1.55; font-family: "Segoe UI", Arial, sans-serif; margin: 0; }
+                    .adasi-modal-divider { height: 1px; background: #d0d0d0; margin: 0; }
+                    .adasi-modal-footer { display: flex; height: 44px; }
+                    .adasi-modal-footer .btn { flex: 1; background: none; border: none; cursor: pointer; font-family: "Segoe UI", Arial, sans-serif; font-size: 13.5px; font-weight: 500; transition: background 0.15s; position: relative; }
+                    .adasi-modal-footer .btn + .btn::before { content: ""; position: absolute; left: 0; top: 8px; bottom: 8px; width: 1px; background: #d0d0d0; }
+                    .btn-yes { color: #0070c0 !important; font-weight: 600 !important; outline: 2px solid transparent; outline-offset: -3px; }
+                    .btn-yes:focus, .btn-yes.active { outline-color: #0070c0; }
+                    .btn-no { color: #2d2d2d !important; }
+                    .adasi-modal-footer .btn:hover { background: #f0f4f8; }
+                    .btn-yes:hover { background: #e8f0f8; }
+                `;
+                document.head.appendChild(style);
+            }
+
+            let iconColor, titleColor, iconChar;
+            
+            if (type === 'success') {
+                iconColor = '#10b981';
+                titleColor = '#059669';
+                iconChar = '✓';
+            } else if (type === 'error') {
+                iconColor = '#ef4444';
+                titleColor = '#dc2626';
+                iconChar = '✖';
+            } else {
+                iconColor = '#d08000';
+                titleColor = '#c07800';
+                iconChar = '⚠';
+            }
+
+            const overlay = document.createElement('div');
+            overlay.className = 'adasi-overlay';
+
+            const modalId = 'modal-title-' + Math.random().toString(36).substr(2, 9);
+            
+            let closeBtnHtml = type !== 'confirm' 
+                ? `<button class="adasi-modal-close" aria-label="Close">✕</button>` 
+                : '';
+
+            let footerHtml = '';
+            if (type === 'confirm') {
+                footerHtml = `
+                <div class="adasi-modal-divider"></div>
+                <div class="adasi-modal-footer">
+                    <button class="btn btn-yes" id="btnYes">Yes</button>
+                    <button class="btn btn-no" id="btnNo">No</button>
+                </div>`;
+            }
+
+            overlay.innerHTML = `
+                <div class="adasi-modal" role="dialog" aria-modal="true" aria-labelledby="${modalId}">
+                    <div class="adasi-modal-header">
+                        <span class="icon" aria-hidden="true" style="color: ${iconColor}; font-weight: bold;">${iconChar}</span>
+                        <span class="title" id="${modalId}" style="color: ${titleColor};">${titleText}</span>
+                        ${closeBtnHtml}
+                    </div>
+                    <div class="adasi-modal-body">
+                        <p>${message}</p>
+                    </div>
+                    ${footerHtml}
+                </div>
+            `;
+
+            document.body.appendChild(overlay);
+
+            const closeDialog = () => {
+                if (document.body.contains(overlay)) {
+                    document.body.removeChild(overlay);
+                }
+            };
+
+            if (type === 'confirm') {
+                const btnYes = overlay.querySelector('#btnYes');
+                const btnNo = overlay.querySelector('#btnNo');
+                
+                btnYes.addEventListener('click', () => {
+                    if (onYes) onYes();
+                    closeDialog();
+                });
+                
+                btnNo.addEventListener('click', () => {
+                    if (onNo) onNo();
+                    closeDialog();
+                });
+                
+                btnYes.focus();
+            } else {
+                const btnClose = overlay.querySelector('.adasi-modal-close');
+                btnClose.addEventListener('click', () => closeDialog());
+                
+                setTimeout(() => closeDialog(), 1300);
+            }
+        }
+
         function showToast(message, type = 'success') {
-            Swal.fire({
-                icon: type,
-                title: type === 'success' ? 'Berhasil!' : 'Perhatian!',
-                text: message,
-                timer: 1000,
-                showConfirmButton: false,
-                background: '#ffffff',
-                color: '#1f2937'
+            adasiAlert({
+                type: type,
+                message: message
             });
         }
 
-        function confirmAction(message, callback) {
-            Swal.fire({
-                title: 'Konfirmasi',
-                html: message,
-                icon: 'warning',
-                showCancelButton: true,
-                confirmButtonColor: '#f43f5e',
-                cancelButtonColor: '#64748b',
-                confirmButtonText: 'Ya, Lanjutkan',
-                cancelButtonText: 'Batal',
-                background: '#ffffff',
-                color: '#1f2937'
-            }).then((result) => {
-                if (result.isConfirmed) {
-                    callback();
-                }
+        function confirmAction(options, callback) {
+            let props = {};
+            if (typeof options === 'string') {
+                props = { title: 'Konfirmasi', message: options, onYes: callback };
+            } else {
+                props = options;
+            }
+            adasiAlert({
+                type: 'confirm',
+                title: props.title,
+                message: props.message,
+                onYes: props.onYes,
+                onNo: props.onNo
             });
         }
 

@@ -100,6 +100,7 @@ class MasterController extends Controller
             $oldActiveValues = $stoCode->toArray();
             $stoCode->update(['is_active' => false]);
             $this->activityLog->record($request->user(), 'master.sto.updated', $stoCode, $oldActiveValues, $stoCode->fresh()->toArray());
+            $this->activeStoService->forgetCache();
         }
 
         return $this->success('STO berhasil diperbarui.');
@@ -120,6 +121,7 @@ class MasterController extends Controller
             $oldActiveValues = $stoCode->toArray();
             $stoCode->update(['is_active' => false]);
             $this->activityLog->record(request()->user(), 'master.sto.updated', $stoCode, $oldActiveValues, $stoCode->fresh()->toArray());
+            $this->activeStoService->forgetCache();
         }
 
         return $this->success('STO berhasil dinonaktifkan.');
@@ -391,8 +393,8 @@ class MasterController extends Controller
         $configs = [
             'sto' => [
                 'title' => 'Master STO',
-                'apiBase' => '/admin/api/master-sto',
-                'activateBase' => '/admin/api/master-sto',
+                'apiBase' => route('admin.api.master-sto'),
+                'activateBase' => route('admin.api.master-sto'),
                 'columns' => [
                     ['data' => 'no', 'label' => 'No'],
                     ['data' => 'code', 'label' => 'STO Code'],
@@ -411,7 +413,7 @@ class MasterController extends Controller
             ],
             'plant' => [
                 'title' => 'Master Plant',
-                'apiBase' => '/admin/api/master-plant',
+                'apiBase' => route('admin.api.master-plant'),
                 'columns' => [
                     ['data' => 'no', 'label' => 'No'],
                     ['data' => 'name', 'label' => 'Plant'],
@@ -424,7 +426,7 @@ class MasterController extends Controller
             ],
             'material' => [
                 'title' => 'Master Material',
-                'apiBase' => '/admin/api/master-material',
+                'apiBase' => route('admin.api.master-material'),
                 'columns' => [
                     ['data' => 'no', 'label' => 'No'],
                     ['data' => 'material_code', 'label' => 'Material Code'],
@@ -439,7 +441,7 @@ class MasterController extends Controller
             ],
             'keterangan' => [
                 'title' => 'Master Keterangan',
-                'apiBase' => '/admin/api/master-keterangan',
+                'apiBase' => route('admin.api.master-keterangan'),
                 'columns' => [
                     ['data' => 'no', 'label' => 'No'],
                     ['data' => 'name', 'label' => 'Keterangan'],
@@ -452,7 +454,7 @@ class MasterController extends Controller
             ],
             'user' => [
                 'title' => 'User Management',
-                'apiBase' => '/admin/api/users',
+                'apiBase' => route('admin.api.users'),
                 'columns' => [
                     ['data' => 'no', 'label' => 'No'],
                     ['data' => 'name', 'label' => 'Name'],

@@ -1,4 +1,7 @@
 <x-layouts.app :title="'Overview'">
+@push('head-scripts')
+<script src="{{ asset('vendor/chartjs/chart.umd.min.js') }}"></script>
+@endpush
 
 @push('styles')
 <style>
@@ -303,7 +306,7 @@
     }
 
     function refreshScannerOverview() {
-        fetch('{{ route("api.scan.overview", [], false) }}', { headers: { Accept: 'application/json' } })
+        fetch('{{ route("api.scan.overview") }}', { headers: { Accept: 'application/json' } })
             .then(async response => {
                 const payload = await response.json();
                 if (!response.ok) throw payload;
@@ -334,7 +337,7 @@
             );
         }
 
-        setInterval(refreshScannerOverview, 10000);
+        setInterval(refreshScannerOverview, 30000);
     });
 </script>
 @endpush

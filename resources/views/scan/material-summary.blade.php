@@ -50,7 +50,7 @@
             processing: true,
             serverSide: true,
             ajax: {
-                url: '{{ route("api.scan.material-summary", [], false) }}',
+                url: '{{ route("api.scan.material-summary") }}',
                 data: d => {
                     d.plant_id = $('#filterPlant').val();
                     d.material_code = $('#filterMaterialCode').val();

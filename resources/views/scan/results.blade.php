@@ -4,7 +4,7 @@
 
 <div class="enterprise-toolbar">
     <button class="btn btn-primary" type="button" onclick="loadHistory()">Refresh</button>
-    <a href="{{ route('scan.scanner', [], false) }}" class="btn" id="openScannerTab">Scanner</a>
+    <a href="{{ route('scan.scanner') }}" class="btn" id="openScannerTab">Scanner</a>
 </div>
 
 <div class="card filter-panel" style="border-top:0;">

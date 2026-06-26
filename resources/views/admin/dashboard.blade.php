@@ -1,4 +1,7 @@
 <x-layouts.app :title="'Admin Dashboard'">
+@push('head-scripts')
+<script src="{{ asset('vendor/chartjs/chart.umd.min.js') }}"></script>
+@endpush
 
 @push('styles')
 <style>
@@ -443,7 +446,7 @@
             processing: true,
             serverSide: true,
             ajax: {
-                url: '{{ route("admin.api.dashboard.latest-scan", [], false) }}',
+                url: '{{ route("admin.api.dashboard.latest-scan") }}',
                 type: 'GET',
                 data: function(d) {
                     if (urlParams.has('plant_id')) d.plant_id = urlParams.get('plant_id');

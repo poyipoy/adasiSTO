@@ -16,7 +16,6 @@ class AdminUpsertScanResultRequest extends FormRequest
     {
         return [
             'user_id' => ['required', 'integer', Rule::exists('users', 'id')->where('role', 'scanner')],
-            'sto_code_id' => ['required', 'integer', 'exists:sto_codes,id'],
             'plant_id' => ['required', 'integer', Rule::exists('plants', 'id')->where('is_active', true)],
             'location_name' => ['required', 'string', 'max:100'],
             'barcode_raw' => ['required', 'string', 'max:150'],

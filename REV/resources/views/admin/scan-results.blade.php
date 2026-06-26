@@ -833,6 +833,7 @@
     function emptyPayload() {
         return payloadSnapshot({
             user_id: '',
+            sto_code_id: '',
             plant_id: '',
             location_name: '',
             barcode_raw: '',
@@ -855,13 +856,19 @@
 
     function defaultCreateData() {
         return {
+            sto_code_id: defaultStoCodeId(),
             scan_source: 'admin',
         };
+    }
+
+    function defaultStoCodeId() {
+        return stoOptions[0]?.id || '';
     }
 
     function normalizeRow(row) {
         return {
             user_id: row.user_id ?? '',
+            sto_code_id: row.sto_code_id || stoIdsByCode[row.sto_code] || '',
             plant_id: row.plant_id ?? '',
             location_name: row.location_name ?? '',
             barcode_raw: row.barcode_raw ?? '',
@@ -894,7 +901,7 @@
 
     function emptyPayloadFields() {
         return {
-            user_id: '', plant_id: '', location_name: '', barcode_raw: '', barcode_material: '',
+            user_id: '', sto_code_id: '', plant_id: '', location_name: '', barcode_raw: '', barcode_material: '',
             lot_number: '', qty: '', material_code: '', material_name: '', shape_code: '', shape_name: '',
             thickness: '', width: '', diameter: '', length: '', keterangan: '', scan_source: '', created_at: '',
         };
