@@ -131,6 +131,10 @@ class ScanService
 
         $scanResult = $result['scan_result'];
 
+        // Bust the history filter-options cache so the next history page load
+        // always shows freshly added barcodes/materials in the filter dropdowns.
+        \Illuminate\Support\Facades\Cache::forget("user_{$user->id}_history_filters");
+
         return [
             'success' => true,
             'message' => 'Scan berhasil disimpan.',

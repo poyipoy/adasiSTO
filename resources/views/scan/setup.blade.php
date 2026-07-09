@@ -1,5 +1,73 @@
 <x-layouts.app :title="'Setup STO'">
 
+@push('styles')
+<style>
+    /* --- Location Filter Modal --- */
+    .location-filter-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 1050;
+        display: flex;
+        align-items: flex-end;
+        justify-content: center;
+    }
+    .location-filter-content {
+        background: #fff;
+        width: 100%;
+        max-width: 500px;
+        max-height: 85vh;
+        border-radius: 16px 16px 0 0;
+        display: flex;
+        flex-direction: column;
+        animation: slideUp 0.3s ease-out;
+    }
+    @media (min-width: 768px) {
+        .location-filter-overlay { align-items: center; }
+        .location-filter-content {
+            border-radius: 12px;
+            max-height: 80vh;
+            animation: fadeIn 0.2s ease-out;
+        }
+    }
+    .location-filter-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 16px;
+        border-bottom: 1px solid var(--border-light);
+    }
+    .location-filter-search {
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--border-light);
+        background: #fafbfc;
+    }
+    .location-filter-list {
+        flex: 1;
+        overflow-y: auto;
+        padding: 8px 16px 16px 16px;
+    }
+    .location-filter-item {
+        padding: 12px;
+        border-bottom: 1px solid var(--border-light);
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--text);
+        transition: background 0.1s;
+    }
+    .location-filter-item:last-child { border-bottom: none; }
+    .location-filter-item:active { background: #f0f0f0; }
+    .location-filter-item.active {
+        background: var(--primary);
+        color: #fff;
+        border-radius: 6px;
+        border-bottom: none;
+        margin-bottom: 1px;
+    }
+</style>
+@endpush
+
 <div style="max-width: 560px; margin: 0 auto;">
     @if(!$activeSto)
         <div class="card" style="border-left: 3px solid var(--danger);">
@@ -39,9 +107,12 @@
                 <div class="form-group">
                     <label class="form-label" for="location_id">Location / Rack</label>
                     <div style="display:flex;gap:6px;">
-                        <select id="location_id" name="location_id" class="form-control" required data-selected="{{ old('location_id', $scanContext['location_id'] ?? '') }}" onchange="toggleDeleteLocationBtn()">
+                        <select id="location_id" name="location_id" class="form-control" required data-selected="{{ old('location_id', $scanContext['location_id'] ?? '') }}" onchange="toggleDeleteLocationBtn()" style="display:none;">
                             <option value="">Pilih Plant terlebih dahulu</option>
                         </select>
+                        <button type="button" id="locationFilterTrigger" class="form-control" onclick="openLocationFilterModal()" style="text-align: left; background: #fff; cursor: pointer; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                            Pilih Plant terlebih dahulu
+                        </button>
                         <button class="btn" type="button" onclick="openLocationModal()" style="min-width:64px;">+ Baru</button>
                         <button class="btn-icon" id="deleteLocationBtn" type="button" onclick="deleteSelectedLocation()" style="display:none;color:var(--danger);padding:0 8px;border:1px solid var(--border-light);background:var(--bg);border-radius:4px;" title="Hapus Location / Rack">
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width: 18px; height: 18px;">
@@ -57,6 +128,25 @@
             <button type="submit" class="btn btn-primary" style="width:100%;height:38px;margin-top:10px;">Start Scan</button>
         </form>
     @endif
+</div>
+
+<div id="locationFilterModalContainer" class="location-filter-overlay" style="display: none;">
+    <div class="location-filter-content">
+        <div class="location-filter-header">
+            <h3 style="margin: 0; font-size: 16px; font-weight: 700;">Select Location</h3>
+            <button type="button" class="btn-icon" onclick="closeLocationFilterModal()">
+                <svg fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" width="20" height="20">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+            </button>
+        </div>
+        <div class="location-filter-search">
+            <input type="text" id="locationFilterSearchInput" class="form-control" placeholder="Cari lokasi..." oninput="filterLocationsSetup(this.value)">
+        </div>
+        <div class="location-filter-list" id="locationFilterList">
+            <!-- Dynamically populated via JS -->
+        </div>
+    </div>
 </div>
 
 <div class="modal-overlay" id="locationModal">
@@ -110,9 +200,11 @@
         const plantId = plantSelect.value;
         const selected = locationSelect.dataset.selected;
         locationSelect.innerHTML = '<option value="">Memuat...</option>';
+        syncLocationFilterList();
 
         if (!plantId) {
             locationSelect.innerHTML = '<option value="">Pilih Plant terlebih dahulu</option>';
+            syncLocationFilterList();
             return;
         }
 
@@ -122,10 +214,12 @@
                 locationSelect.innerHTML = '<option value="">Pilih Location / Rack</option>';
                 payload.data.forEach(location => appendLocationOption(location, String(location.id) === String(selected)));
                 toggleDeleteLocationBtn();
+                syncLocationFilterList();
             })
             .catch(() => {
                 locationSelect.innerHTML = '<option value="">Gagal memuat location</option>';
                 toggleDeleteLocationBtn();
+                syncLocationFilterList();
             });
     }
 
@@ -199,6 +293,97 @@
         locationSelect.appendChild(option);
     }
 
+    function syncLocationFilterList() {
+        const trigger = document.getElementById('locationFilterTrigger');
+        const listContainer = document.getElementById('locationFilterList');
+        if (!trigger || !listContainer) return;
+        
+        listContainer.innerHTML = '';
+        let selectedText = 'Pilih Location / Rack';
+        
+        if (locationSelect.options.length === 1 && locationSelect.options[0].value === "") {
+            trigger.textContent = locationSelect.options[0].text;
+            return;
+        }
+
+        Array.from(locationSelect.options).forEach(opt => {
+            if (opt.value === "") return;
+            
+            const id = opt.value;
+            const name = opt.text;
+            const isActive = opt.selected;
+            if (isActive) selectedText = name;
+            
+            const div = document.createElement('div');
+            div.className = 'location-filter-item' + (isActive ? ' active' : '');
+            div.setAttribute('data-id', id);
+            div.setAttribute('data-name', name);
+            div.onclick = function() { selectLocationFilter(id, name); };
+            div.textContent = name;
+            listContainer.appendChild(div);
+        });
+        
+        trigger.textContent = selectedText;
+    }
+
+    function openLocationFilterModal() {
+        if (!plantSelect.value) {
+            showToast('Pilih Plant terlebih dahulu.', 'error');
+            return;
+        }
+        if (locationSelect.options.length <= 1) {
+            showToast('Location / Rack kosong.', 'error');
+            return;
+        }
+        
+        const modal = document.getElementById('locationFilterModalContainer');
+        modal.style.display = 'flex';
+        const input = document.getElementById('locationFilterSearchInput');
+        input.value = '';
+        filterLocationsSetup('');
+        input.focus();
+
+        setTimeout(() => {
+            const activeItem = modal.querySelector('.location-filter-item.active');
+            if (activeItem) activeItem.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        }, 50);
+    }
+
+    function closeLocationFilterModal() {
+        document.getElementById('locationFilterModalContainer').style.display = 'none';
+    }
+
+    function selectLocationFilter(id, name) {
+        locationSelect.value = id;
+        document.getElementById('locationFilterTrigger').textContent = name;
+        
+        const items = document.querySelectorAll('.location-filter-item');
+        items.forEach(item => {
+            if (item.getAttribute('data-id') === String(id)) item.classList.add('active');
+            else item.classList.remove('active');
+        });
+
+        toggleDeleteLocationBtn();
+        closeLocationFilterModal();
+    }
+
+    function filterLocationsSetup(query) {
+        const lowerQuery = query.toLowerCase();
+        const items = document.querySelectorAll('.location-filter-item');
+        items.forEach(item => {
+            const name = item.getAttribute('data-name').toLowerCase();
+            if (name.includes(lowerQuery)) item.style.display = 'block';
+            else item.style.display = 'none';
+        });
+    }
+
+    const filterModalContainer = document.getElementById('locationFilterModalContainer');
+    if (filterModalContainer) {
+        filterModalContainer.addEventListener('click', function(e) {
+            if (e.target === this) closeLocationFilterModal();
+        });
+    }
+
     function openLocationModal() {
         if (!plantSelect.value) {
             showToast('Pilih Plant terlebih dahulu.', 'error');
@@ -241,14 +426,32 @@
         }
 
         if (!locationQrScanner) {
-            locationQrScanner = new Html5Qrcode('locationReader');
+            const formats = window.Html5QrcodeSupportedFormats ? [
+                Html5QrcodeSupportedFormats.QR_CODE,
+                Html5QrcodeSupportedFormats.CODE_128,
+                Html5QrcodeSupportedFormats.CODE_39,
+                Html5QrcodeSupportedFormats.CODE_93,
+                Html5QrcodeSupportedFormats.CODABAR,
+                Html5QrcodeSupportedFormats.EAN_13,
+                Html5QrcodeSupportedFormats.EAN_8,
+                Html5QrcodeSupportedFormats.ITF,
+                Html5QrcodeSupportedFormats.UPC_A,
+                Html5QrcodeSupportedFormats.UPC_E,
+                Html5QrcodeSupportedFormats.UPC_EAN_EXTENSION
+            ] : undefined;
+
+            locationQrScanner = new Html5Qrcode('locationReader', {
+                formatsToSupport: formats,
+                verbose: false,
+                useBarCodeDetectorIfSupported: false
+            });
         }
 
         if (locationCameraRunning) return;
 
         locationQrScanner.start(
             { facingMode: 'environment' },
-            { fps: 8, qrbox: { width: 220, height: 160 } },
+            { fps: 10, qrbox: { width: 250, height: 250 } },
             decodedText => {
                 if (locationScanLocked) return;
 
@@ -324,6 +527,7 @@
             locationSelect.dataset.selected = payload.data.id;
             closeLocationModal();
             toggleDeleteLocationBtn();
+            syncLocationFilterList();
             const swal = window.top.Swal || Swal;
             swal.fire({
                 title: 'Berhasil!',

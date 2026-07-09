@@ -13,6 +13,7 @@ use App\Models\MaterialDoubleValidation;
 use App\Models\Plant;
 use App\Models\ScanResult;
 use App\Models\StoCode;
+use App\Services\ActiveStoService;
 use App\Services\ActivityLogService;
 use App\Services\ExportService;
 use App\Services\MaterialDoubleQueryService;
@@ -53,13 +54,18 @@ class MaterialDoubleController extends Controller
 
         $search = $request->input('search.value');
         if ($search) {
-            $query->where(function ($searchQuery) use ($search) {
-                $searchQuery->where('scan_results.barcode_material', 'like', "%{$search}%")
-                    ->orWhere('scan_results.material_name', 'like', "%{$search}%")
-                    ->orWhere('scan_results.material_code', 'like', "%{$search}%")
-                    ->orWhere('scan_results.shape_name', 'like', "%{$search}%")
-                    ->orWhere('plants.name', 'like', "%{$search}%")
-                    ->orWhere('locations.name', 'like', "%{$search}%");
+            $searchData = \App\Services\BarcodeParserService::normalizeSearch($search);
+            $normalizedSearch = $searchData['normalized'];
+            $firstPartSearch = $searchData['first_part'];
+
+            $query->where(function ($searchQuery) use ($normalizedSearch, $firstPartSearch) {
+                $searchQuery->where('scan_results.barcode_material', 'like', "%{$firstPartSearch}%")
+                    ->orWhere('scan_results.barcode_raw', 'like', "%{$normalizedSearch}%")
+                    ->orWhere('scan_results.material_name', 'like', "%{$normalizedSearch}%")
+                    ->orWhere('scan_results.material_code', 'like', "%{$normalizedSearch}%")
+                    ->orWhere('scan_results.shape_name', 'like', "%{$normalizedSearch}%")
+                    ->orWhere('plants.name', 'like', "%{$normalizedSearch}%")
+                    ->orWhere('locations.name', 'like', "%{$normalizedSearch}%");
             });
         }
 
@@ -110,12 +116,17 @@ class MaterialDoubleController extends Controller
 
         $search = $request->input('search.value');
         if ($search) {
-            $query->where(function ($searchQuery) use ($search) {
-                $searchQuery->where('barcode_material', 'like', "%{$search}%")
-                    ->orWhere('material_name', 'like', "%{$search}%")
-                    ->orWhere('material_code', 'like', "%{$search}%")
-                    ->orWhere('shape_name', 'like', "%{$search}%")
-                    ->orWhere('lot_number', 'like', "%{$search}%");
+            $searchData = \App\Services\BarcodeParserService::normalizeSearch($search);
+            $normalizedSearch = $searchData['normalized'];
+            $firstPartSearch = $searchData['first_part'];
+
+            $query->where(function ($searchQuery) use ($normalizedSearch, $firstPartSearch) {
+                $searchQuery->where('barcode_material', 'like', "%{$firstPartSearch}%")
+                    ->orWhere('barcode_raw', 'like', "%{$normalizedSearch}%")
+                    ->orWhere('material_name', 'like', "%{$normalizedSearch}%")
+                    ->orWhere('material_code', 'like', "%{$normalizedSearch}%")
+                    ->orWhere('shape_name', 'like', "%{$normalizedSearch}%")
+                    ->orWhere('lot_number', 'like', "%{$normalizedSearch}%");
             });
         }
 
@@ -138,6 +149,7 @@ class MaterialDoubleController extends Controller
                     'material_name' => $scanResult->material_name,
                     'shape_name' => $scanResult->shape_name,
                     'user_name' => $scanResult->user ? $scanResult->user->name : '-',
+                    'scan_time' => $scanResult->created_at ? $scanResult->created_at->format('d-m-Y H:i:s') : '-',
                 ];
             })->values(),
         ]);
@@ -301,7 +313,7 @@ class MaterialDoubleController extends Controller
         $columns = $request->input('columns');
 
         if (!$orderInfo || !isset($columns[$orderInfo['column']])) {
-            $query->orderByDesc('duplicate_count')->orderByDesc('scan_results.barcode_material');
+            $query->orderByDesc('max_created_at')->orderByDesc('scan_results.barcode_material');
 
             return;
         }
@@ -316,19 +328,23 @@ class MaterialDoubleController extends Controller
             'plant' => 'plants.name',
             'location' => 'locations.name',
             'duplicate_count' => 'duplicate_count',
+            'max_created_at' => 'max_created_at',
         ];
 
         if (isset($sortableColumns[$columnData])) {
             $query->orderBy($sortableColumns[$columnData], $dir);
         } else {
-            $query->orderByDesc('duplicate_count');
+            $query->orderByDesc('max_created_at');
         }
     }
 
     private function markDuplicateValidated(Request $request, array $payload): MaterialDoubleValidation
     {
+        $activeStoId = app(ActiveStoService::class)->active()?->id;
+
         $validation = MaterialDoubleValidation::updateOrCreate(
             [
+                'sto_code_id' => $activeStoId,
                 'barcode_material' => $payload['barcode_material'],
                 'plant_id' => $payload['plant_id'],
                 'location_id' => $payload['location_id'],

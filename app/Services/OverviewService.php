@@ -17,7 +17,8 @@ class OverviewService
 
     public function scanOverview(?User $scopeUser = null, array $filters = []): array
     {
-        $cacheKey = 'scan_overview:' . ($scopeUser?->id ?? 'all') . ':' . md5(serialize($filters));
+        $activeStoId = app(ActiveStoService::class)->active()?->id;
+        $cacheKey = 'scan_overview:' . ($scopeUser?->id ?? 'all') . ':' . md5(serialize($filters)) . ':' . $activeStoId;
 
         return Cache::remember($cacheKey, 15, function () use ($scopeUser, $filters) {
             $baseQuery = $this->scanQuery($scopeUser, $filters);
@@ -69,7 +70,8 @@ class OverviewService
     {
         unset($filters['status']);
 
-        $cacheKey = 'validator_overview:' . md5(serialize($filters));
+        $activeStoId = app(ActiveStoService::class)->active()?->id;
+        $cacheKey = 'validator_overview:' . md5(serialize($filters)) . ':' . $activeStoId;
 
         return Cache::remember($cacheKey, 30, function () use ($filters) {
             $groups = $this->materialDoubleQuery->duplicateGroupQuery($filters);
@@ -94,14 +96,16 @@ class OverviewService
     {
         unset($filters['status']);
 
-        $cacheKey = 'validation_by_scanner:' . md5(serialize($filters));
+        $activeStoId = app(ActiveStoService::class)->active()?->id;
+        $cacheKey = 'validation_by_scanner:' . md5(serialize($filters)) . ':' . $activeStoId;
 
         return Cache::remember($cacheKey, 30, function () use ($filters) {
             $groups = $this->materialDoubleQuery->duplicateGroupQuery($filters);
 
             $query = MaterialDoubleValidation::query()
                 ->joinSub($groups, 'material_double_groups', function ($join) {
-                    $join->on('material_double_groups.barcode_material', '=', 'material_double_validations.barcode_material')
+                    $join->on('material_double_groups.sto_code_id', '=', 'material_double_validations.sto_code_id')
+                        ->on('material_double_groups.barcode_material', '=', 'material_double_validations.barcode_material')
                         ->on('material_double_groups.plant_id', '=', 'material_double_validations.plant_id')
                         ->on('material_double_groups.location_id', '=', 'material_double_validations.location_id');
                 })
@@ -127,7 +131,7 @@ class OverviewService
     public function materialSummaryQuery(?User $scopeUser = null, array $filters = []): Builder
     {
         $query = $this->scanQuery($scopeUser, $filters)
-            ->selectRaw('barcode_material, material_code, material_name, shape_code, shape_name, thickness, width, diameter, length, SUM(qty) as qty_total, COUNT(*) as scan_count')
+            ->selectRaw('barcode_material, material_code, material_name, shape_code, shape_name, thickness, width, diameter, length, SUM(qty) as qty_total, COUNT(*) as scan_count, MAX(scan_results.created_at) as max_created_at')
             ->groupBy('barcode_material', 'material_code', 'material_name', 'shape_code', 'shape_name', 'thickness', 'width', 'diameter', 'length');
 
         if (!empty($filters['material_code'])) {

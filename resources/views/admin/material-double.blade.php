@@ -91,6 +91,7 @@
                             <th>Material</th>
                             <th>Shape</th>
                             <th>User</th>
+                            <th>Waktu Scan</th>
                         </tr>
                     </thead>
                 </table>
@@ -551,6 +552,7 @@
                 { data: 'material_name' },
                 { data: 'shape_name' },
                 { data: 'user_name' },
+                { data: 'scan_time', className: 'mono' },
             ],
             language: { emptyTable: 'Tidak ada data duplicate ditemukan.' }
         });
@@ -679,14 +681,32 @@
         }
 
         if (!materialDoubleScanScanner) {
-            materialDoubleScanScanner = new Html5Qrcode('materialDoubleScanReader');
+            const formats = window.Html5QrcodeSupportedFormats ? [
+                Html5QrcodeSupportedFormats.QR_CODE,
+                Html5QrcodeSupportedFormats.CODE_128,
+                Html5QrcodeSupportedFormats.CODE_39,
+                Html5QrcodeSupportedFormats.CODE_93,
+                Html5QrcodeSupportedFormats.CODABAR,
+                Html5QrcodeSupportedFormats.EAN_13,
+                Html5QrcodeSupportedFormats.EAN_8,
+                Html5QrcodeSupportedFormats.ITF,
+                Html5QrcodeSupportedFormats.UPC_A,
+                Html5QrcodeSupportedFormats.UPC_E,
+                Html5QrcodeSupportedFormats.UPC_EAN_EXTENSION
+            ] : undefined;
+
+            materialDoubleScanScanner = new Html5Qrcode('materialDoubleScanReader', {
+                formatsToSupport: formats,
+                verbose: false,
+                useBarCodeDetectorIfSupported: false
+            });
         }
 
         if (materialDoubleScanCameraRunning) return;
 
         materialDoubleScanScanner.start(
             { facingMode: 'environment' },
-            { fps: 8, qrbox: { width: 220, height: 220 } },
+            { fps: 10, qrbox: { width: 250, height: 250 } },
             decodedText => {
                 if (materialDoubleScanLocked) return;
                 $('#materialDoubleScanQr').val(decodedText);

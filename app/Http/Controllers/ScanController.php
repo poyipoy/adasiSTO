@@ -158,11 +158,15 @@ class ScanController extends Controller
 
         $search = $request->input('search.value');
         if ($search) {
-            $searchString = str_replace(['%', '_'], ['\\%', '\\_'], $search);
-            $query->where(function ($q) use ($searchString) {
-                $q->where('barcode_material', 'like', "%{$searchString}%")
-                    ->orWhere('material_name', 'like', "%{$searchString}%")
-                    ->orWhere('material_code', 'like', "%{$searchString}%");
+            $searchData = \App\Services\BarcodeParserService::normalizeSearch($search);
+            $normalizedSearch = str_replace(['%', '_'], ['\\%', '\\_'], $searchData['normalized']);
+            $firstPartSearch = str_replace(['%', '_'], ['\\%', '\\_'], $searchData['first_part']);
+
+            $query->where(function ($q) use ($normalizedSearch, $firstPartSearch) {
+                $q->where('barcode_material', 'like', "%{$firstPartSearch}%")
+                    ->orWhere('barcode_raw', 'like', "%{$normalizedSearch}%")
+                    ->orWhere('material_name', 'like', "%{$normalizedSearch}%")
+                    ->orWhere('material_code', 'like', "%{$normalizedSearch}%");
             });
         }
 
@@ -187,15 +191,16 @@ class ScanController extends Controller
                 'shape_name' => 'shape_name',
                 'qty_total' => 'qty_total',
                 'scan_count' => 'scan_count',
+                'max_created_at' => 'max_created_at',
             ];
 
             if (isset($sortableColumns[$columnData])) {
                 $query->orderBy($sortableColumns[$columnData], $dir);
             } else {
-                $query->orderByDesc('scan_count');
+                $query->orderByDesc('max_created_at');
             }
         } else {
-            $query->orderByDesc('scan_count');
+            $query->orderByDesc('max_created_at');
         }
 
         $data = $query->skip($start)->take($length)->get();
@@ -246,6 +251,7 @@ class ScanController extends Controller
             'plant_id' => $request->integer('plant_id'),
             'name' => $request->string('name')->toString(),
             'is_active' => true,
+            'created_by_user_id' => $request->user()->id,
         ]);
 
         return response()->json([
@@ -316,7 +322,7 @@ class ScanController extends Controller
             'message' => $duplicate ? 'Barcode sudah pernah discan sebelumnya.' : null,
         ]);
     }
-
+    
     public function store(StoreScanRequest $request): JsonResponse
     {
         $result = $this->scanService->store($request->user(), $request->validated());
@@ -349,6 +355,7 @@ class ScanController extends Controller
                 'page' => $paginator->currentPage(),
                 'per_page' => $paginator->perPage(),
                 'total' => $paginator->total(),
+                'last_page' => $paginator->lastPage(),
             ],
         ]);
     }

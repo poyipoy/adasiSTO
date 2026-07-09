@@ -246,6 +246,7 @@ class ScanController extends Controller
             'plant_id' => $request->integer('plant_id'),
             'name' => $request->string('name')->toString(),
             'is_active' => true,
+            'created_by_user_id' => $request->user()->id,
         ]);
 
         return response()->json([
@@ -349,6 +350,7 @@ class ScanController extends Controller
                 'page' => $paginator->currentPage(),
                 'per_page' => $paginator->perPage(),
                 'total' => $paginator->total(),
+                'last_page' => $paginator->lastPage(),
             ],
         ]);
     }

@@ -1,8 +1,23 @@
 <x-layouts.app :title="$title">
 
-<div class="enterprise-toolbar">
-    <button class="btn btn-primary" type="button" onclick="openCreate()">Tambah</button>
-    <button class="btn btn-icon" type="button" onclick="reloadTable()" title="Refresh">Refresh</button>
+<div class="enterprise-toolbar" style="justify-content: space-between;">
+    <div style="display: flex; gap: 8px;">
+        <button class="btn btn-primary" type="button" onclick="openCreate()">Tambah</button>
+        <button class="btn btn-icon" type="button" onclick="reloadTable()" title="Refresh">Refresh</button>
+    </div>
+
+    @if(isset($filters) && count($filters) > 0)
+        <div class="filter-panel" style="display: flex; gap: 8px; align-items: center;">
+            @foreach($filters as $filter)
+                <select class="form-select filter-select" data-name="{{ $filter['name'] }}" style="padding: 4px 8px; font-size: 13px; height: 32px; background-color: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 6px;" onchange="reloadTable()">
+                    <option value="">-- {{ $filter['label'] }} --</option>
+                    @foreach($filter['options'] as $option)
+                        <option value="{{ $option['value'] }}">{{ $option['label'] }}</option>
+                    @endforeach
+                </select>
+            @endforeach
+        </div>
+    @endif
 </div>
 
 <div id="inlineEditorError" class="inline-editor-error"></div>
@@ -187,7 +202,14 @@
         masterTable = $('#masterTable').DataTable({
             processing: true,
             serverSide: true,
-            ajax: apiBase,
+            ajax: {
+                url: apiBase,
+                data: function(d) {
+                    $('.filter-select').each(function() {
+                        d[$(this).data('name')] = $(this).val();
+                    });
+                }
+            },
             order: [],
             columns: [
                 ...columns.map(column => ({

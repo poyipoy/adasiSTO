@@ -857,14 +857,23 @@
 
         // SweetAlert Notification
         function showToast(message, type = 'success') {
-            Swal.fire({
+            const Toast = Swal.mixin({
+                toast: true,
+                position: 'top-end',
+                showConfirmButton: false,
+                timer: 1500,
+                timerProgressBar: true,
+                background: '#ffffff',
+                color: '#1f2937',
+                didOpen: (toast) => {
+                    toast.addEventListener('mouseenter', Swal.stopTimer)
+                    toast.addEventListener('mouseleave', Swal.resumeTimer)
+                }
+            });
+            Toast.fire({
                 icon: type,
                 title: type === 'success' ? 'Berhasil!' : 'Perhatian!',
-                text: message,
-                timer: 3000,
-                showConfirmButton: false,
-                background: '#ffffff',
-                color: '#1f2937'
+                text: message
             });
         }
 

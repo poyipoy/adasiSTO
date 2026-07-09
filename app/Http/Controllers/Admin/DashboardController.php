@@ -148,16 +148,20 @@ class DashboardController extends Controller
 
         $search = trim((string) $request->input('search.value', ''));
         if ($search !== '') {
-            $searchString = str_replace(['%', '_'], ['\\%', '\\_'], $search);
-            $baseQuery->where(function ($query) use ($searchString) {
-                $query->where('barcode_material', 'like', "%{$searchString}%")
-                    ->orWhere('material_name', 'like', "%{$searchString}%")
-                    ->orWhere('material_code', 'like', "%{$searchString}%")
-                    ->orWhere('lot_number', 'like', "%{$searchString}%")
-                    ->orWhere('sto_code', 'like', "%{$searchString}%")
-                    ->orWhereHas('user', fn ($userQuery) => $userQuery->where('name', 'like', "%{$searchString}%"))
-                    ->orWhereHas('plant', fn ($plantQuery) => $plantQuery->where('name', 'like', "%{$searchString}%"))
-                    ->orWhereHas('location', fn ($locationQuery) => $locationQuery->where('name', 'like', "%{$searchString}%"));
+            $searchData = \App\Services\BarcodeParserService::normalizeSearch($search);
+            $normalizedSearch = str_replace(['%', '_'], ['\\%', '\\_'], $searchData['normalized']);
+            $firstPartSearch = str_replace(['%', '_'], ['\\%', '\\_'], $searchData['first_part']);
+
+            $baseQuery->where(function ($query) use ($normalizedSearch, $firstPartSearch) {
+                $query->where('barcode_material', 'like', "%{$firstPartSearch}%")
+                    ->orWhere('barcode_raw', 'like', "%{$normalizedSearch}%")
+                    ->orWhere('material_name', 'like', "%{$normalizedSearch}%")
+                    ->orWhere('material_code', 'like', "%{$normalizedSearch}%")
+                    ->orWhere('lot_number', 'like', "%{$normalizedSearch}%")
+                    ->orWhere('sto_code', 'like', "%{$normalizedSearch}%")
+                    ->orWhereHas('user', fn ($userQuery) => $userQuery->where('name', 'like', "%{$normalizedSearch}%"))
+                    ->orWhereHas('plant', fn ($plantQuery) => $plantQuery->where('name', 'like', "%{$normalizedSearch}%"))
+                    ->orWhereHas('location', fn ($locationQuery) => $locationQuery->where('name', 'like', "%{$normalizedSearch}%"));
             });
         }
 
@@ -229,14 +233,18 @@ class DashboardController extends Controller
 
         $search = $request->input('search.value');
         if ($search) {
-            $searchString = str_replace(['%', '_'], ['\\%', '\\_'], $search);
-            $baseQuery->where(function ($query) use ($searchString) {
-                $query->where('barcode_material', 'like', "%{$searchString}%")
-                    ->orWhere('material_name', 'like', "%{$searchString}%")
-                    ->orWhere('material_code', 'like', "%{$searchString}%")
-                    ->orWhere('lot_number', 'like', "%{$searchString}%")
-                    ->orWhere('sto_code', 'like', "%{$searchString}%")
-                    ->orWhereHas('user', fn ($userQuery) => $userQuery->where('name', 'like', "%{$searchString}%"));
+            $searchData = \App\Services\BarcodeParserService::normalizeSearch($search);
+            $normalizedSearch = str_replace(['%', '_'], ['\\%', '\\_'], $searchData['normalized']);
+            $firstPartSearch = str_replace(['%', '_'], ['\\%', '\\_'], $searchData['first_part']);
+
+            $baseQuery->where(function ($query) use ($normalizedSearch, $firstPartSearch) {
+                $query->where('barcode_material', 'like', "%{$firstPartSearch}%")
+                    ->orWhere('barcode_raw', 'like', "%{$normalizedSearch}%")
+                    ->orWhere('material_name', 'like', "%{$normalizedSearch}%")
+                    ->orWhere('material_code', 'like', "%{$normalizedSearch}%")
+                    ->orWhere('lot_number', 'like', "%{$normalizedSearch}%")
+                    ->orWhere('sto_code', 'like', "%{$normalizedSearch}%")
+                    ->orWhereHas('user', fn ($userQuery) => $userQuery->where('name', 'like', "%{$normalizedSearch}%"));
             });
         }
 
@@ -352,7 +360,7 @@ class DashboardController extends Controller
     public function materialSummaryData(Request $request): JsonResponse
     {
         $query = ScanResult::query()
-            ->selectRaw('barcode_material, material_code, material_name, shape_code, shape_name, thickness, width, diameter, length, SUM(qty) as qty_total, COUNT(*) as scan_count')
+            ->selectRaw('barcode_material, material_code, material_name, shape_code, shape_name, thickness, width, diameter, length, SUM(qty) as qty_total, COUNT(*) as scan_count, MAX(scan_results.created_at) as max_created_at')
             ->groupBy('barcode_material', 'material_code', 'material_name', 'shape_code', 'shape_name', 'thickness', 'width', 'diameter', 'length');
 
         if ($request->filled('plant_id')) {
@@ -385,11 +393,15 @@ class DashboardController extends Controller
 
         $search = $request->input('search.value');
         if ($search) {
-            $searchString = str_replace(['%', '_'], ['\\%', '\\_'], $search);
-            $query->where(function ($q) use ($searchString) {
-                $q->where('barcode_material', 'like', "%{$searchString}%")
-                    ->orWhere('material_name', 'like', "%{$searchString}%")
-                    ->orWhere('material_code', 'like', "%{$searchString}%");
+            $searchData = \App\Services\BarcodeParserService::normalizeSearch($search);
+            $normalizedSearch = str_replace(['%', '_'], ['\\%', '\\_'], $searchData['normalized']);
+            $firstPartSearch = str_replace(['%', '_'], ['\\%', '\\_'], $searchData['first_part']);
+
+            $query->where(function ($q) use ($normalizedSearch, $firstPartSearch) {
+                $q->where('barcode_material', 'like', "%{$firstPartSearch}%")
+                    ->orWhere('barcode_raw', 'like', "%{$normalizedSearch}%")
+                    ->orWhere('material_name', 'like', "%{$normalizedSearch}%")
+                    ->orWhere('material_code', 'like', "%{$normalizedSearch}%");
             });
         }
 
@@ -415,6 +427,7 @@ class DashboardController extends Controller
                 'shape_name' => 'shape_name',
                 'qty_total' => 'qty_total',
                 'scan_count' => 'scan_count',
+                'max_created_at' => 'max_created_at',
             ];
 
             if (isset($sortableColumns[$columnData])) {
@@ -422,10 +435,10 @@ class DashboardController extends Controller
             } elseif ($columnData === 'size') {
                 $query->orderBy('thickness', $dir)->orderBy('diameter', $dir);
             } else {
-                $query->orderByDesc('scan_count');
+                $query->orderByDesc('max_created_at');
             }
         } else {
-            $query->orderByDesc('scan_count');
+            $query->orderByDesc('max_created_at');
         }
 
         $data = $query->skip($start)->take($length)->get();

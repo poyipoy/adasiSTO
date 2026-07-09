@@ -42,6 +42,7 @@
             outline: none;
             min-width: 0;
             max-width: 100%;
+            text-align: left;
         }
         .recent-main-line {
             display: grid;
@@ -149,6 +150,10 @@
             pointer-events: auto;
             text-overflow: ellipsis;
             white-space: nowrap;
+        }
+        .qr-input-rapid {
+            color: transparent !important;
+            caret-color: transparent !important;
         }
         .select-barcode-candidates {
             display: grid;
@@ -336,6 +341,91 @@
                 text-overflow: ellipsis;
             }
         }
+
+        /* --- Location Filter Modal --- */
+        .location-modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
+        }
+        .location-modal-content {
+            background: #fff;
+            width: 100%;
+            max-width: 500px;
+            max-height: 85vh;
+            border-radius: 16px 16px 0 0;
+            display: flex;
+            flex-direction: column;
+            animation: slideUp 0.3s ease-out;
+        }
+        @media (min-width: 768px) {
+            .location-modal-overlay {
+                align-items: center;
+            }
+            .location-modal-content {
+                border-radius: 12px;
+                max-height: 80vh;
+                animation: fadeIn 0.2s ease-out;
+            }
+        }
+        .location-modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px;
+            border-bottom: 1px solid var(--border-light);
+        }
+        .btn-close-modal {
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            padding: 4px;
+        }
+        .location-modal-search {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border-light);
+            background: #fafbfc;
+        }
+        .location-modal-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px 16px 16px 16px;
+        }
+        .location-modal-item {
+            padding: 12px;
+            border-bottom: 1px solid var(--border-light);
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text);
+            transition: background 0.1s;
+        }
+        .location-modal-item:last-child {
+            border-bottom: none;
+        }
+        .location-modal-item:active {
+            background: #f0f0f0;
+        }
+        .location-modal-item.active {
+            background: var(--primary);
+            color: #fff;
+            border-radius: 6px;
+            border-bottom: none;
+            margin-bottom: 1px;
+        }
+        @keyframes slideUp {
+            from { transform: translateY(100%); }
+            to { transform: translateY(0); }
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.95); }
+            to { opacity: 1; transform: scale(1); }
+        }
     </style>
     @endpush
 
@@ -358,11 +448,8 @@
                         <div class="scanner-info-column scanner-info-column-right">
                 <div class="scanner-info-item">
                     <span class="scanner-info-label">Location:</span>
-                    <select id="locationId" class="scanner-location-select" onchange="updateLocationSession(this.value)">
-                        @foreach($locations as $loc)
-                            <option value="{{ $loc->id }}" {{ $loc->id === $location->id ? 'selected' : '' }}>{{ $loc->name }}</option>
-                        @endforeach
-                    </select>
+                    <button type="button" id="locationTrigger" class="scanner-location-select" onclick="openLocationModal()">{{ $location->name }}</button>
+                    <input type="hidden" id="locationId" value="{{ $location->id }}">
                 </div>
                 <div class="scanner-info-item">
                     <span class="scanner-info-label">Total Scan per Rak:</span>
@@ -393,9 +480,18 @@
         <div class="form-group">
             <label class="form-label" for="qrInput">Manual / Scanner Gun Input</label>
             <div class="qr-input-row" style="display:flex;gap:6px;">
-                <input id="qrInput" class="form-control mono" placeholder="Masukkan nomor QR code atau barcode di sini"
-                    autocomplete="off">
-                <button class="btn btn-primary" type="button" onclick="submitScan(false)">Save</button>
+                {{-- Textarea digunakan agar multiline dari scanner (barcode1\nbarcode2) tertangkap sempurna secara native --}}
+                <textarea id="qrInput" class="form-control mono" 
+                    placeholder="Fokus di sini, lalu scan barcode..."
+                    rows="1" 
+                    style="resize: none; overflow: hidden; white-space: nowrap; padding-top: 10px; line-height: 1.5; height: 42px;"
+                    autocomplete="off"></textarea>
+                <button class="btn btn-primary" type="button" onclick="manualSubmitFromDisplay()">Save</button>
+            </div>
+            <div id="debugRawOutput" style="font-family: monospace; font-size: 11px; color: red; margin-top: 4px;"></div>
+            <div id="scanLockBadge" style="display:none;align-items:center;gap:6px;margin-top:6px;padding:6px 10px;background:rgba(255,190,0,0.12);border:1px solid rgba(255,190,0,0.4);border-radius:6px;font-size:12px;color:#b8860b;">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                <span>⏸ Menunggu konfirmasi — scan berikutnya diantrekan otomatis</span>
             </div>
         </div>
 
@@ -457,6 +553,32 @@
 
 
 
+    <div id="locationFilterModal" class="location-modal-overlay" style="display: none;">
+        <div class="location-modal-content">
+            <div class="location-modal-header">
+                <h3 style="margin: 0; font-size: 16px; font-weight: 700;">Select Location</h3>
+                <button type="button" class="btn-close-modal" onclick="closeLocationModal()">
+                    <svg fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" width="20" height="20">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+            <div class="location-modal-search">
+                <input type="text" id="locationSearchInput" class="form-control" placeholder="Cari lokasi..." oninput="filterLocations(this.value)">
+            </div>
+            <div class="location-modal-list" id="locationModalList">
+                @foreach($locations as $loc)
+                    <div class="location-modal-item {{ $loc->id === $location->id ? 'active' : '' }}" 
+                         data-id="{{ $loc->id }}" 
+                         data-name="{{ $loc->name }}"
+                         onclick="selectLocation('{{ $loc->id }}', '{{ $loc->name }}')">
+                        {{ $loc->name }}
+                    </div>
+                @endforeach
+            </div>
+        </div>
+    </div>
+
     @push('scripts')
         <script src="{{ asset('vendor/html5-qrcode/html5-qrcode.min.js') }}"></script>
         <script>
@@ -477,6 +599,63 @@
             let currentRecentPage = {{ $recentMeta['page'] }};
             let recentLastPage = {{ max($recentMeta['last_page'], 1) }};
             const initialRecentMeta = @json($recentMeta);
+            // Tracks barcodes flagged as duplicates — always show warning, never auto-submit
+            const duplicateFlaggedBarcodes = new Set();
+
+            // --- Location Filter Logic ---
+            function openLocationModal() {
+                const modal = document.getElementById('locationFilterModal');
+                modal.style.display = 'flex';
+                const input = document.getElementById('locationSearchInput');
+                input.value = '';
+                filterLocations('');
+                input.focus();
+
+                setTimeout(() => {
+                    const activeItem = modal.querySelector('.location-modal-item.active');
+                    if (activeItem) {
+                        activeItem.scrollIntoView({ block: 'center', behavior: 'smooth' });
+                    }
+                }, 50);
+            }
+
+            function closeLocationModal() {
+                document.getElementById('locationFilterModal').style.display = 'none';
+            }
+
+            function selectLocation(id, name) {
+                document.getElementById('locationId').value = id;
+                document.getElementById('locationTrigger').textContent = name;
+                
+                const items = document.querySelectorAll('.location-modal-item');
+                items.forEach(item => {
+                    if (item.getAttribute('data-id') === String(id)) {
+                        item.classList.add('active');
+                    } else {
+                        item.classList.remove('active');
+                    }
+                });
+
+                closeLocationModal();
+                updateLocationSession(id);
+            }
+
+            function filterLocations(query) {
+                const lowerQuery = query.toLowerCase();
+                const items = document.querySelectorAll('.location-modal-item');
+                items.forEach(item => {
+                    const name = item.getAttribute('data-name').toLowerCase();
+                    if (name.includes(lowerQuery)) {
+                        item.style.display = 'block';
+                    } else {
+                        item.style.display = 'none';
+                    }
+                });
+            }
+
+            document.getElementById('locationFilterModal').addEventListener('click', function(e) {
+                if (e.target === this) closeLocationModal();
+            });
 
             function updateLocationSession(newLocationId) {
                 const plantId = document.getElementById('plantId').value;
@@ -514,12 +693,36 @@
                 const plantNameDisplay = document.getElementById('plantNameDisplay');
                 if (plantNameDisplay) plantNameDisplay.textContent = newPlantName;
 
-                const locationSelect = document.getElementById('locationId');
-                if (locationSelect && locationsHtml) {
-                    locationSelect.innerHTML = locationsHtml;
-                    locationSelect.value = newLocationId;
-                } else if (locationSelect) {
-                    locationSelect.value = newLocationId;
+                const locationIdInput = document.getElementById('locationId');
+                if (locationIdInput) {
+                    locationIdInput.value = newLocationId;
+                }
+
+                if (locationsHtml) {
+                    const temp = document.createElement('select');
+                    temp.innerHTML = locationsHtml;
+                    const listContainer = document.getElementById('locationModalList');
+                    if (listContainer) {
+                        listContainer.innerHTML = '';
+                        let selectedName = '';
+                        Array.from(temp.options).forEach(opt => {
+                            const id = opt.value;
+                            const name = opt.text;
+                            const isActive = (id == newLocationId);
+                            if (isActive) selectedName = name;
+                            
+                            const div = document.createElement('div');
+                            div.className = 'location-modal-item' + (isActive ? ' active' : '');
+                            div.setAttribute('data-id', id);
+                            div.setAttribute('data-name', name);
+                            div.onclick = function() { selectLocation(id, name); };
+                            div.textContent = name;
+                            listContainer.appendChild(div);
+                        });
+                        
+                        const trigger = document.getElementById('locationTrigger');
+                        if (trigger && selectedName) trigger.textContent = selectedName;
+                    }
                 }
 
                 if (typeof loadRecent === 'function') {
@@ -527,20 +730,52 @@
                 }
             };
 
-            function submitScan(forceSave = false, qrText = null, source = 'manual') {
-                if (scanningLocked) return;
-                scanningLocked = true;
-                typingSpeedIsHuman = false;
+            let scanQueue = [];
+            let isProcessingQueue = false;
+            let pendingScansWhileLocked = [];
 
+            function setScanningLocked(locked) {
+                scanningLocked = locked;
+                const badge = document.getElementById('scanLockBadge');
+                if (badge) badge.style.display = locked ? 'flex' : 'none';
+            }
+
+            // flushPendingScans() is defined later (after buffer setup) so it handles {val,source} format.
+
+            function submitScan(forceSave = false, qrText = null, source = 'manual') {
+                // Gunakan qrText yang diberikan, atau fallback ke isi textarea
                 const qrInput = document.getElementById('qrInput');
-                const qr = (qrText || qrInput.value).trim();
-                if (!qr) {
-                    scanningLocked = false;
+                let qr = qrText || (qrInput ? qrInput.value.split('\n')[0] : '');
+                
+                // Normalisasi barcode (menghilangkan gap spasi panjang dan trailing pipe)
+                qr = qr.replace(/\s+/g, ' ').replace(/\s*\|\s*/g, ' | ').trim();
+                qr = qr.replace(/\|$/, '').trim();
+
+                if (!qr) return;
+
+                // Jika locked DAN ini bukan forceSave, antrikan dulu
+                if (scanningLocked && !forceSave) {
+                    pendingScansWhileLocked.push({ val: qr, source });
                     return;
                 }
 
-                pendingQr = qr;
-                pendingSource = source;
+                // Jika barcode ini sebelumnya terdeteksi duplikat, langsung munculkan warning
+                if (duplicateFlaggedBarcodes.has(qr) && !forceSave) {
+                    showDuplicateWarningFor(qr);
+                    return;
+                }
+
+                scanQueue.push({ qr, source, forceSave });
+                processQueue();
+            }
+
+            function processQueue() {
+                if (isProcessingQueue || scanQueue.length === 0) return;
+                if (scanningLocked) return;
+
+                isProcessingQueue = true;
+                const item = scanQueue[0];
+                const { qr, source, forceSave } = item;
 
                 fetch('{{ route("api.scan.store") }}', {
                     method: 'POST',
@@ -559,17 +794,22 @@
                         return payload;
                     })
                     .then(payload => {
-
+                        duplicateFlaggedBarcodes.delete(qr);
                         document.getElementById('counterToday').textContent = String(parseInt(document.getElementById('counterToday').textContent || '0') + 1);
                         loadRecent(1);
-                        qrInput.value = '';
-                        qrInput.focus();
-                        
                         showToast(payload.message || 'Scan berhasil disimpan.', 'success');
-                        scanningLocked = false;
+                        
+                        scanQueue.shift();
+                        isProcessingQueue = false;
+                        setTimeout(processQueue, 10);
                     })
                     .catch(error => {
                         if (error.duplicate) {
+                            duplicateFlaggedBarcodes.add(qr);
+                            
+                            isProcessingQueue = false;
+                            setScanningLocked(true);
+
                             const swal = window.top.Swal || Swal;
                             swal.fire({
                                 title: 'Warning',
@@ -578,36 +818,73 @@
                                 showCancelButton: true,
                                 confirmButtonText: 'Ya, Simpan',
                                 cancelButtonText: 'Batal',
-                                reverseButtons: true
+                                reverseButtons: true,
+                                allowEnterKey: false
                             }).then((result) => {
+                                setScanningLocked(false);
                                 if (result.isConfirmed) {
-                                    scanningLocked = false;
-                                    confirmDuplicate();
+                                    scanQueue[0].forceSave = true;
+                                    processQueue();
                                 } else {
-                                    qrInput.value = '';
-                                    qrInput.focus();
-                                    scanningLocked = false;
+                                    scanQueue.shift();
+                                    if (document.getElementById('qrInput')) document.getElementById('qrInput').focus();
+                                    processQueue();
                                 }
+                                flushPendingScans();
                             });
                             return;
                         }
+
+                        setScanningLocked(true);
+                        isProcessingQueue = false;
+                        
                         const swal = window.top.Swal || Swal;
                         swal.fire({
                             title: 'Gagal',
                             text: error.message || 'Scan gagal.',
                             icon: 'error',
                             confirmButtonColor: '#2b2d30',
-                            confirmButtonText: 'Tutup'
+                            confirmButtonText: 'Tutup',
+                            allowEnterKey: false
                         }).then(() => {
-                            qrInput.value = '';
-                            qrInput.focus();
-                            scanningLocked = false;
+                            scanQueue.shift();
+                            setScanningLocked(false);
+                            if (document.getElementById('qrInput')) document.getElementById('qrInput').focus();
+                            processQueue();
+                            flushPendingScans();
                         });
                     });
             }
 
-            function confirmDuplicate() {
-                submitScan(true, pendingQr, pendingSource);
+            // Show duplicate warning popup for a barcode that is already flagged
+            function showDuplicateWarningFor(barcode) {
+                if (scanningLocked) {
+                    pendingScansWhileLocked.push({ val: barcode, source: 'scanner_gun' });
+                    return;
+                }
+                setScanningLocked(true);
+
+                const swal = window.top.Swal || Swal;
+                
+                swal.fire({
+                    title: 'Warning',
+                    html: `Barcode <b>${barcode}</b> sudah pernah discan sebelumnya. Tetap simpan?`,
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonText: 'Ya, Simpan',
+                    cancelButtonText: 'Batal',
+                    reverseButtons: true,
+                    allowEnterKey: false
+                }).then((result) => {
+                    setScanningLocked(false);
+                    if (result.isConfirmed) {
+                        scanQueue.push({ qr: barcode, source: 'manual', forceSave: true });
+                        processQueue();
+                    } else {
+                        if (document.getElementById('qrInput')) document.getElementById('qrInput').focus();
+                    }
+                    flushPendingScans();
+                });
             }
 
             function escapeHtml(value) {
@@ -820,14 +1097,32 @@
                 }
 
                 if (!html5Scanner) {
-                    html5Scanner = new Html5Qrcode('reader');
+                    const formats = window.Html5QrcodeSupportedFormats ? [
+                        Html5QrcodeSupportedFormats.QR_CODE,
+                        Html5QrcodeSupportedFormats.CODE_128,
+                        Html5QrcodeSupportedFormats.CODE_39,
+                        Html5QrcodeSupportedFormats.CODE_93,
+                        Html5QrcodeSupportedFormats.CODABAR,
+                        Html5QrcodeSupportedFormats.EAN_13,
+                        Html5QrcodeSupportedFormats.EAN_8,
+                        Html5QrcodeSupportedFormats.ITF,
+                        Html5QrcodeSupportedFormats.UPC_A,
+                        Html5QrcodeSupportedFormats.UPC_E,
+                        Html5QrcodeSupportedFormats.UPC_EAN_EXTENSION
+                    ] : undefined;
+
+                    html5Scanner = new Html5Qrcode('reader', {
+                        formatsToSupport: formats,
+                        verbose: false,
+                        useBarCodeDetectorIfSupported: false
+                    });
                 }
 
                 if (cameraRunning) return;
 
                 html5Scanner.start(
                     { facingMode: 'environment' },
-                    { fps: 8, qrbox: { width: 220, height: 220 } },
+                    { fps: 10, qrbox: { width: 250, height: 250 } },
                     decodedText => {
                         if (scanningLocked) return;
 
@@ -1127,77 +1422,119 @@
                 submitScan(false, value, 'camera-select');
             }
 
-            let manualScanTimeout = null;
-            let lastKeyTime = Date.now();
-            let typingSpeedIsHuman = false;
+            // ============================================================
+            // NATIVE TEXTAREA BUFFER (BULLETPROOF)
+            // Scanner hardware modern mengirimkan karakter terlalu cepat untuk
+            // ditangani event loop JS satu per satu (bisa memicu mode IME/Paste).
+            // Dengan <textarea>, browser menangani input C++ native secara real-time.
+            // Karakter "Enter" menjadi karakter "\n".
+            // Kita pisahkan (split) berdasarkan "\n" sehingga tidak ada data yang hilang.
+            // ============================================================
+            const qrInput = document.getElementById('qrInput');
+            let scanLastTime = Date.now();
+            let isRapidTyping = false;
 
-            document.getElementById('qrInput').addEventListener('keydown', event => {
-                if (event.key === 'Enter') {
-                    event.preventDefault();
-                    if (manualScanTimeout) clearTimeout(manualScanTimeout);
-                    submitScan(false);
-                    return;
-                }
-
-                if (event.key.length === 1) {
-                    const now = Date.now();
-                    const diff = now - lastKeyTime;
-                    const val = event.target.value;
-                    // Tingkatkan batas kecepatan ke 100ms untuk mengakomodasi scanner yang lambat
-                    if (val.length > 0 && diff > 100) {
-                        typingSpeedIsHuman = true;
-                    }
-                    lastKeyTime = now;
-                }
-            });
-
-            document.getElementById('qrInput').addEventListener('input', event => {
-                if (manualScanTimeout) clearTimeout(manualScanTimeout);
-                
-                const val = event.target.value.trim();
-                
-                if (val.length === 0) {
-                    typingSpeedIsHuman = false;
-                    return;
-                }
-
-                // Auto submit jika input dari scanner gun (cepat, bukan manusia)
-                if (val.length > 2 && !typingSpeedIsHuman) {
-                    manualScanTimeout = setTimeout(() => {
-                        submitScan(false);
-                    }, 400); // 400ms buffer supaya tidak terpotong kalau ada jeda transfer data usb
-                }
-            });
-
-            // Global listener untuk Scanner Gun
-            // Jika user men-scan tapi fokus kursor tidak di input box, otomatis pindahkan kursor
-            document.addEventListener('keydown', function(event) {
-                if (document.body.classList.contains('swal2-shown') || scanningLocked) return;
-                
-                const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
-                if (activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select') return;
-                
-                if (event.ctrlKey || event.altKey || event.metaKey) return;
-                
-                const qrInput = document.getElementById('qrInput');
+            // Jika user klik tombol "Save" manual
+            function manualSubmitFromDisplay() {
                 if (!qrInput) return;
-
-                if (event.key === 'Enter') {
-                    if (qrInput.value.trim().length > 0) {
-                        event.preventDefault();
-                        submitScan(false);
-                    }
-                    return;
+                const val = qrInput.value;
+                if (val.trim().length > 0) {
+                    // Paksa tambah newline untuk memicu submit
+                    qrInput.value = val + '\n';
+                    qrInput.dispatchEvent(new Event('input'));
                 }
+            }
 
-                if (event.key.length === 1) {
+            if (qrInput) {
+                qrInput.addEventListener('input', function(event) {
+                    let val = qrInput.value;
+                    
+                    // Hanya proses jika ada newline (Enter dari scanner)
+                    if (!val.includes('\n')) return;
+
+                    // Pecah berdasarkan newline
+                    let lines = val.split('\n');
+                    // Sisakan baris terakhir (karakter barcode berikutnya yang belum selesai)
+                    let remainder = lines.pop();
+
+                    // Bersihkan textarea SEGERA sebelum submit agar tidak ada re-read
+                    qrInput.value = remainder;
+
+                    // Catat source sebelum loop, lalu reset
+                    const src = isRapidTyping ? 'scanner_gun' : 'manual';
+                    isRapidTyping = false;
+
+                    // DEBUG
+                    const debugDiv = document.getElementById('debugRawOutput');
+                    const completedLines = lines.filter(l => l.trim().length > 0);
+                    if (debugDiv && completedLines.length > 0) {
+                        debugDiv.innerText = 'Raw scan: [' + completedLines.join(' | ') + ']';
+                    }
+
+                    // Submit setiap baris yang komplit ke scanQueue (lewat submitScan)
+                    completedLines.forEach(line => {
+                        submitScan(false, line.trim(), src);
+                    });
+                });
+
+                // HANYA untuk deteksi rapid typing (scanner gun)
+                qrInput.addEventListener('keydown', function(event) {
+                    const now = Date.now();
+                    const diff = now - scanLastTime;
+                    scanLastTime = now;
+
+                    if (diff < 50 && event.key.length === 1) {
+                        isRapidTyping = true;
+                    }
+                });
+            }
+
+            function submitFromBuffer(val, source) {
+                if (scanningLocked) {
+                    pendingScansWhileLocked.push({ val, source });
+                } else {
+                    submitScan(false, val, source);
+                }
+            }
+
+            // ---- Overwrite flushPendingScans agar sesuai format baru ----
+            function flushPendingScans() {
+                while (pendingScansWhileLocked.length > 0) {
+                    const item = pendingScansWhileLocked.shift();
+                    if (typeof item === 'string') {
+                        submitScan(false, item, 'scanner_gun');
+                    } else {
+                        submitScan(false, item.val, item.source);
+                    }
+                }
+            }
+
+            // Global listener: pastikan fokus selalu ke qrInput jika tidak ada input aktif lain
+            document.addEventListener('keydown', function(event) {
+                const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
+                const activeId  = document.activeElement ? document.activeElement.id : '';
+                const inOtherInput = (activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select')
+                    && activeId !== 'qrInput';
+                
+                if (inOtherInput) return; // Biarkan user ngetik di modal lokasi dll
+
+                // Jika sedang tidak fokus ke qrInput, paksa pindah sebelum browser memproses tombol ini
+                if (document.activeElement !== qrInput) {
                     qrInput.focus();
                 }
             });
 
+            // Kembalikan fokus visual saat klik sembarang area kosong
+            document.addEventListener('click', (e) => {
+                if (scanningLocked || document.body.classList.contains('swal2-shown')) return;
+                const tag = e.target.tagName.toLowerCase();
+                if (tag === 'input' || tag === 'textarea' || tag === 'select' || tag === 'button') return;
+                if (qrInput) qrInput.focus();
+            });
+
             document.addEventListener('DOMContentLoaded', () => {
                 updateRecentPagination(initialRecentMeta);
-                document.getElementById('qrInput').focus();
+                if (qrInput) qrInput.focus();
             });
         </script>
     @endpush

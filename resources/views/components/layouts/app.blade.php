@@ -1589,7 +1589,7 @@
                     </div>
                 </div>
                 <div
-                    class="sidebar-section {{ request()->routeIs('admin.master-sto') || request()->routeIs('admin.master-plant') || request()->routeIs('admin.master-material') || request()->routeIs('admin.master-keterangan') || request()->routeIs('admin.users') ? 'is-open has-active' : '' }}">
+                    class="sidebar-section {{ request()->routeIs('admin.master-sto') || request()->routeIs('admin.master-plant') || request()->routeIs('admin.master-material') || request()->routeIs('admin.master-keterangan') || request()->routeIs('admin.master-location') || request()->routeIs('admin.users') ? 'is-open has-active' : '' }}">
                     <button type="button" class="sidebar-section-toggle" data-sidebar-toggle title="Master Data">
                         <svg class="sidebar-section-icon" fill="none" stroke="currentColor" stroke-width="2"
                             viewBox="0 0 24 24">
@@ -1633,6 +1633,17 @@
                                     d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z">
                                 </path>
                             </svg> <span>Master Keterangan</span></a>
+                        <a href="{{ route('admin.master-location') }}"
+                            class="nav-item {{ request()->routeIs('admin.master-location') ? 'active' : '' }}"
+                            title="Master Location"><svg fill="none" stroke="currentColor" stroke-width="2"
+                                viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round"
+                                    d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z">
+                                </path>
+                                <path stroke-linecap="round" stroke-linejoin="round"
+                                    d="M15 11a3 3 0 11-6 0 3 3 0 016 0z">
+                                </path>
+                            </svg> <span>Master Location</span></a>
                         <a href="{{ route('admin.users') }}"
                             class="nav-item {{ request()->routeIs('admin.users') ? 'active' : '' }}"
                             title="User Management"><svg fill="none" stroke="currentColor" stroke-width="2"
@@ -1802,14 +1813,23 @@
         };
 
         function showToast(message, type = 'success') {
-            Swal.fire({
+            const Toast = Swal.mixin({
+                toast: true,
+                position: 'top-end',
+                showConfirmButton: false,
+                timer: 1500,
+                timerProgressBar: true,
+                background: '#ffffff',
+                color: '#1f2937',
+                didOpen: (toast) => {
+                    toast.addEventListener('mouseenter', Swal.stopTimer)
+                    toast.addEventListener('mouseleave', Swal.resumeTimer)
+                }
+            });
+            Toast.fire({
                 icon: type,
                 title: type === 'success' ? 'Berhasil!' : 'Perhatian!',
-                text: message,
-                timer: 1000,
-                showConfirmButton: false,
-                background: '#ffffff',
-                color: '#1f2937'
+                text: message
             });
         }
 
@@ -2313,6 +2333,61 @@
                 });
             });
         }
+
+        // -------------------------------------------------------
+        // MOBILE BACK-BUTTON GUARD (Android hardware back / gesture)
+        //
+        // Strategy:
+        //   1. Push ONE synthetic state entry on page load.
+        //   2. On popstate: immediately re-push state (keeps us "stuck" in history
+        //      so the guard stays alive), then show ONE confirmation dialog.
+        //   3. "Tetap di Sini"  → do nothing, guard stays active.
+        //   4. "Keluar"         → redirect to overview (never use history.go which
+        //      is unreliable/inconsistent on Android browsers).
+        //
+        // Only active on scanner pages (non-admin). Admin pages are left untouched.
+        // -------------------------------------------------------
+        (function initMobileBackGuard() {
+            // Only apply to scanner-role pages (urls starting with /scan)
+            if (!location.pathname.startsWith('/scan')) return;
+
+            // Push the initial guard state once
+            history.pushState({ backGuard: 1 }, '');
+
+            // Strict mutex — prevents double-firing on rapid presses
+            let dialogOpen = false;
+
+            window.addEventListener('popstate', function () {
+                // Immediately re-push so we never actually leave the page
+                history.pushState({ backGuard: 1 }, '');
+
+                // Skip if dialog already visible
+                if (dialogOpen) return;
+                if (document.body.classList.contains('swal2-shown')) return;
+
+                dialogOpen = true;
+
+                const swal = window.top?.Swal ?? window.Swal;
+                swal.fire({
+                    title: 'Keluar dari Aplikasi?',
+                    text: 'Apakah Anda yakin ingin meninggalkan halaman ini?',
+                    icon: 'question',
+                    showCancelButton: true,
+                    confirmButtonText: 'Tetap di Sini',
+                    cancelButtonText: 'Keluar',
+                    confirmButtonColor: '#0066d4',
+                    cancelButtonColor: '#b92525',
+                    reverseButtons: false
+                }).then(function (result) {
+                    dialogOpen = false;
+                    if (result.dismiss === Swal.DismissReason.cancel) {
+                        // Redirect to overview — safe, no history manipulation
+                        window.location.href = '{{ route("scan.overview") }}';
+                    }
+                    // Confirmed = stay here, guard already re-pushed above
+                });
+            });
+        })();
     </script>
     @stack('scripts')
 

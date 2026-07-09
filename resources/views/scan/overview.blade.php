@@ -305,15 +305,48 @@
         }
     }
 
+    let isRefreshing = false;
     function refreshScannerOverview() {
+        if (isRefreshing) return;
+        isRefreshing = true;
+
+        const btn = document.querySelector('.enterprise-toolbar button');
+        const icon = btn ? btn.querySelector('.bx-refresh') : null;
+        if (icon) icon.classList.add('bx-spin');
+        if (btn) btn.disabled = true;
+
+        // Tampilkan global loader (bar biru bergerak) milik parent window/workspace jika ada
+        const parentLoader = window.top && window.top.document ? window.top.document.getElementById('globalLoader') : null;
+        if (parentLoader) {
+            parentLoader.style.display = 'flex';
+        }
+
         fetch('{{ route("api.scan.overview") }}', { headers: { Accept: 'application/json' } })
             .then(async response => {
                 const payload = await response.json();
                 if (!response.ok) throw payload;
                 return payload;
             })
-            .then(payload => renderOverview(payload.data || {}))
-            .catch(error => showToast(error.message || 'Gagal memuat overview.', 'error'));
+            .then(payload => {
+                renderOverview(payload.data || {});
+            })
+            .catch(error => {
+                if (typeof showToast === 'function') {
+                    showToast(error.message || 'Gagal memuat overview.', 'error');
+                } else {
+                    console.error('Error refreshing overview:', error);
+                }
+            })
+            .finally(() => {
+                isRefreshing = false;
+                if (icon) icon.classList.remove('bx-spin');
+                if (btn) btn.disabled = false;
+                
+                // Sembunyikan kembali global loader
+                if (parentLoader) {
+                    parentLoader.style.display = 'none';
+                }
+            });
     }
 
     document.addEventListener('DOMContentLoaded', () => {

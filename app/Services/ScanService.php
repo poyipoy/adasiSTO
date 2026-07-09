@@ -131,6 +131,10 @@ class ScanService
 
         $scanResult = $result['scan_result'];
 
+        // Bust the history filter-options cache so the next history page load
+        // always shows freshly added barcodes/materials in the filter dropdowns.
+        \Illuminate\Support\Facades\Cache::forget("user_{$user->id}_history_filters");
+
         return [
             'success' => true,
             'message' => 'Scan berhasil disimpan.',
@@ -171,11 +175,16 @@ class ScanService
 
         if (!empty($filters['search'])) {
             $search = $filters['search'];
-            $query->where(function ($q) use ($search) {
-                $q->where('scan_results.barcode_material', 'like', "%{$search}%")
-                    ->orWhere('scan_results.material_name', 'like', "%{$search}%")
-                    ->orWhere('scan_results.material_code', 'like', "%{$search}%")
-                    ->orWhere('scan_results.lot_number', 'like', "%{$search}%");
+            $searchData = \App\Services\BarcodeParserService::normalizeSearch($search);
+            $normalizedSearch = $searchData['normalized'];
+            $firstPartSearch = $searchData['first_part'];
+
+            $query->where(function ($q) use ($normalizedSearch, $firstPartSearch) {
+                $q->where('scan_results.barcode_material', 'like', "%{$firstPartSearch}%")
+                    ->orWhere('scan_results.barcode_raw', 'like', "%{$normalizedSearch}%")
+                    ->orWhere('scan_results.material_name', 'like', "%{$normalizedSearch}%")
+                    ->orWhere('scan_results.material_code', 'like', "%{$normalizedSearch}%")
+                    ->orWhere('scan_results.lot_number', 'like', "%{$normalizedSearch}%");
             });
         }
 

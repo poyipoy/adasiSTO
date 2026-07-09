@@ -14,12 +14,14 @@ class MaterialDoubleQueryService
             ->leftJoin('plants', 'scan_results.plant_id', '=', 'plants.id')
             ->leftJoin('locations', 'scan_results.location_id', '=', 'locations.id')
             ->leftJoin('material_double_validations as mdv', function ($join) {
-                $join->on('mdv.barcode_material', '=', 'scan_results.barcode_material')
+                $join->on('mdv.sto_code_id', '=', 'scan_results.sto_code_id')
+                    ->on('mdv.barcode_material', '=', 'scan_results.barcode_material')
                     ->on('mdv.plant_id', '=', 'scan_results.plant_id')
                     ->on('mdv.location_id', '=', 'scan_results.location_id');
             })
             ->leftJoin('users as mdv_user', 'mdv.validated_by', '=', 'mdv_user.id')
             ->selectRaw('
+                scan_results.sto_code_id,
                 scan_results.barcode_material,
                 scan_results.material_name,
                 scan_results.shape_code,
@@ -37,6 +39,7 @@ class MaterialDoubleQueryService
                 MAX(mdv_user.name) as validated_by_name
             ')
             ->groupBy(
+                'scan_results.sto_code_id',
                 'scan_results.barcode_material',
                 'scan_results.material_name',
                 'scan_results.shape_code',
