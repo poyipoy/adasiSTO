@@ -397,9 +397,10 @@ class GenerateBarcodeController extends Controller
         $sheet->setTitle('Labels QR');
 
         // Set margin halaman seminimal mungkin (dalam inch) untuk label kecil 50x20 mm
-        // Set margin 0 mutlak agar tidak ada pemotongan vertikal dari sistem Excel
-        $sheet->getPageMargins()->setTop(0);
-        $sheet->getPageMargins()->setBottom(0);
+        // Set margin atas dan bawah 0.06 inch (~1.5 mm) sebagai safety buffer
+        // agar tidak terkena batas unprintable area driver printer TSC yang memicu page break otomatis
+        $sheet->getPageMargins()->setTop(0.06);
+        $sheet->getPageMargins()->setBottom(0.06);
         $sheet->getPageMargins()->setLeft(0);
         $sheet->getPageMargins()->setRight(0);
         $sheet->getPageMargins()->setHeader(0);
@@ -423,15 +424,14 @@ class GenerateBarcodeController extends Controller
                 continue;
             }
 
-            // Row 1 of label block: Company Name
-            // Total 4 baris harus = 57 pt (0.8 inch = 57.6 pt) agar mengisi penuh stiker
-            // Row1=12, Row2=15.5, Row3=15.5, Row4=14 → Total=57 pt
+            // Row 1 of label block: Company Name (Tinggi: 10 pt)
+            // Total 4 baris = 10 + 12 + 12 + 12 = 46 pt (~16.2 mm), aman di bawah batas maksimal 54-56 pt
             $sheet->mergeCells("A{$r}:B{$r}");
             $sheet->setCellValue("A{$r}", $company);
             $sheet->getStyle("A{$r}")->applyFromArray([
                 'font' => [
                     'name'  => 'Arial',
-                    'size'  => 8,
+                    'size'  => 7,
                     'bold'  => true,
                     'color' => ['argb' => 'FF000000'],
                 ],
@@ -440,14 +440,14 @@ class GenerateBarcodeController extends Controller
                     'vertical'   => Alignment::VERTICAL_CENTER,
                 ],
             ]);
-            $sheet->getRowDimension($r)->setRowHeight(12);
+            $sheet->getRowDimension($r)->setRowHeight(10);
 
-            // Row 2 of label block: Generated Barcode Material
+            // Row 2 of label block: Generated Barcode Material (Tinggi: 12 pt)
             $sheet->setCellValue("B" . ($r + 1), $request->generated_barcode_material);
             $sheet->getStyle("B" . ($r + 1))->applyFromArray([
                 'font' => [
                     'name'  => 'Arial',
-                    'size'  => 9,
+                    'size'  => 8.5,
                     'bold'  => true,
                     'color' => ['argb' => 'FF000000'],
                 ],
@@ -457,14 +457,14 @@ class GenerateBarcodeController extends Controller
                     'shrinkToFit' => true,
                 ],
             ]);
-            $sheet->getRowDimension($r + 1)->setRowHeight(15.5);
+            $sheet->getRowDimension($r + 1)->setRowHeight(12);
 
-            // Row 3 of label block: Lot Number
+            // Row 3 of label block: Lot Number (Tinggi: 12 pt)
             $sheet->setCellValue("B" . ($r + 2), $request->lot_number);
             $sheet->getStyle("B" . ($r + 2))->applyFromArray([
                 'font' => [
                     'name'  => 'Arial',
-                    'size'  => 9,
+                    'size'  => 8.5,
                     'bold'  => true,
                     'color' => ['argb' => 'FF000000'],
                 ],
@@ -474,15 +474,15 @@ class GenerateBarcodeController extends Controller
                     'shrinkToFit' => true,
                 ],
             ]);
-            $sheet->getRowDimension($r + 2)->setRowHeight(15.5);
+            $sheet->getRowDimension($r + 2)->setRowHeight(12);
 
-            // Row 4 of label block: Detail String / Dimensi
+            // Row 4 of label block: Detail String / Dimensi (Tinggi: 12 pt)
             $detail = trim(strtoupper($request->material_name . ' ' . $request->label_description));
             $sheet->setCellValue("B" . ($r + 3), $detail);
             $sheet->getStyle("B" . ($r + 3))->applyFromArray([
                 'font' => [
                     'name'  => 'Arial',
-                    'size'  => 8,
+                    'size'  => 7.5,
                     'bold'  => true,
                     'color' => ['argb' => 'FF000000'],
                 ],
@@ -492,9 +492,9 @@ class GenerateBarcodeController extends Controller
                     'shrinkToFit' => true,
                 ],
             ]);
-            $sheet->getRowDimension($r + 3)->setRowHeight(14);
+            $sheet->getRowDimension($r + 3)->setRowHeight(12);
 
-            // Generate QR Code PNG file for Drawing (Ukuran: 42x42 px, pas di sel A2:A4)
+            // Generate QR Code PNG file for Drawing (Ukuran: 36x36 px, pas di sel A2:A4)
             try {
                 $qrPath = $this->qrService->generateFile($request->full_barcode, 200);
                 if (file_exists($qrPath)) {
@@ -504,9 +504,9 @@ class GenerateBarcodeController extends Controller
                     $drawing->setDescription('QR Code');
                     $drawing->setPath($qrPath);
                     $drawing->setCoordinates('A' . ($r + 1));
-                    $drawing->setOffsetX(3);
-                    $drawing->setOffsetY(2);
-                    $drawing->setWidth(48);
+                    $drawing->setOffsetX(4);
+                    $drawing->setOffsetY(1);
+                    $drawing->setWidth(36);
                     $drawing->setWorksheet($sheet);
                 }
             } catch (\Throwable $e) {
