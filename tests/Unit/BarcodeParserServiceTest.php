@@ -64,11 +64,21 @@ class BarcodeParserServiceTest extends TestCase
         $this->assertSame('Kode material tidak ditemukan di Master Material.', $result['message']);
     }
 
-    public function test_reject_missing_lot(): void
+    public function test_parse_missing_or_empty_lot_defaults_to_dash(): void
     {
-        $result = $this->parser->parse('RF1H059-00960099B||1');
+        $formats = [
+            'RF1H059-00960099B || 1',
+            'RF1H059-00960099B | | 1',
+            'RF1H059-00960099B |  | 1',
+            'RF1H059-00960099B | - | 1',
+            'RF1H059-00960099B||1',
+        ];
 
-        $this->assertFalse($result['valid']);
+        foreach ($formats as $qr) {
+            $result = $this->parser->parse($qr);
+            $this->assertTrue($result['valid'], "QR [$qr] seharusnya valid.");
+            $this->assertSame('-', $result['lot_number'], "QR [$qr] lot_number seharusnya '-'");
+        }
     }
 
     public function test_reject_missing_qty(): void

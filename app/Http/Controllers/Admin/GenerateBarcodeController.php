@@ -1,0 +1,619 @@
+<?php
+
+namespace App\Http\Controllers\Admin;
+
+use App\Http\Controllers\Controller;
+use App\Models\BarcodeRequest;
+use App\Models\MasterMaterial;
+use App\Models\Plant;
+use App\Services\ActivityLogService;
+use App\Services\BarcodeGeneratorService;
+use App\Services\QrGeneratorService;
+use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\View\View;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+use PhpOffice\PhpSpreadsheet\Worksheet\Drawing;
+use PhpOffice\PhpSpreadsheet\Style\Alignment;
+use PhpOffice\PhpSpreadsheet\Style\Border;
+use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
+use Throwable;
+use Yajra\DataTables\Facades\DataTables;
+
+class GenerateBarcodeController extends Controller
+{
+    public function __construct(
+        private BarcodeGeneratorService $generator,
+        private QrGeneratorService $qrService,
+        private ActivityLogService $activityLog,
+    ) {}
+
+    /**
+     * Show the generate-barcode list page.
+     */
+    public function index(): View
+    {
+        $filterLimit = max((int) config('sto.admin_filter_options_limit', 500), 1);
+
+        return view('admin.generate-barcode', [
+            'plants'    => Plant::active()->orderBy('name')->limit($filterLimit)->get(),
+            'materials' => MasterMaterial::active()->orderBy('material_code')->limit($filterLimit)->get(),
+        ]);
+    }
+
+    /**
+     * DataTable server-side endpoint.
+     */
+    public function datatable(Request $request): JsonResponse
+    {
+        $query = BarcodeRequest::with(['user', 'plant', 'location', 'reviewedBy'])
+            ->select('barcode_requests.*');
+
+        // --- Filters ---
+        $status = $request->input('filter_status');
+        if ($status && $status !== 'all') {
+            $query->where('status', $status);
+        } else {
+            // Default: show pending first
+            $query->orderByRaw("FIELD(status, 'pending', 'approved', 'rejected')");
+        }
+
+        if ($plantId = $request->input('filter_plant')) {
+            $query->where('plant_id', $plantId);
+        }
+
+        if ($materialCode = $request->input('filter_material')) {
+            $query->where('material_code', $materialCode);
+        }
+
+        $search = $request->input('search.value');
+        if ($search) {
+            $query->where(function (Builder $q) use ($search) {
+                $q->where('material_code', 'like', "%{$search}%")
+                    ->orWhere('material_name', 'like', "%{$search}%")
+                    ->orWhere('lot_number', 'like', "%{$search}%")
+                    ->orWhere('shape_name', 'like', "%{$search}%");
+            });
+        }
+
+        $maxLength = max((int) config('sto.datatable_max_length', 100), 1);
+        $start  = max((int) $request->input('start', 0), 0);
+        $length = min(max((int) $request->input('length', 25), 1), $maxLength);
+
+        $total    = (clone $query)->count();
+        $records  = $query->orderByDesc('created_at')->skip($start)->take($length)->get();
+
+        return response()->json([
+            'draw'            => (int) $request->input('draw'),
+            'recordsTotal'    => $total,
+            'recordsFiltered' => $total,
+            'data'            => $records->map(function (BarcodeRequest $r, int $idx) use ($total, $start) {
+                return [
+                    'id'               => $r->id,
+                    'no'               => $total - $start - $idx,
+                    'material_code'    => $r->material_code,
+                    'material_name'    => $r->material_name,
+                    'shape_name'       => $r->shape_name,
+                    'size'             => $r->size,
+                    'lot_number'       => $r->lot_number,
+                    'qty'              => $r->qty,
+                    'plant'            => $r->plant?->name ?? '-',
+                    'location'         => $r->location?->name ?? '-',
+                    'requester'        => $r->user?->name ?? '-',
+                    'status'           => $r->status,
+                    'reviewed_by'      => $r->reviewedBy?->name ?? '-',
+                    'reviewed_at'      => $r->reviewed_at?->format('d-m-Y H:i') ?? '-',
+                    'generated_barcode_material' => $r->generated_barcode_material,
+                    'created_at'       => $r->created_at?->format('d-m-Y H:i') ?? '-',
+                ];
+            })->values(),
+        ]);
+    }
+
+    /**
+     * Validate (preview) a barcode request without saving anything.
+     * Read-only — must NOT write to the database.
+     */
+    public function validateData(BarcodeRequest $barcodeRequest): JsonResponse
+    {
+        abort_if($barcodeRequest->status !== 'pending', 422, 'Request ini sudah diproses.');
+
+        $result = $this->generator->build([
+            'shape_code'    => $barcodeRequest->shape_code,
+            'material_code' => $barcodeRequest->material_code,
+            'thickness'     => $barcodeRequest->thickness,
+            'width'         => $barcodeRequest->width,
+            'diameter'      => $barcodeRequest->diameter,
+            'length'        => $barcodeRequest->length,
+        ]);
+
+        $material = MasterMaterial::findByCode($barcodeRequest->material_code);
+
+        $checks = [
+            [
+                'label'  => 'Material ditemukan di Master',
+                'ok'     => $material !== null,
+                'detail' => $material ? "{$material->material_code} — {$material->material_name}" : 'Tidak ditemukan / tidak aktif',
+            ],
+            [
+                'label'  => 'Dimensi valid',
+                'ok'     => $result['valid'],
+                'detail' => $result['valid'] ? 'Semua dimensi dalam range yang valid' : implode(', ', $result['errors']),
+            ],
+            [
+                'label'  => 'Lot Number diisi',
+                'ok'     => filled($barcodeRequest->lot_number),
+                'detail' => $barcodeRequest->lot_number ?: '(kosong)',
+            ],
+            [
+                'label'  => 'Lokasi valid',
+                'ok'     => $barcodeRequest->location_id !== null,
+                'detail' => $barcodeRequest->location?->name ?? '(tidak ada)',
+            ],
+        ];
+
+        return response()->json([
+            'success'          => $result['valid'],
+            'barcode_material' => $result['barcode_material'],
+            'checks'           => $checks,
+            'errors'           => $result['errors'],
+            'request_data'     => [
+                'material_code' => $barcodeRequest->material_code,
+                'material_name' => $barcodeRequest->material_name,
+                'shape_name'    => $barcodeRequest->shape_name,
+                'size'          => $barcodeRequest->size,
+                'lot_number'    => $barcodeRequest->lot_number,
+                'plant'         => $barcodeRequest->plant?->name,
+                'location'      => $barcodeRequest->location?->name,
+            ],
+        ]);
+    }
+
+    /**
+     * Generate the barcode for a request.
+     * Validates server-side, saves barcode_material, qty, status, reviewed_by, reviewed_at.
+     */
+    public function generate(Request $request, BarcodeRequest $barcodeRequest): JsonResponse
+    {
+        if ($barcodeRequest->status !== 'pending') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Request ini sudah diproses (status: ' . $barcodeRequest->status . ').',
+            ], 422);
+        }
+
+        $request->validate([
+            'qty' => ['nullable', 'integer', 'min:1', 'max:99999'],
+        ]);
+        $validated['qty'] = 1;
+
+        // Server-side re-validate
+        $result = $this->generator->build([
+            'shape_code'    => $barcodeRequest->shape_code,
+            'material_code' => $barcodeRequest->material_code,
+            'thickness'     => $barcodeRequest->thickness,
+            'width'         => $barcodeRequest->width,
+            'diameter'      => $barcodeRequest->diameter,
+            'length'        => $barcodeRequest->length,
+        ]);
+
+        if (!$result['valid']) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validasi barcode gagal: ' . implode('; ', $result['errors']),
+                'errors'  => $result['errors'],
+            ], 422);
+        }
+
+        DB::beginTransaction();
+        try {
+            $oldValues = $barcodeRequest->only(['status', 'generated_barcode_material', 'qty', 'reviewed_by_user_id', 'reviewed_at']);
+
+            $barcodeRequest->update([
+                'status'                   => 'approved',
+                'generated_barcode_material' => $result['barcode_material'],
+                'qty'                      => $validated['qty'],
+                'reviewed_by_user_id'      => $request->user()->id,
+                'reviewed_at'              => now(),
+            ]);
+
+            $this->activityLog->record(
+                $request->user(),
+                'barcode_request.generated',
+                $barcodeRequest,
+                oldValues: $oldValues,
+                newValues: [
+                    'status'                   => 'approved',
+                    'generated_barcode_material' => $result['barcode_material'],
+                    'qty'                      => $validated['qty'],
+                    'reviewed_at'              => now()->format('Y-m-d H:i:s'),
+                ],
+            );
+
+            DB::commit();
+            Cache::forget('scan_overview:*');
+            Cache::forget('sidebar_badges');
+        } catch (Throwable $e) {
+            DB::rollBack();
+            Log::error('GenerateBarcodeController@generate failed', [
+                'barcode_request_id' => $barcodeRequest->id,
+                'exception'          => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal menyimpan data. Silakan coba lagi.',
+            ], 500);
+        }
+
+        $fullBarcode = $barcodeRequest->fresh()->full_barcode;
+
+        return response()->json([
+            'success'          => true,
+            'message'          => 'Barcode berhasil di-generate.',
+            'barcode_material' => $result['barcode_material'],
+            'full_barcode'     => $fullBarcode,
+            'label_url'        => route('admin.generate-barcode.label', $barcodeRequest->id),
+            'label_xlsx_url'   => route('admin.generate-barcode.label-xlsx', $barcodeRequest->id),
+        ], 201);
+    }
+
+    /**
+     * Reject a barcode request. Requires rejection_reason.
+     */
+    public function reject(Request $request, BarcodeRequest $barcodeRequest): JsonResponse
+    {
+        if ($barcodeRequest->status !== 'pending') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Request ini sudah diproses (status: ' . $barcodeRequest->status . ').',
+            ], 422);
+        }
+
+        $validated = $request->validate([
+            'rejection_reason' => ['required', 'string', 'min:5', 'max:500'],
+        ]);
+
+        DB::beginTransaction();
+        try {
+            $oldValues = $barcodeRequest->only(['status', 'rejection_reason']);
+
+            $barcodeRequest->update([
+                'status'             => 'rejected',
+                'rejection_reason'   => $validated['rejection_reason'],
+                'reviewed_by_user_id' => $request->user()->id,
+                'reviewed_at'        => now(),
+            ]);
+
+            $this->activityLog->record(
+                $request->user(),
+                'barcode_request.rejected',
+                $barcodeRequest,
+                oldValues: $oldValues,
+                newValues: [
+                    'status'           => 'rejected',
+                    'rejection_reason' => $validated['rejection_reason'],
+                    'reviewed_at'      => now()->format('Y-m-d H:i:s'),
+                ],
+            );
+
+            DB::commit();
+            Cache::forget('scan_overview:*');
+            Cache::forget('sidebar_badges');
+        } catch (Throwable $e) {
+            DB::rollBack();
+            Log::error('GenerateBarcodeController@reject failed', [
+                'barcode_request_id' => $barcodeRequest->id,
+                'exception'          => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal menyimpan penolakan. Silakan coba lagi.',
+            ], 500);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Request berhasil ditolak.',
+        ]);
+    }
+
+    /**
+     * Print a single QR label PDF for an approved barcode request.
+     */
+    public function label(BarcodeRequest $barcodeRequest): Response
+    {
+        abort_unless(
+            $barcodeRequest->status === 'approved' && $barcodeRequest->generated_barcode_material,
+            404,
+            'Label hanya tersedia untuk request yang sudah di-approve.'
+        );
+
+        $fullBarcode = $barcodeRequest->full_barcode;
+        $qrDataUri   = $this->qrService->generateDataUri($fullBarcode, 280);
+
+        $pdf = Pdf::loadView('admin.generate-barcode-label', [
+            'request'   => $barcodeRequest,
+            'qrDataUri' => $qrDataUri,
+            'company'   => config('sto.company_name'),
+        ]);
+
+        // Label size: 50mm × 20mm (landscape for thermal printer)
+        $pdf->setPaper([0, 0, 141.73, 56.69], 'portrait'); // ~50mm × 20mm in points
+
+        return $pdf->download("label-{$barcodeRequest->material_code}-{$barcodeRequest->lot_number}.pdf");
+    }
+
+    /**
+     * Print bulk QR label PDF for multiple approved barcode requests.
+     */
+    public function labelBulk(Request $request): Response
+    {
+        $validated = $request->validate([
+            'ids'   => ['required', 'array', 'min:1', 'max:100'],
+            'ids.*' => ['integer', 'exists:barcode_requests,id'],
+        ]);
+
+        $requests = BarcodeRequest::with(['plant', 'location'])
+            ->whereIn('id', $validated['ids'])
+            ->where('status', 'approved')
+            ->whereNotNull('generated_barcode_material')
+            ->get();
+
+        abort_if($requests->isEmpty(), 404, 'Tidak ada request yang valid untuk dicetak.');
+
+        // Generate QR for each request
+        $items = $requests->map(function (BarcodeRequest $r) {
+            return [
+                'request'   => $r,
+                'qrDataUri' => $this->qrService->generateDataUri($r->full_barcode, 280),
+            ];
+        });
+
+        $pdf = Pdf::loadView('admin.generate-barcode-label-bulk', [
+            'items'   => $items,
+            'company' => config('sto.company_name'),
+        ]);
+
+        $pdf->setPaper([0, 0, 141.73, 56.69], 'portrait');
+
+        return $pdf->download("labels-bulk-" . now()->format('Ymd-His') . ".pdf");
+    }
+
+    /**
+     * Helper to construct worksheet with physical label layout cards and embedded QR drawings.
+     */
+    private function buildLabelCardsSheet(Spreadsheet $spreadsheet, $requests): array
+    {
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Labels QR');
+
+        // Set margin halaman seminimal mungkin (dalam inch) untuk label kecil 50x20 mm
+        // Set margin 0 mutlak agar tidak ada pemotongan vertikal dari sistem Excel
+        $sheet->getPageMargins()->setTop(0);
+        $sheet->getPageMargins()->setBottom(0);
+        $sheet->getPageMargins()->setLeft(0);
+        $sheet->getPageMargins()->setRight(0);
+        $sheet->getPageMargins()->setHeader(0);
+        $sheet->getPageMargins()->setFooter(0);
+
+        // Set orientasi potret dan fit to 1 page wide
+        $sheet->getPageSetup()->setOrientation(\PhpOffice\PhpSpreadsheet\Worksheet\PageSetup::ORIENTATION_PORTRAIT);
+        $sheet->getPageSetup()->setFitToWidth(1);
+        $sheet->getPageSetup()->setFitToHeight(0);
+
+        // Set lebar kolom agar tepat memenuhi 50 mm (A = 7 / ~15mm untuk QR, B = 16 / ~34mm untuk Teks)
+        $sheet->getColumnDimension('A')->setWidth(7);
+        $sheet->getColumnDimension('B')->setWidth(16);
+
+        $r = 1;
+        $qrPaths = [];
+        $company = config('sto.company_name', 'PT Astra Daido Steel Indonesia');
+
+        foreach ($requests as $request) {
+            if ($request->status !== 'approved' || !$request->generated_barcode_material) {
+                continue;
+            }
+
+            // Row 1 of label block: Company Name
+            // Total 4 baris harus = 57 pt (0.8 inch = 57.6 pt) agar mengisi penuh stiker
+            // Row1=12, Row2=15.5, Row3=15.5, Row4=14 → Total=57 pt
+            $sheet->mergeCells("A{$r}:B{$r}");
+            $sheet->setCellValue("A{$r}", $company);
+            $sheet->getStyle("A{$r}")->applyFromArray([
+                'font' => [
+                    'name'  => 'Arial',
+                    'size'  => 8,
+                    'bold'  => true,
+                    'color' => ['argb' => 'FF000000'],
+                ],
+                'alignment' => [
+                    'horizontal' => Alignment::HORIZONTAL_CENTER,
+                    'vertical'   => Alignment::VERTICAL_CENTER,
+                ],
+            ]);
+            $sheet->getRowDimension($r)->setRowHeight(12);
+
+            // Row 2 of label block: Generated Barcode Material
+            $sheet->setCellValue("B" . ($r + 1), $request->generated_barcode_material);
+            $sheet->getStyle("B" . ($r + 1))->applyFromArray([
+                'font' => [
+                    'name'  => 'Arial',
+                    'size'  => 9,
+                    'bold'  => true,
+                    'color' => ['argb' => 'FF000000'],
+                ],
+                'alignment' => [
+                    'horizontal' => Alignment::HORIZONTAL_LEFT,
+                    'vertical'   => Alignment::VERTICAL_CENTER,
+                    'shrinkToFit' => true,
+                ],
+            ]);
+            $sheet->getRowDimension($r + 1)->setRowHeight(15.5);
+
+            // Row 3 of label block: Lot Number
+            $sheet->setCellValue("B" . ($r + 2), $request->lot_number);
+            $sheet->getStyle("B" . ($r + 2))->applyFromArray([
+                'font' => [
+                    'name'  => 'Arial',
+                    'size'  => 9,
+                    'bold'  => true,
+                    'color' => ['argb' => 'FF000000'],
+                ],
+                'alignment' => [
+                    'horizontal' => Alignment::HORIZONTAL_LEFT,
+                    'vertical'   => Alignment::VERTICAL_CENTER,
+                    'shrinkToFit' => true,
+                ],
+            ]);
+            $sheet->getRowDimension($r + 2)->setRowHeight(15.5);
+
+            // Row 4 of label block: Detail String / Dimensi
+            $detail = trim(strtoupper($request->material_name . ' ' . $request->label_description));
+            $sheet->setCellValue("B" . ($r + 3), $detail);
+            $sheet->getStyle("B" . ($r + 3))->applyFromArray([
+                'font' => [
+                    'name'  => 'Arial',
+                    'size'  => 8,
+                    'bold'  => true,
+                    'color' => ['argb' => 'FF000000'],
+                ],
+                'alignment' => [
+                    'horizontal' => Alignment::HORIZONTAL_LEFT,
+                    'vertical'   => Alignment::VERTICAL_CENTER,
+                    'shrinkToFit' => true,
+                ],
+            ]);
+            $sheet->getRowDimension($r + 3)->setRowHeight(14);
+
+            // Generate QR Code PNG file for Drawing (Ukuran: 42x42 px, pas di sel A2:A4)
+            try {
+                $qrPath = $this->qrService->generateFile($request->full_barcode, 200);
+                if (file_exists($qrPath)) {
+                    $qrPaths[] = $qrPath;
+                    $drawing = new Drawing();
+                    $drawing->setName('QR ' . $request->id);
+                    $drawing->setDescription('QR Code');
+                    $drawing->setPath($qrPath);
+                    $drawing->setCoordinates('A' . ($r + 1));
+                    $drawing->setOffsetX(3);
+                    $drawing->setOffsetY(2);
+                    $drawing->setWidth(48);
+                    $drawing->setWorksheet($sheet);
+                }
+            } catch (\Throwable $e) {
+                Log::warning('Failed adding QR Drawing for label XLSX: ' . $e->getMessage());
+            }
+
+            // Apply outer border around A{$r}:B{$r+3}
+            $sheet->getStyle("A{$r}:B" . ($r + 3))->applyFromArray([
+                'borders' => [
+                    'outline' => [
+                        'borderStyle' => Border::BORDER_THIN,
+                        'color' => ['argb' => 'FFB0B0B0'],
+                    ],
+                ],
+            ]);
+
+            // Set Page Break SETELAH baris ke-4 (pada baris ke-5) agar 4 baris label tidak terbelah ke halaman berikutnya
+            $sheet->setBreak("A" . ($r + 4), \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet::BREAK_ROW);
+            $r += 4;
+        }
+
+        return $qrPaths;
+    }
+
+    /**
+     * Download a single QR label as an Excel (.xlsx) file with embedded QR drawing and formatted card.
+     */
+    public function labelXlsx(BarcodeRequest $barcodeRequest): SymfonyResponse
+    {
+        abort_unless(
+            $barcodeRequest->status === 'approved' && $barcodeRequest->generated_barcode_material,
+            404,
+            'Label hanya tersedia untuk request yang sudah di-approve.'
+        );
+
+        $spreadsheet = new Spreadsheet();
+        $qrPaths = $this->buildLabelCardsSheet($spreadsheet, collect([$barcodeRequest]));
+
+        $writer = new Xlsx($spreadsheet);
+        $tempXlsx = tempnam(sys_get_temp_dir(), 'sto_xlsx_');
+        $writer->save($tempXlsx);
+
+        foreach ($qrPaths as $qrPath) {
+            if (file_exists($qrPath)) {
+                @unlink($qrPath);
+            }
+        }
+
+        $filename = "label-{$barcodeRequest->material_code}-{$barcodeRequest->lot_number}.xlsx";
+
+        return response()->streamDownload(function () use ($tempXlsx) {
+            readfile($tempXlsx);
+            @unlink($tempXlsx);
+        }, $filename, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ]);
+    }
+
+    /**
+     * Download bulk QR labels as an Excel (.xlsx) file with embedded QR drawings and formatted cards.
+     */
+    public function labelBulkXlsx(Request $request): SymfonyResponse
+    {
+        if ($request->has('ids') && is_array($request->ids) && count($request->ids) > 0) {
+            $requests = BarcodeRequest::with(['plant', 'location'])
+                ->whereIn('id', $request->ids)
+                ->where('status', 'approved')
+                ->whereNotNull('generated_barcode_material')
+                ->get();
+        } else {
+            // Fallback to active filters if no specific IDs checked
+            $query = BarcodeRequest::with(['plant', 'location'])
+                ->where('status', 'approved')
+                ->whereNotNull('generated_barcode_material');
+
+            if ($request->filled('filter_plant')) {
+                $query->where('plant_id', $request->filter_plant);
+            }
+            if ($request->filled('filter_material')) {
+                $query->where('material_code', $request->filter_material);
+            }
+
+            $requests = $query->get();
+        }
+
+        abort_if($requests->isEmpty(), 404, 'Tidak ada data label Approved yang valid untuk dicetak ke Excel.');
+
+        $spreadsheet = new Spreadsheet();
+        $qrPaths = $this->buildLabelCardsSheet($spreadsheet, $requests);
+
+        $writer = new Xlsx($spreadsheet);
+        $tempXlsx = tempnam(sys_get_temp_dir(), 'sto_xlsx_');
+        $writer->save($tempXlsx);
+
+        foreach ($qrPaths as $qrPath) {
+            if (file_exists($qrPath)) {
+                @unlink($qrPath);
+            }
+        }
+
+        $filename = "labels-bulk-" . now()->format('Ymd-His') . ".xlsx";
+
+        return response()->streamDownload(function () use ($tempXlsx) {
+            readfile($tempXlsx);
+            @unlink($tempXlsx);
+        }, $filename, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ]);
+    }
+}

@@ -1,8 +1,12 @@
 <?php
 
+use App\Http\Controllers\Admin\BulkGenerateBarcodeController;
 use App\Http\Controllers\Admin\DashboardController;
+use App\Http\Controllers\Admin\GenerateBarcodeController;
 use App\Http\Controllers\Admin\MasterController;
 use App\Http\Controllers\Admin\MaterialDoubleController;
+use App\Http\Controllers\Admin\RackConfirmationController;
+use App\Http\Controllers\BarcodeRequestController;
 use App\Http\Controllers\HealthController;
 use App\Http\Controllers\ScanController;
 use Illuminate\Http\Request;
@@ -98,6 +102,13 @@ Route::middleware(['auth', 'role:scanner'])->group(function () {
     Route::get('/scan/history', [ScanController::class, 'historyPage'])->name('scan.history');
     // Halaman agregat rangkuman material dari apa yang telah discan oleh user
     Route::get('/scan/material-summary', [ScanController::class, 'materialSummary'])->name('scan.material-summary');
+
+    // Halaman dan API untuk Request QR/Barcode baru
+    Route::get('/scan/barcode-request', [BarcodeRequestController::class, 'index'])->name('scan.barcode-request');
+    Route::get('/api/barcode-request/suggestions', [BarcodeRequestController::class, 'suggestions'])->middleware('throttle:datatable')->name('api.barcode-request.suggestions');
+    Route::get('/api/barcode-request', [BarcodeRequestController::class, 'datatable'])->middleware('throttle:datatable')->name('api.barcode-request');
+    Route::post('/api/barcode-request', [BarcodeRequestController::class, 'store'])->middleware('throttle:scan-write')->name('api.barcode-request.store');
+    Route::delete('/api/barcode-request/{id}', [BarcodeRequestController::class, 'destroy'])->middleware('throttle:scan-write')->name('api.barcode-request.destroy');
 
     // --- API ENDPOINTS UNTUK APLIKASI SCANNER ---
     
@@ -255,4 +266,48 @@ Route::middleware(['auth', 'role:admin'])
         Route::post('/api/users', [MasterController::class, 'storeUser'])->name('api.users.store');
         Route::put('/api/users/{id}', [MasterController::class, 'updateUser'])->name('api.users.update');
         Route::delete('/api/users/{id}', [MasterController::class, 'destroyUser'])->name('api.users.destroy');
+
+        // --- GENERATE BARCODE (Admin memproses Request QR/Barcode dari Scanner) ---
+        Route::get('/generate-barcode', [GenerateBarcodeController::class, 'index'])->name('generate-barcode');
+        Route::get('/api/generate-barcode', [GenerateBarcodeController::class, 'datatable'])
+            ->middleware('throttle:datatable')
+            ->name('api.generate-barcode');
+        Route::post('/api/generate-barcode/{barcodeRequest}/validate', [GenerateBarcodeController::class, 'validateData'])
+            ->name('api.generate-barcode.validate');
+        Route::post('/api/generate-barcode/{barcodeRequest}/generate', [GenerateBarcodeController::class, 'generate'])
+            ->middleware('throttle:scan-write')
+            ->name('api.generate-barcode.generate');
+        Route::post('/api/generate-barcode/{barcodeRequest}/reject', [GenerateBarcodeController::class, 'reject'])
+            ->middleware('throttle:scan-write')
+            ->name('api.generate-barcode.reject');
+        Route::post('/api/generate-barcode/batch-generate', [BulkGenerateBarcodeController::class, 'batchGenerate'])
+            ->middleware('throttle:scan-write')
+            ->name('api.generate-barcode.batch-generate');
+        Route::post('/generate-barcode/batch-print-grid', [BulkGenerateBarcodeController::class, 'batchPrintA4Grid'])
+            ->name('generate-barcode.batch-print-grid');
+        Route::get('/generate-barcode/{barcodeRequest}/label', [GenerateBarcodeController::class, 'label'])
+            ->name('generate-barcode.label');
+        Route::post('/generate-barcode/label-bulk', [GenerateBarcodeController::class, 'labelBulk'])
+            ->name('generate-barcode.label-bulk');
+        Route::get('/generate-barcode/{barcodeRequest}/label-xlsx', [GenerateBarcodeController::class, 'labelXlsx'])
+            ->name('generate-barcode.label-xlsx');
+        Route::match(['get', 'post'], '/generate-barcode/label-bulk-xlsx', [GenerateBarcodeController::class, 'labelBulkXlsx'])
+            ->name('generate-barcode.label-bulk-xlsx');
+
+
+        // --- RACK CONFIRMATION (Admin konfirmasi rak secara fisik) ---
+        Route::get('/rack-confirmation', [RackConfirmationController::class, 'index'])
+            ->name('rack-confirmation');
+        Route::get('/rack-confirmation/export', [RackConfirmationController::class, 'export'])
+            ->middleware('throttle:export')
+            ->name('rack-confirmation.export');
+        Route::get('/api/rack-confirmation', [RackConfirmationController::class, 'datatable'])
+            ->middleware('throttle:datatable')
+            ->name('api.rack-confirmation');
+        Route::post('/api/rack-confirmation/{location}/confirm', [RackConfirmationController::class, 'confirm'])
+            ->middleware('throttle:scan-write')
+            ->name('api.rack-confirmation.confirm');
+        Route::post('/api/rack-confirmation/{location}/cancel', [RackConfirmationController::class, 'cancel'])
+            ->middleware('throttle:scan-write')
+            ->name('api.rack-confirmation.cancel');
     });
