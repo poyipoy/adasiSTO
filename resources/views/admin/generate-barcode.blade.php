@@ -19,12 +19,6 @@
         </svg>
         Cetak Grid 3x3 (Batch)
     </button>
-    <button class="btn btn-outline-success" type="button" id="btnBulkPrintXlsx" onclick="bulkPrintXlsx()" title="Unduh label Approved ke format Excel (.xlsx)">
-        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width:14px;height:14px;vertical-align:middle;margin-right:3px;">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-        </svg>
-        Cetak Label (xlsx)
-    </button>
 </div>
 
 {{-- Filters --}}
@@ -174,17 +168,11 @@
         <div class="modal-body" id="resultModalBody"></div>
         <div class="modal-footer">
             <button class="btn" type="button" onclick="closeModal('resultModal');reloadTable();">Tutup</button>
-            <a class="btn btn-primary" id="btnPrintLabel" href="#" target="_blank" style="margin-right:5px;">
+            <a class="btn btn-primary" id="btnPrintLabel" href="#" target="_blank">
                 <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/>
                 </svg>
                 Cetak Label PDF
-            </a>
-            <a class="btn btn-success" id="btnPrintLabelXlsx" href="#" target="_blank">
-                <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width:14px;height:14px;vertical-align:middle;margin-right:3px;">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                </svg>
-                Cetak Label (xlsx)
             </a>
         </div>
     </div>
@@ -198,9 +186,7 @@ const ROUTES = {
     generate:   (id) => `/admin/api/generate-barcode/${id}/generate`,
     reject:         (id) => `/admin/api/generate-barcode/${id}/reject`,
     label:          (id) => `/admin/generate-barcode/${id}/label`,
-    labelXlsx:      (id) => `/admin/generate-barcode/${id}/label-xlsx`,
     labelBulk:      '{{ route('admin.generate-barcode.label-bulk') }}',
-    labelBulkXlsx:  '{{ route('admin.generate-barcode.label-bulk-xlsx') }}',
     batchGenerate:  '{{ route('admin.api.generate-barcode.batch-generate') }}',
     batchPrintGrid: '{{ route('admin.generate-barcode.batch-print-grid') }}',
 };
@@ -274,8 +260,7 @@ function actionButtons(d) {
         btns += `<button class="btn btn-primary" style="font-size:11px;padding:2px 7px;margin-right:2px;" onclick="openGenerate(${d.id},'${escHtml(d.material_code)}','${escHtml(d.lot_number)}','${escHtml(d.size)}')">Generate</button>`;
         btns += `<button class="btn btn-danger" style="font-size:11px;padding:2px 7px;" onclick="openReject(${d.id},'${escHtml(d.material_code)}','${escHtml(d.lot_number)}')">Tolak</button>`;
     } else if (d.status === 'approved') {
-        btns += `<a class="btn btn-primary" style="font-size:11px;padding:2px 7px;margin-right:2px;" href="${ROUTES.label(d.id)}" target="_blank">Cetak PDF</a>`;
-        btns += `<a class="btn btn-success" style="font-size:11px;padding:2px 7px;" href="${ROUTES.labelXlsx(d.id)}" target="_blank">Cetak (xlsx)</a>`;
+        btns += `<a class="btn btn-primary" style="font-size:11px;padding:2px 7px;" href="${ROUTES.label(d.id)}" target="_blank">Cetak Label</a>`;
     }
     return btns;
 }
@@ -333,19 +318,7 @@ function updateBulkPrintBtn() {
             : 'Klik untuk info: Belum ada data berstatus Approved yang dipilih/ceklis';
         btnPrintGrid.innerHTML = checkedApproved > 0
             ? `<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width:14px;height:14px;vertical-align:middle;margin-right:3px;"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg> Cetak Grid 3x3 (${checkedApproved})`
-            : `<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width:14px;height:14px;vertical-align:middle;margin-right:3px;"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg> Cetak Grid 3x3 (Batch)`;
-    }
-
-    const btnPrintXlsx = document.getElementById('btnBulkPrintXlsx');
-    if (btnPrintXlsx) {
-        btnPrintXlsx.className = checkedApproved > 0 ? 'btn btn-success' : 'btn btn-outline-success';
-        btnPrintXlsx.style.opacity = checkedApproved > 0 ? '1' : '0.85';
-        btnPrintXlsx.title = checkedApproved > 0 
-            ? `Cetak ${checkedApproved} label terpilih ke format Excel (.xlsx)` 
-            : 'Unduh semua label Approved sesuai filter ke format Excel (.xlsx)';
-        btnPrintXlsx.innerHTML = checkedApproved > 0
-            ? `<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width:14px;height:14px;vertical-align:middle;margin-right:3px;"><path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg> Cetak Label (xlsx) (${checkedApproved})`
-            : `<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width:14px;height:14px;vertical-align:middle;margin-right:3px;"><path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg> Cetak Label (xlsx)`;
+            : `<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width:14px;height:14px;vertical-align:middle;margin-right:3px;"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg> Cetak Grid 3x3 (Batch)`;
     }
 }
 
@@ -425,46 +398,6 @@ function bulkPrintGrid() {
         form.submit();
         document.body.removeChild(form);
     });
-}
-
-function bulkPrintXlsx() {
-    const ids = Array.from(document.querySelectorAll('.row-check:checked[data-status="approved"]')).map(cb => cb.value);
-    
-    if (ids.length > 0) {
-        confirmAction(`Cetak ${ids.length} label QR terpilih ke format Excel (.xlsx)?`, function () {
-            const form = document.createElement('form');
-            form.method = 'POST';
-            form.action = ROUTES.labelBulkXlsx;
-            form.target = '_blank';
-
-            const csrf = document.createElement('input');
-            csrf.type  = 'hidden';
-            csrf.name  = '_token';
-            csrf.value = CSRF;
-            form.appendChild(csrf);
-
-            ids.forEach(id => {
-                const inp = document.createElement('input');
-                inp.type  = 'hidden';
-                inp.name  = 'ids[]';
-                inp.value = id;
-                form.appendChild(inp);
-            });
-
-            document.body.appendChild(form);
-            form.submit();
-            document.body.removeChild(form);
-        });
-    } else {
-        const plant    = document.getElementById('filterPlant').value;
-        const material = document.getElementById('filterMaterial').value;
-        const status   = document.getElementById('filterStatus').value;
-        
-        confirmAction(`Belum ada kotak centang dipilih. Unduh seluruh label Approved sesuai filter aktif ke format Excel (.xlsx)?`, function () {
-            const url = `${ROUTES.labelBulkXlsx}?filter_plant=${encodeURIComponent(plant)}&filter_material=${encodeURIComponent(material)}&filter_status=${encodeURIComponent(status)}`;
-            window.open(url, '_blank');
-        });
-    }
 }
 
 function bulkGenerate() {
@@ -646,12 +579,9 @@ function showGenerateResult(data) {
         <div style="background:#1a1a2e;color:#4ade80;font-family:monospace;padding:10px 14px;font-size:13px;margin-bottom:10px;border-radius:2px;">
             ${data.full_barcode}
         </div>
-        <p style="font-size:12px;color:var(--text-secondary);">Klik "Cetak Label PDF" atau "Cetak Label (xlsx)" untuk membuka/mengunduh label siap cetak.</p>
+        <p style="font-size:12px;color:var(--text-secondary);">Klik "Cetak Label PDF" untuk membuka label siap cetak di tab baru.</p>
     `;
     document.getElementById('btnPrintLabel').href = data.label_url;
-    if (document.getElementById('btnPrintLabelXlsx')) {
-        document.getElementById('btnPrintLabelXlsx').href = data.label_xlsx_url || (data.label_url ? data.label_url.replace('/label', '/label-xlsx') : '#');
-    }
     openModal('resultModal');
     reloadTable();
 }

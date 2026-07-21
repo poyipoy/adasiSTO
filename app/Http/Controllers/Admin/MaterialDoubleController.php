@@ -54,18 +54,18 @@ class MaterialDoubleController extends Controller
 
         $search = $request->input('search.value');
         if ($search) {
-            $searchData = \App\Services\BarcodeParserService::normalizeSearch($search);
-            $normalizedSearch = $searchData['normalized'];
-            $firstPartSearch = $searchData['first_part'];
-
-            $query->where(function ($searchQuery) use ($normalizedSearch, $firstPartSearch) {
-                $searchQuery->where('scan_results.barcode_material', 'like', "%{$firstPartSearch}%")
-                    ->orWhere('scan_results.barcode_raw', 'like', "%{$normalizedSearch}%")
-                    ->orWhere('scan_results.material_name', 'like', "%{$normalizedSearch}%")
-                    ->orWhere('scan_results.material_code', 'like', "%{$normalizedSearch}%")
-                    ->orWhere('scan_results.shape_name', 'like', "%{$normalizedSearch}%")
-                    ->orWhere('plants.name', 'like', "%{$normalizedSearch}%")
-                    ->orWhere('locations.name', 'like', "%{$normalizedSearch}%");
+            $rawSearch = str_replace(['%', '_'], ['\\%', '\\_'], $search);
+            $query->where(function ($searchQuery) use ($rawSearch) {
+                $searchQuery->where('scan_results.barcode_material', 'like', "%{$rawSearch}%")
+                    ->orWhere('scan_results.barcode_raw', 'like', "%{$rawSearch}%")
+                    ->orWhere('scan_results.material_name', 'like', "%{$rawSearch}%")
+                    ->orWhere('scan_results.material_code', 'like', "%{$rawSearch}%")
+                    ->orWhere('scan_results.shape_name', 'like', "%{$rawSearch}%")
+                    ->orWhere('scan_results.lot_number', 'like', "%{$rawSearch}%")
+                    ->orWhere('scan_results.sto_code', 'like', "%{$rawSearch}%")
+                    ->orWhere('scan_results.keterangan', 'like', "%{$rawSearch}%")
+                    ->orWhere('plants.name', 'like', "%{$rawSearch}%")
+                    ->orWhere('locations.name', 'like', "%{$rawSearch}%");
             });
         }
 
@@ -86,7 +86,7 @@ class MaterialDoubleController extends Controller
             'recordsTotal' => $filteredRecords,
             'recordsFiltered' => $filteredRecords,
             'data' => $data->map(function ($item, int $index) use ($filteredRecords, $start) {
-                $size = $item->shape_code === 'RF'
+                $size = in_array($item->shape_code, ['RF', 'RH'])
                     ? "{$item->thickness} x {$item->width} x {$item->length}"
                     : "⌀{$item->diameter} x {$item->length}";
 
@@ -116,17 +116,19 @@ class MaterialDoubleController extends Controller
 
         $search = $request->input('search.value');
         if ($search) {
-            $searchData = \App\Services\BarcodeParserService::normalizeSearch($search);
-            $normalizedSearch = $searchData['normalized'];
-            $firstPartSearch = $searchData['first_part'];
-
-            $query->where(function ($searchQuery) use ($normalizedSearch, $firstPartSearch) {
-                $searchQuery->where('barcode_material', 'like', "%{$firstPartSearch}%")
-                    ->orWhere('barcode_raw', 'like', "%{$normalizedSearch}%")
-                    ->orWhere('material_name', 'like', "%{$normalizedSearch}%")
-                    ->orWhere('material_code', 'like', "%{$normalizedSearch}%")
-                    ->orWhere('shape_name', 'like', "%{$normalizedSearch}%")
-                    ->orWhere('lot_number', 'like', "%{$normalizedSearch}%");
+            $rawSearch = str_replace(['%', '_'], ['\\%', '\\_'], $search);
+            $query->where(function ($searchQuery) use ($rawSearch) {
+                $searchQuery->where('barcode_material', 'like', "%{$rawSearch}%")
+                    ->orWhere('barcode_raw', 'like', "%{$rawSearch}%")
+                    ->orWhere('material_name', 'like', "%{$rawSearch}%")
+                    ->orWhere('material_code', 'like', "%{$rawSearch}%")
+                    ->orWhere('shape_name', 'like', "%{$rawSearch}%")
+                    ->orWhere('lot_number', 'like', "%{$rawSearch}%")
+                    ->orWhere('sto_code', 'like', "%{$rawSearch}%")
+                    ->orWhere('keterangan', 'like', "%{$rawSearch}%")
+                    ->orWhereHas('user', fn ($uQuery) => $uQuery->where('name', 'like', "%{$rawSearch}%"))
+                    ->orWhereHas('plant', fn ($pQuery) => $pQuery->where('name', 'like', "%{$rawSearch}%"))
+                    ->orWhereHas('location', fn ($lQuery) => $lQuery->where('name', 'like', "%{$rawSearch}%"));
             });
         }
 
@@ -149,7 +151,8 @@ class MaterialDoubleController extends Controller
                     'material_name' => $scanResult->material_name,
                     'shape_name' => $scanResult->shape_name,
                     'user_name' => $scanResult->user ? $scanResult->user->name : '-',
-                    'scan_time' => $scanResult->created_at ? $scanResult->created_at->format('d-m-Y H:i:s') : '-',
+                    'lot_number' => $scanResult->lot_number ?: '-',
+                    'scan_time' => $scanResult->created_at?->format('Y-m-d H:i:s') ?? '-',
                 ];
             })->values(),
         ]);
@@ -219,6 +222,14 @@ class MaterialDoubleController extends Controller
         }
 
         return response()->json($result, 201);
+    }
+
+    public function exportExcel(Request $request)
+    {
+        $filters = $request->only(['plant_id', 'location_id', 'location_name', 'material_code', 'date_from', 'date_to', 'status']);
+        $fileName = 'Material_Double_' . now()->format('Ymd_His') . '.xlsx';
+
+        return \Maatwebsite\Excel\Facades\Excel::download(new \App\Exports\MaterialDoubleExport($filters), $fileName);
     }
 
     public function queueExport(Request $request): JsonResponse
@@ -313,7 +324,7 @@ class MaterialDoubleController extends Controller
         $columns = $request->input('columns');
 
         if (!$orderInfo || !isset($columns[$orderInfo['column']])) {
-            $query->orderByDesc('max_created_at')->orderByDesc('scan_results.barcode_material');
+            $query->orderByDesc('duplicate_count')->orderByDesc('scan_results.barcode_material');
 
             return;
         }
@@ -328,13 +339,12 @@ class MaterialDoubleController extends Controller
             'plant' => 'plants.name',
             'location' => 'locations.name',
             'duplicate_count' => 'duplicate_count',
-            'max_created_at' => 'max_created_at',
         ];
 
         if (isset($sortableColumns[$columnData])) {
             $query->orderBy($sortableColumns[$columnData], $dir);
         } else {
-            $query->orderByDesc('max_created_at');
+            $query->orderByDesc('duplicate_count');
         }
     }
 

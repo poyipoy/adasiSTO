@@ -210,7 +210,7 @@ class ScanController extends Controller
             'recordsTotal' => $filteredRecords,
             'recordsFiltered' => $filteredRecords,
             'data' => $data->map(function ($item, int $index) use ($filteredRecords, $start) {
-                $size = $item->shape_code === 'RF'
+                $size = in_array($item->shape_code, ['RF', 'RH'])
                     ? "{$item->thickness} x {$item->width} x {$item->length}"
                     : "⌀{$item->diameter} x {$item->length}";
 

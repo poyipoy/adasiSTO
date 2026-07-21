@@ -18,6 +18,7 @@
             <option value="">All</option>
             <option value="RF">Flat (RF)</option>
             <option value="RR">Round (RR)</option>
+            <option value="RH">Hollow (RH)</option>
         </select>
     </div>
     <div style="width:150px;"><label class="form-label">Date From</label><input type="date" id="filterDateFrom" class="form-control"></div>

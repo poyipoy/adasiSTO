@@ -107,7 +107,7 @@ class ScanResult extends Model
 
     public function getSizeAttribute(): string
     {
-        if ($this->shape_code === 'RF') {
+        if (in_array($this->shape_code, ['RF', 'RH'])) {
             return $this->formatDimension($this->thickness)
                 . ' x ' . $this->formatDimension($this->width)
                 . ' x ' . $this->formatDimension($this->length);

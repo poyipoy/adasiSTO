@@ -36,8 +36,7 @@ class MaterialDoubleQueryService
                 locations.name as location_name,
                 COUNT(*) as duplicate_count,
                 MAX(mdv.validated_at) as validated_at,
-                MAX(mdv_user.name) as validated_by_name,
-                MAX(scan_results.created_at) as max_created_at
+                MAX(mdv_user.name) as validated_by_name
             ')
             ->groupBy(
                 'scan_results.sto_code_id',

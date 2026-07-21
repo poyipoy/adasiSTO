@@ -24,8 +24,8 @@ class AdminUpsertScanResultRequest extends FormRequest
             'qty' => ['required', 'integer', 'min:1'],
             'material_code' => ['required', 'string', Rule::exists('master_materials', 'material_code')->where('is_active', true)],
             'material_name' => ['required', 'string', 'max:255'],
-            'shape_code' => ['required', 'string', Rule::in(['RF', 'RR'])],
-            'shape_name' => ['required', 'string', Rule::in(['Flat', 'Round'])],
+            'shape_code' => ['required', 'string', Rule::in(['RF', 'RR', 'RH'])],
+            'shape_name' => ['required', 'string', Rule::in(['Flat', 'Round', 'Hollow'])],
             'thickness' => ['nullable', 'integer', 'min:1'],
             'width' => ['nullable', 'integer', 'min:1'],
             'diameter' => ['nullable', 'integer', 'min:1'],
@@ -47,21 +47,25 @@ class AdminUpsertScanResultRequest extends FormRequest
                 $validator->errors()->add('shape_name', 'Shape RF harus menggunakan nama Flat.');
             }
 
+            if ($shapeCode === 'RH' && $shapeName !== 'Hollow') {
+                $validator->errors()->add('shape_name', 'Shape RH harus menggunakan nama Hollow.');
+            }
+
             if ($shapeCode === 'RR' && $shapeName !== 'Round') {
                 $validator->errors()->add('shape_name', 'Shape RR harus menggunakan nama Round.');
             }
 
-            if ($shapeCode === 'RF') {
+            if (in_array($shapeCode, ['RF', 'RH'])) {
                 if (!$this->filled('thickness')) {
-                    $validator->errors()->add('thickness', 'Thickness wajib diisi untuk shape Flat.');
+                    $validator->errors()->add('thickness', "Thickness wajib diisi untuk shape {$shapeName}.");
                 }
 
                 if (!$this->filled('width')) {
-                    $validator->errors()->add('width', 'Width wajib diisi untuk shape Flat.');
+                    $validator->errors()->add('width', "Width wajib diisi untuk shape {$shapeName}.");
                 }
 
                 if ($this->filled('diameter')) {
-                    $validator->errors()->add('diameter', 'Diameter harus kosong untuk shape Flat.');
+                    $validator->errors()->add('diameter', "Diameter harus kosong untuk shape {$shapeName}.");
                 }
             }
 

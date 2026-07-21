@@ -247,15 +247,20 @@ class DashboardController extends Controller
             $searchData = \App\Services\BarcodeParserService::normalizeSearch($search);
             $normalizedSearch = str_replace(['%', '_'], ['\\%', '\\_'], $searchData['normalized']);
             $firstPartSearch = str_replace(['%', '_'], ['\\%', '\\_'], $searchData['first_part']);
+            $rawSearch = str_replace(['%', '_'], ['\\%', '\\_'], $search);
 
-            $baseQuery->where(function ($query) use ($normalizedSearch, $firstPartSearch) {
+            $baseQuery->where(function ($query) use ($normalizedSearch, $firstPartSearch, $rawSearch) {
                 $query->where('barcode_material', 'like', "%{$firstPartSearch}%")
                     ->orWhere('barcode_raw', 'like', "%{$normalizedSearch}%")
                     ->orWhere('material_name', 'like', "%{$normalizedSearch}%")
                     ->orWhere('material_code', 'like', "%{$normalizedSearch}%")
                     ->orWhere('lot_number', 'like', "%{$normalizedSearch}%")
                     ->orWhere('sto_code', 'like', "%{$normalizedSearch}%")
-                    ->orWhereHas('user', fn ($userQuery) => $userQuery->where('name', 'like', "%{$normalizedSearch}%"));
+                    ->orWhere('shape_name', 'like', "%{$rawSearch}%")
+                    ->orWhere('keterangan', 'like', "%{$rawSearch}%")
+                    ->orWhereHas('user', fn ($userQuery) => $userQuery->where('name', 'like', "%{$rawSearch}%"))
+                    ->orWhereHas('plant', fn ($plantQuery) => $plantQuery->where('name', 'like', "%{$rawSearch}%"))
+                    ->orWhereHas('location', fn ($locQuery) => $locQuery->where('name', 'like', "%{$rawSearch}%"));
             });
         }
 
@@ -407,12 +412,14 @@ class DashboardController extends Controller
             $searchData = \App\Services\BarcodeParserService::normalizeSearch($search);
             $normalizedSearch = str_replace(['%', '_'], ['\\%', '\\_'], $searchData['normalized']);
             $firstPartSearch = str_replace(['%', '_'], ['\\%', '\\_'], $searchData['first_part']);
+            $rawSearch = str_replace(['%', '_'], ['\\%', '\\_'], $search);
 
-            $query->where(function ($q) use ($normalizedSearch, $firstPartSearch) {
+            $query->where(function ($q) use ($normalizedSearch, $firstPartSearch, $rawSearch) {
                 $q->where('barcode_material', 'like', "%{$firstPartSearch}%")
                     ->orWhere('barcode_raw', 'like', "%{$normalizedSearch}%")
-                    ->orWhere('material_name', 'like', "%{$normalizedSearch}%")
-                    ->orWhere('material_code', 'like', "%{$normalizedSearch}%");
+                    ->orWhere('material_name', 'like', "%{$rawSearch}%")
+                    ->orWhere('material_code', 'like', "%{$rawSearch}%")
+                    ->orWhere('shape_name', 'like', "%{$rawSearch}%");
             });
         }
 
@@ -459,7 +466,7 @@ class DashboardController extends Controller
             'recordsTotal' => $filteredRecords,
             'recordsFiltered' => $filteredRecords,
             'data' => $data->map(function ($item, int $index) use ($filteredRecords, $start) {
-                $size = $item->shape_code === 'RF'
+                $size = in_array($item->shape_code, ['RF', 'RH'])
                     ? "{$item->thickness} x {$item->width} x {$item->length}"
                     : "⌀{$item->diameter} x {$item->length}";
 
@@ -477,9 +484,12 @@ class DashboardController extends Controller
         ]);
     }
 
-    public function exportExcel(Request $request): JsonResponse|RedirectResponse
+    public function exportExcel(Request $request)
     {
-        return $this->queueLegacyExport($request, 'excel');
+        $filters = $request->only(['plant_id', 'location_id', 'location_name', 'user_id', 'material_code', 'lot_number', 'date_from', 'date_to']);
+        $fileName = 'STO_Scan_Results_' . now()->format('Ymd_His') . '.xlsx';
+
+        return \Maatwebsite\Excel\Facades\Excel::download(new \App\Exports\ScanResultsExport($filters), $fileName);
     }
 
     public function queueExport(Request $request, string $format): JsonResponse
@@ -589,8 +599,18 @@ class DashboardController extends Controller
         );
     }
 
-    public function exportPdf(Request $request): JsonResponse|RedirectResponse
+    public function exportPdf(Request $request)
     {
-        return $this->queueLegacyExport($request, 'pdf');
+        $filters = $request->only(['plant_id', 'location_id', 'location_name', 'user_id', 'material_code', 'lot_number', 'date_from', 'date_to']);
+        $rows = $this->exportService->filteredScanResults($filters)
+            ->limit((int) config('sto.export_pdf_row_limit', 5000))
+            ->get();
+
+        $fileName = 'STO_Scan_Results_' . now()->format('Ymd_His') . '.pdf';
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('exports.scan-results-pdf', compact('rows', 'filters'))
+            ->setPaper('a4', 'landscape');
+
+        return $pdf->download($fileName);
     }
 }

@@ -383,6 +383,25 @@
                         <span>{{ number_format($confirmed_locations) }}</span>
                         <span style="font-size: 18px; font-weight: 500; color: var(--text-muted);">/ {{ number_format($total_locations) }}</span>
                     </div>
+                    @php
+                        $locPercentage = $total_locations > 0 ? round(($confirmed_locations / $total_locations) * 100, 1) : 0;
+                        if ($locPercentage < 50) {
+                            $locColorClass = 'bg-danger';
+                            $locTextColorClass = 'text-danger';
+                        } elseif ($locPercentage < 100) {
+                            $locColorClass = 'bg-warning';
+                            $locTextColorClass = 'text-warning';
+                        } else {
+                            $locColorClass = 'bg-success';
+                            $locTextColorClass = 'text-success';
+                        }
+                    @endphp
+                    <div style="margin-top: 12px; display: flex; align-items: center; justify-content: space-between; font-size: 13px; font-weight: 600;">
+                        <div class="progress" style="height: 6px; flex-grow: 1; margin-right: 12px; background-color: var(--border-color); border-radius: 4px;">
+                            <div class="progress-bar {{ $locColorClass }}" role="progressbar" style="width: {{ $locPercentage }}%; border-radius: 4px;" aria-valuenow="{{ $locPercentage }}" aria-valuemin="0" aria-valuemax="100"></div>
+                        </div>
+                        <span class="{{ $locTextColorClass }}">{{ $locPercentage }}%</span>
+                    </div>
                 </div>
             </div>
         </div>

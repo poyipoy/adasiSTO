@@ -13,8 +13,8 @@
     }
 
     .label {
-        width: 141.73pt;
-        height: 56.69pt; /* 50mm × 20mm */
+        width: 283.46pt;
+        height: 119.06pt; /* 4.2cm */
         position: relative;
         overflow: hidden;
         background: #fff;
@@ -22,53 +22,50 @@
 
     .company {
         position: absolute;
-        top: 3pt;
-        left: 4pt;
-        font-size: 6pt;
+        top: 8pt;
+        left: 10pt;
+        font-size: 11pt;
         font-weight: bold;
         color: #000;
-        letter-spacing: 0.1pt;
+        letter-spacing: 0.2pt;
     }
 
     .qr-code {
         position: absolute;
-        top: 11pt;
-        left: 4pt;
-        width: 38pt;
-        height: 38pt;
+        top: 24pt;
+        left: 8pt;
+        width: 70pt;
+        height: 70pt;
     }
 
     .barcode-text {
         position: absolute;
-        top: 13pt;
-        left: 46pt;
-        font-size: 6.5pt;
+        top: 30pt;
+        left: 85pt;
+        font-size: 11pt;
         font-weight: bold;
         color: #000;
-        letter-spacing: 0.2pt;
+        letter-spacing: 0.5pt;
     }
 
     .lot-text {
         position: absolute;
-        top: 24pt;
-        left: 46pt;
-        font-size: 6pt;
+        top: 52pt;
+        left: 85pt;
+        font-size: 11pt;
         font-weight: bold;
         color: #000;
-        letter-spacing: 0.2pt;
+        letter-spacing: 0.5pt;
     }
 
     .detail-text {
         position: absolute;
-        top: 35pt;
-        left: 46pt;
-        width: 92pt;
-        height: 18pt;
-        font-size: 5.5pt;
+        bottom: 10pt;
+        left: 10pt;
+        font-size: 14pt;
         font-weight: bold;
         color: #000;
-        line-height: 1.2;
-        overflow: hidden;
+        letter-spacing: 0.5pt;
     }
 </style>
 </head>

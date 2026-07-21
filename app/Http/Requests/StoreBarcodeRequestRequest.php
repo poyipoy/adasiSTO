@@ -28,11 +28,11 @@ class StoreBarcodeRequestRequest extends FormRequest
                 'string',
                 Rule::exists('master_materials', 'material_code')->where('is_active', true)
             ],
-            'shape_code' => ['required', 'string', Rule::in(['RF', 'RR'])],
+            'shape_code' => ['required', 'string', Rule::in(['RF', 'RR', 'RH'])],
             
-            // RF (Flat) dimensions
-            'thickness' => ['required_if:shape_code,RF', 'nullable', 'integer', 'min:1'],
-            'width' => ['required_if:shape_code,RF', 'nullable', 'integer', 'min:1'],
+            // RF (Flat) / RH (Hollow) dimensions
+            'thickness' => ['required_if:shape_code,RF,RH', 'nullable', 'integer', 'min:1'],
+            'width' => ['required_if:shape_code,RF,RH', 'nullable', 'integer', 'min:1'],
             
             // RR (Round) dimensions (diameter)
             'diameter' => ['required_if:shape_code,RR', 'nullable', 'integer', 'min:1'],
@@ -58,7 +58,7 @@ class StoreBarcodeRequestRequest extends FormRequest
     protected function prepareForValidation(): void
     {
         // Nullify irrelevant dimensions based on shape code
-        if ($this->shape_code === 'RF') {
+        if (in_array($this->shape_code, ['RF', 'RH'])) {
             $this->merge([
                 'diameter' => null,
             ]);
@@ -85,10 +85,10 @@ class StoreBarcodeRequestRequest extends FormRequest
             'material_code.required' => 'Nama Material wajib diisi.',
             'material_code.exists' => 'Material tidak ditemukan atau tidak aktif.',
             'shape_code.required' => 'Jenis wajib dipilih.',
-            'shape_code.in' => 'Jenis harus Flat atau Round.',
-            'thickness.required_if' => 'Thickness wajib diisi untuk jenis Flat.',
+            'shape_code.in' => 'Jenis harus Flat, Round, atau Hollow.',
+            'thickness.required_if' => 'Thickness wajib diisi untuk jenis Flat atau Hollow.',
             'thickness.min' => 'Thickness harus lebih dari 0.',
-            'width.required_if' => 'Width wajib diisi untuk jenis Flat.',
+            'width.required_if' => 'Width wajib diisi untuk jenis Flat atau Hollow.',
             'width.min' => 'Width harus lebih dari 0.',
             'diameter.required_if' => 'Diameter wajib diisi untuk jenis Round.',
             'diameter.min' => 'Diameter harus lebih dari 0.',

@@ -5,10 +5,13 @@ namespace App\Exports;
 use App\Services\MaterialDoubleQueryService;
 use Maatwebsite\Excel\Concerns\Exportable;
 use Maatwebsite\Excel\Concerns\FromQuery;
+use Maatwebsite\Excel\Concerns\ShouldAutoSize;
 use Maatwebsite\Excel\Concerns\WithHeadings;
 use Maatwebsite\Excel\Concerns\WithMapping;
+use Maatwebsite\Excel\Concerns\WithStyles;
+use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
-class MaterialDoubleExport implements FromQuery, WithHeadings, WithMapping
+class MaterialDoubleExport implements FromQuery, WithHeadings, WithMapping, WithStyles, ShouldAutoSize
 {
     use Exportable;
 
@@ -45,7 +48,7 @@ class MaterialDoubleExport implements FromQuery, WithHeadings, WithMapping
     {
         $this->rowNumber++;
 
-        $size = $row->shape_code === 'RF'
+        $size = in_array($row->shape_code, ['RF', 'RH'])
             ? "{$row->thickness} x {$row->width} x {$row->length}"
             : "⌀{$row->diameter} x {$row->length}";
 
@@ -63,6 +66,19 @@ class MaterialDoubleExport implements FromQuery, WithHeadings, WithMapping
             $validationStatus,
             $row->validated_by_name ?: '-',
             $row->validated_at ? \Carbon\Carbon::parse($row->validated_at)->format('Y-m-d H:i:s') : '-',
+        ];
+    }
+
+    public function styles(Worksheet $sheet): array
+    {
+        return [
+            1 => [
+                'font' => ['bold' => true, 'color' => ['rgb' => '0B2545']],
+                'fill' => [
+                    'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
+                    'startColor' => ['rgb' => '17F0DE'],
+                ],
+            ],
         ];
     }
 }

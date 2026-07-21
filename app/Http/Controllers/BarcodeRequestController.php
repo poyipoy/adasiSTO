@@ -53,7 +53,7 @@ class BarcodeRequestController extends Controller
         $barcodeRequest->material_code = $validated['material_code'];
         $barcodeRequest->material_name = $material->material_name;
         $barcodeRequest->shape_code = $validated['shape_code'];
-        $barcodeRequest->shape_name = $validated['shape_code'] === 'RF' ? 'Flat' : 'Round';
+        $barcodeRequest->shape_name = $validated['shape_code'] === 'RR' ? 'Round' : ($validated['shape_code'] === 'RH' ? 'Hollow' : 'Flat');
         $barcodeRequest->thickness = $validated['thickness'] ?? null;
         $barcodeRequest->width = $validated['width'] ?? null;
         $barcodeRequest->diameter = $validated['diameter'] ?? null;

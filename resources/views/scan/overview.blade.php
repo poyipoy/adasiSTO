@@ -171,8 +171,29 @@
         </div>
         <div class="stat-card-title">Lokasi Terkonfirmasi</div>
         <div class="stat-card-value">
-            <span data-card="locations_confirmed">{{ number_format($scanOverview['locations_confirmed']) }}</span>
-            <span style="font-size: 18px; font-weight: 500; color: var(--text-muted);">/ <span data-card="locations_total">{{ number_format($scanOverview['locations_total']) }}</span></span>
+            <span data-card="locations_confirmed">{{ number_format($scanOverview['locations_confirmed'] ?? 0) }}</span>
+            <span style="font-size: 18px; font-weight: 500; color: var(--text-muted);">/ <span data-card="locations_total">{{ number_format($scanOverview['locations_total'] ?? 0) }}</span></span>
+        </div>
+        @php
+            $conf = $scanOverview['locations_confirmed'] ?? 0;
+            $tot = $scanOverview['locations_total'] ?? 0;
+            $locPercentage = $tot > 0 ? round(($conf / $tot) * 100, 1) : 0;
+            if ($locPercentage < 50) {
+                $locColorClass = 'bg-danger';
+                $locTextColorClass = 'text-danger';
+            } elseif ($locPercentage < 100) {
+                $locColorClass = 'bg-warning';
+                $locTextColorClass = 'text-warning';
+            } else {
+                $locColorClass = 'bg-success';
+                $locTextColorClass = 'text-success';
+            }
+        @endphp
+        <div style="margin-top: 12px; display: flex; align-items: center; justify-content: space-between; font-size: 13px; font-weight: 600;">
+            <div class="progress" style="height: 6px; flex-grow: 1; margin-right: 12px; background-color: var(--border-color); border-radius: 4px;">
+                <div class="progress-bar {{ $locColorClass }}" id="locationsProgressBar" role="progressbar" style="width: {{ $locPercentage }}%; border-radius: 4px;" aria-valuenow="{{ $locPercentage }}" aria-valuemin="0" aria-valuemax="100"></div>
+            </div>
+            <span class="{{ $locTextColorClass }}" id="locationsProgressText">{{ $locPercentage }}%</span>
         </div>
     </div>
 </div>
@@ -303,6 +324,34 @@
             const target = document.querySelector(`[data-card="${key}"]`);
             if (target) target.textContent = formatNumber(scan[key]);
         });
+
+        // Update locations progress bar
+        const confirmed = Number(scan['locations_confirmed'] || 0);
+        const total = Number(scan['locations_total'] || 0);
+        const percentage = total > 0 ? (confirmed / total * 100).toFixed(1) : 0;
+        
+        const progressBar = document.getElementById('locationsProgressBar');
+        const progressText = document.getElementById('locationsProgressText');
+        
+        if (progressBar && progressText) {
+            progressBar.style.width = `${percentage}%`;
+            progressBar.setAttribute('aria-valuenow', percentage);
+            progressText.textContent = `${percentage}%`;
+            
+            progressBar.classList.remove('bg-danger', 'bg-warning', 'bg-success');
+            progressText.classList.remove('text-danger', 'text-warning', 'text-success');
+            
+            if (percentage < 50) {
+                progressBar.classList.add('bg-danger');
+                progressText.classList.add('text-danger');
+            } else if (percentage < 100) {
+                progressBar.classList.add('bg-warning');
+                progressText.classList.add('text-warning');
+            } else {
+                progressBar.classList.add('bg-success');
+                progressText.classList.add('text-success');
+            }
+        }
 
         const validator = payload.validator_overview || {};
         Object.keys(validator).forEach(key => {

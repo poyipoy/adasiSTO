@@ -23,13 +23,6 @@ class OverviewService
         return Cache::remember($cacheKey, 15, function () use ($scopeUser, $filters) {
             $baseQuery = $this->scanQuery($scopeUser, $filters);
 
-            $locQuery = \App\Models\Location::active();
-            if (!empty($filters['plant_id'])) {
-                $locQuery->where('plant_id', $filters['plant_id']);
-            }
-            $locationsConfirmed = (clone $locQuery)->confirmed()->count();
-            $locationsTotal = (clone $locQuery)->count();
-
             return [
                 'total_today' => (clone $baseQuery)
                     ->whereBetween('scan_results.created_at', [now()->startOfDay(), now()->endOfDay()])
@@ -37,8 +30,6 @@ class OverviewService
                 'valid_scans' => (clone $baseQuery)->where('keterangan', 'OK')->count(),
                 'duplicate_scans' => $this->duplicateGroupCount(clone $baseQuery),
                 'invalid_scans' => (clone $baseQuery)->where('keterangan', '!=', 'OK')->count(),
-                'locations_confirmed' => $locationsConfirmed,
-                'locations_total' => $locationsTotal,
             ];
         });
     }

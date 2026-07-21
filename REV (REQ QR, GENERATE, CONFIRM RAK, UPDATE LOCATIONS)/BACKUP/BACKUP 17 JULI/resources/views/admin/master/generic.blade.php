@@ -1,0 +1,654 @@
+<x-layouts.app :title="$title">
+
+<div class="enterprise-toolbar">
+    <button class="btn btn-primary" type="button" onclick="openCreate()">Tambah</button>
+    <button class="btn btn-icon" type="button" onclick="reloadTable()" title="Refresh">Refresh</button>
+</div>
+
+@if(isset($filters) && count($filters) > 0)
+<div class="card" style="border-top:0;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+    @foreach($filters as $filter)
+        @php
+            $type = $filter['type'] ?? 'select';
+        @endphp
+        <div style="width:140px; flex: 1 1 140px; max-width: 220px;">
+            <label class="form-label">{{ $filter['label'] }}</label>
+            @if($type === 'select')
+                <select class="form-control filter-input" data-name="{{ $filter['name'] }}" onchange="reloadTable()">
+                    <option value="">All</option>
+                    @foreach($filter['options'] as $option)
+                        <option value="{{ $option['value'] }}">{{ $option['label'] }}</option>
+                    @endforeach
+                </select>
+            @elseif($type === 'date')
+                <input type="date" class="form-control filter-input" data-name="{{ $filter['name'] }}" onchange="reloadTable()">
+            @elseif($type === 'text')
+                <input type="text" class="form-control filter-input" data-name="{{ $filter['name'] }}" placeholder="All" onchange="reloadTable()">
+            @endif
+        </div>
+    @endforeach
+    <div style="display:flex; gap:8px;">
+        <button class="btn btn-primary" type="button" onclick="reloadTable()">Filter</button>
+        <button class="btn btn-icon" type="button" onclick="resetFilters()" title="Reset">Reset</button>
+    </div>
+</div>
+@endif
+
+<div id="inlineEditorError" class="inline-editor-error"></div>
+
+<div class="table-container" style="border-top:0;">
+    <table id="masterTable" class="table-enterprise" style="width:100%;">
+        <thead>
+            <tr>
+                @foreach($columns as $column)
+                    <th>{{ $column['label'] }}</th>
+                @endforeach
+                <th>Action</th>
+            </tr>
+        </thead>
+    </table>
+</div>
+
+@push('styles')
+<style>
+    #masterTable .inline-scan-editor td {
+        background: #f8fafc;
+        border-top: 1px solid var(--primary);
+        border-bottom: 1px solid var(--primary);
+        padding: 4px 6px;
+        vertical-align: top;
+        white-space: normal;
+    }
+
+    .inline-editor-label {
+        color: var(--primary);
+        font-weight: 700;
+        white-space: nowrap;
+        text-align: center;
+        padding-top: 8px !important;
+    }
+
+    .inline-input,
+    .inline-select {
+        width: 100%;
+        min-width: 0;
+        max-width: 100%;
+        height: 26px;
+        padding: 2px 4px;
+        font-size: 11px;
+    }
+
+    .inline-select {
+        appearance: none;
+        -webkit-appearance: none;
+        background-image:
+            linear-gradient(45deg, transparent 50%, var(--text) 50%),
+            linear-gradient(135deg, var(--text) 50%, transparent 50%);
+        background-position:
+            calc(100% - 11px) 7px,
+            calc(100% - 6px) 7px;
+        background-repeat: no-repeat;
+        background-size: 5px 5px, 5px 5px;
+        padding-right: 18px;
+    }
+
+    .inline-select::-ms-expand {
+        display: none;
+    }
+
+    .inline-actions {
+        display: flex;
+        gap: 4px;
+        min-width: 0;
+    }
+
+    .inline-actions .btn {
+        flex: 1 1 0;
+        min-width: 0;
+        padding: 3px 5px;
+        font-size: 11px;
+        white-space: nowrap;
+    }
+
+    .inline-switch {
+        align-items: center;
+        display: inline-flex;
+        gap: 6px;
+        min-height: 26px;
+    }
+
+    .inline-switch input {
+        height: 0;
+        opacity: 0;
+        position: absolute;
+        width: 0;
+    }
+
+    .inline-switch-track {
+        background: #cbd5e1;
+        border-radius: 999px;
+        cursor: pointer;
+        height: 20px;
+        position: relative;
+        transition: background 0.18s ease;
+        width: 38px;
+    }
+
+    .inline-switch-track::after {
+        background: #fff;
+        border-radius: 50%;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+        content: '';
+        height: 16px;
+        left: 2px;
+        position: absolute;
+        top: 2px;
+        transition: transform 0.18s ease;
+        width: 16px;
+    }
+
+    .inline-switch input:checked + .inline-switch-track {
+        background: var(--primary);
+    }
+
+    .inline-switch input:checked + .inline-switch-track::after {
+        transform: translateX(18px);
+    }
+
+    .inline-switch-label {
+        color: var(--text-secondary);
+        font-size: 11px;
+        font-weight: 700;
+    }
+
+    .inline-editor-error {
+        display: none;
+        background: #fff7f7;
+        border: 1px solid #f3b4b0;
+        color: var(--danger);
+        font-size: 12px;
+        font-weight: 600;
+        padding: 6px 10px;
+        margin-bottom: 0;
+    }
+
+    .inline-editor-error.active {
+        display: block;
+    }
+
+    .inline-field.is-invalid {
+        border-color: var(--danger);
+        box-shadow: 0 0 0 1px rgba(217, 45, 32, 0.12);
+    }
+
+    @media (max-width: 768px) {
+        #masterTable {
+            table-layout: auto;
+        }
+        .inline-input,
+        .inline-select {
+            height: 36px;
+            padding: 6px 8px;
+            font-size: 13px;
+        }
+        .inline-actions .btn {
+            padding: 6px 8px;
+            font-size: 12px;
+            min-height: 36px;
+        }
+    }
+</style>
+@endpush
+
+@push('scripts')
+<script>
+    const columns = @json($columns);
+    const fields = @json($fields);
+    const apiBase = @json($apiBase);
+    const activateBase = @json($activateBase ?? null);
+    
+    let masterTable;
+    let activeEditor = null;
+    let suppressOutsideUntil = 0;
+    window.masterRows = {};
+
+    $(document).ready(function() {
+        masterTable = $('#masterTable').DataTable({
+            processing: true,
+            serverSide: true,
+            ajax: {
+                url: apiBase,
+                data: function(d) {
+                    $('.filter-select, .filter-input').each(function() {
+                        d[$(this).data('name')] = $(this).val();
+                    });
+                }
+            },
+            order: [],
+            columns: [
+                ...columns.map(column => ({
+                    data: column.data,
+                    orderable: column.data !== 'no',
+                    render: function(value, type, row) {
+                        if (column.type === 'status') {
+                            return `<span class="badge ${value ? 'badge-valid' : 'badge-invalid'}">${value ? 'Active' : 'Inactive'}</span>`;
+                        }
+                        if (column.type === 'boolean') {
+                            return `<span class="badge ${value ? 'badge-valid' : 'badge-invalid'}">${value ? 'On' : 'Off'}</span>`;
+                        }
+                        return escapeHtml(value ?? '-');
+                    }
+                })),
+                {
+                    data: null,
+                    orderable: false,
+                    render: function(row) {
+                        window.masterRows[row.id] = row;
+                        let activate = '';
+                        if (activateBase) {
+                            if (row.is_active) {
+                                activate = `<button class="btn-icon" style="color:var(--danger);" type="button" onclick="deactivateRecord(${row.id})">Nonaktifkan</button>`;
+                            } else {
+                                activate = `<button class="btn-icon" type="button" onclick="activateRecord(${row.id})">Aktifkan</button>`;
+                            }
+                        }
+                        return `<div style="display:flex;gap:4px;">${activate}<button class="btn-icon js-row-edit" type="button" data-id="${row.id}" onclick="openEdit(${row.id})">Edit</button><button class="btn-icon js-row-delete" style="color:var(--danger);" type="button" onclick="deleteRecord(${row.id})">Delete</button></div>`;
+                    }
+                }
+            ],
+            language: { emptyTable: 'Tidak ada data ditemukan.' }
+        });
+
+        $(document).on('mousedown', function(event) {
+            if (!activeEditor || Date.now() < suppressOutsideUntil) return;
+
+            const target = $(event.target);
+            if (target.closest('.inline-scan-editor,.js-row-edit,.js-row-delete,.enterprise-toolbar,.swal2-container').length) {
+                return;
+            }
+
+            if (!closeActiveEditor(true)) {
+                suppressOutsideUntil = Date.now() + 250;
+                event.preventDefault();
+                event.stopPropagation();
+            }
+        });
+    });
+
+    function reloadTable(confirmClose = true) {
+        if (confirmClose && !closeActiveEditor(true, () => reloadTable(false))) {
+            suppressOutsideUntil = Date.now() + 250;
+            return;
+        }
+        masterTable.ajax.reload(null, false);
+    }
+
+    function resetFilters() {
+        $('.filter-select, .filter-input').val('');
+        reloadTable();
+    }
+
+    function openCreate() {
+        if (!closeActiveEditor(true, () => openCreate())) {
+            suppressOutsideUntil = Date.now() + 250;
+            return;
+        }
+
+        const createData = defaultCreateData();
+        const mainRow = $(inlineEditorRow('create', createData));
+        const tbody = $('#masterTable tbody');
+
+        tbody.prepend(mainRow);
+        activeEditor = { mode: 'create', id: null, mainRow, originalPayload: payloadSnapshot(createData) };
+        attachInlineEvents();
+        applyValidatorRoleState(mainRow[0]);
+        focusFirstInput();
+    }
+
+    function openEdit(id) {
+        const row = window.masterRows[id];
+        if (!row) return;
+
+        if (!closeActiveEditor(true, () => openEdit(id))) {
+            suppressOutsideUntil = Date.now() + 250;
+            return;
+        }
+
+        const parentRow = $(`button.js-row-edit[data-id="${id}"]`).closest('tr');
+        if (!parentRow.length) return;
+
+        const normalized = normalizeRow(row);
+        const mainRow = $(inlineEditorRow('edit', normalized));
+
+        parentRow.after(mainRow);
+        activeEditor = { mode: 'edit', id, mainRow, originalPayload: payloadSnapshot(normalized) };
+        attachInlineEvents();
+        applyValidatorRoleState(mainRow[0]);
+        focusFirstInput();
+    }
+
+    function closeActiveEditor(confirmDirty = true, onConfirm = null) {
+        if (!activeEditor) return true;
+
+        if (confirmDirty && isEditorDirty()) {
+            Swal.fire({
+                title: 'Batalkan perubahan?',
+                text: 'Data yang belum disimpan akan hilang.',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#f43f5e',
+                cancelButtonColor: '#64748b',
+                confirmButtonText: 'Ya, batalkan',
+                cancelButtonText: 'Kembali edit',
+                background: '#ffffff',
+                color: '#1f2937'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    clearActiveEditor();
+                    if (onConfirm) onConfirm();
+                }
+            });
+            return false;
+        }
+
+        clearActiveEditor();
+        return true;
+    }
+
+    function clearActiveEditor() {
+        activeEditor?.mainRow.remove();
+        activeEditor = null;
+        clearInlineErrors();
+    }
+
+    function attachInlineEvents() {
+        activeEditor.mainRow.find('.inline-field').on('input change', clearInlineErrors);
+    }
+
+    function focusFirstInput() {
+        activeEditor.mainRow.find('input:visible, select:visible').first().trigger('focus');
+    }
+
+    function isEditorDirty() {
+        if (!activeEditor) return false;
+        return JSON.stringify(payloadSnapshot(formPayload())) !== JSON.stringify(activeEditor.originalPayload);
+    }
+
+    function formPayload() {
+        if (!activeEditor) return {};
+        const data = {};
+        activeEditor.mainRow.find('.inline-field').each(function() {
+            if (this.disabled && this.dataset.field !== 'is_validator') return;
+            data[this.dataset.field] = this.type === 'checkbox' ? (this.checked ? '1' : '0') : this.value;
+        });
+        normalizeValidatorForRole(data);
+        return data;
+    }
+
+    function payloadSnapshot(payload) {
+        const normalized = {};
+        fields.forEach(field => {
+            normalized[field.name] = payload[field.name] === null || payload[field.name] === undefined ? '' : String(payload[field.name]);
+        });
+        return normalized;
+    }
+
+    function defaultCreateData() {
+        const data = {};
+        fields.forEach(field => {
+            if (field.hasOwnProperty('default')) data[field.name] = field.default;
+            else if (field.type === 'checkbox') data[field.name] = 1;
+            else if (field.type === 'switch') data[field.name] = 0;
+            else if (field.name === 'role') data[field.name] = 'scanner';
+            else data[field.name] = '';
+        });
+        return data;
+    }
+
+    function normalizeValidatorForRole(data) {
+        if (data.role === 'admin' && Object.prototype.hasOwnProperty.call(data, 'is_validator')) {
+            data.is_validator = '1';
+        }
+
+        return data;
+    }
+
+    function normalizeRow(row) {
+        const data = {};
+        fields.forEach(field => {
+            if (field.type === 'checkbox' || field.type === 'switch') {
+                data[field.name] = row[field.name] ? 1 : 0;
+            } else if (field.name === 'password') {
+                data[field.name] = '';
+            } else {
+                data[field.name] = row[field.name] ?? '';
+            }
+        });
+        return data;
+    }
+
+    function inlineEditorRow(mode, data) {
+        const label = mode === 'create' ? 'New' : 'Edit';
+        let html = `<tr class="inline-scan-editor" data-mode="${mode}">`;
+
+        // Render each column based on generic columns definition
+        columns.forEach(col => {
+            if (col.data === 'no') {
+                html += `<td class="inline-editor-label">${label}</td>`;
+            } else {
+                const field = fields.find(f => f.name === col.data || (col.field && f.name === col.field));
+                html += `<td>`;
+                if (field) {
+                    html += renderField(field, data[field.name]);
+                }
+                
+                // Special case: if column is username, append password field underneath it if password field exists
+                if (col.data === 'username') {
+                    const passField = fields.find(f => f.name === 'password');
+                    if (passField) {
+                        const passLabel = mode === 'create' ? 'Password (Wajib Diisi)' : 'Password (Kosongkan jika tidak ubah)';
+                        const passFieldConfig = { ...passField, required: mode === 'create' };
+                        html += `<div style="margin-top:4px;"><label style="font-size:10px;color:var(--text-secondary);display:block;margin-bottom:2px;">${passLabel}</label>${renderField(passFieldConfig, data[passField.name])}</div>`;
+                    }
+                }
+                html += `</td>`;
+            }
+        });
+
+        // Any fields that don't belong to any column and aren't handled as special cases
+        let hiddenFields = '';
+        fields.forEach(field => {
+            if (!columns.some(col => col.data === field.name || col.field === field.name) && field.name !== 'password') {
+                hiddenFields += `<input class="inline-field" data-field="${field.name}" type="hidden" value="${escapeAttr(data[field.name])}">`;
+            }
+        });
+
+        html += `<td>
+                    ${hiddenFields}
+                    <div class="inline-actions">
+                        <button class="btn btn-primary" type="button" onclick="saveRecord()">Save</button>
+                        <button class="btn" type="button" onclick="closeActiveEditor(true)">Cancel</button>
+                    </div>
+                </td>
+            </tr>`;
+        return html;
+    }
+
+    function renderField(field, value) {
+        if (field.type === 'select') {
+            const optionsHtml = field.options.map(opt => `<option value="${escapeAttr(opt.value)}"${String(opt.value) === String(value ?? '') ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`).join('');
+            const extra = field.name === 'role' ? ' onchange="handleInlineRoleChange(this)"' : '';
+            return `<select class="form-control inline-field inline-select" data-field="${field.name}"${extra}>${optionsHtml}</select>`;
+        } else if (field.type === 'switch') {
+            const checked = String(value) === '1' || value === true ? ' checked' : '';
+            const label = String(value) === '1' || value === true ? 'On' : 'Off';
+            return `<label class="inline-switch">
+                <input class="inline-field" data-field="${field.name}" type="checkbox" value="1"${checked} onchange="syncInlineSwitchLabel(this);">
+                <span class="inline-switch-track"></span>
+                <span class="inline-switch-label">${label}</span>
+            </label>`;
+        } else if (field.type === 'checkbox') {
+            // Checkbox mapped to Active/Inactive dropdown
+            return `<select class="form-control inline-field inline-select" data-field="${field.name}">
+                <option value="1"${String(value) === '1' ? ' selected' : ''}>Active</option>
+                <option value="0"${String(value) === '0' ? ' selected' : ''}>Inactive</option>
+            </select>`;
+        } else {
+            return `<input class="form-control inline-field inline-input" data-field="${field.name}" type="${field.type}" value="${escapeAttr(value)}" ${field.required ? 'required' : ''}>`;
+        }
+    }
+
+    function syncInlineSwitchLabel(input) {
+        input.closest('.inline-switch').querySelector('.inline-switch-label').textContent = input.checked ? 'On' : 'Off';
+    }
+
+    function applyValidatorRoleState(row) {
+        const roleInput = row.querySelector('[data-field="role"]');
+        const validatorInput = row.querySelector('[data-field="is_validator"]');
+        if (!roleInput || !validatorInput) return;
+
+        if (roleInput.value === 'admin') {
+            validatorInput.checked = true;
+            validatorInput.disabled = true;
+        } else {
+            validatorInput.disabled = false;
+        }
+
+        syncInlineSwitchLabel(validatorInput);
+    }
+
+    function handleInlineRoleChange(select) {
+        applyValidatorRoleState(select.closest('tr'));
+    }
+
+    function escapeHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, char => ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#039;',
+        }[char]));
+    }
+
+    function escapeAttr(value) {
+        return escapeHtml(value);
+    }
+
+    function saveRecord() {
+        if (!activeEditor) return;
+
+        const mode = activeEditor.mode;
+        const id = activeEditor.id;
+        const data = formPayload();
+        clearInlineErrors();
+
+        fetch(mode === 'edit' ? `${apiBase}/${id}` : apiBase, {
+            method: mode === 'edit' ? 'PUT' : 'POST',
+            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+            body: JSON.stringify(data)
+        })
+        .then(async response => {
+            const resData = await response.json();
+            if (!response.ok || !resData.success) throw resData;
+            return resData;
+        })
+        .then(resData => {
+            clearActiveEditor();
+            showToast(resData.message);
+            reloadTable(false);
+
+            if (activateBase && activateBase.includes('master-sto') && (data.is_active === 1 || data.is_active === '1' || data.is_active === true)) {
+                if (window.top && window.top.document) {
+                    const topbarLabel = window.top.document.getElementById('current-sto-label');
+                    if (topbarLabel && data.code) topbarLabel.textContent = data.code;
+                    
+                    // Reload other iframes so they get the new STO
+                    const iframes = window.top.document.querySelectorAll('iframe.tab-pane');
+                    iframes.forEach(iframe => {
+                        if (iframe.contentWindow !== window.self) {
+                            try { iframe.contentWindow.location.reload(); } catch(e) {}
+                        }
+                    });
+                }
+            }
+        })
+        .catch(error => {
+            showInlineError(error);
+        });
+    }
+
+    function errorMessage(error) {
+        if (error.message && !error.errors) return error.message;
+        const first = Object.values(error.errors || {})[0];
+        return first?.[0] || 'Data tidak valid.';
+    }
+
+    function showInlineError(error) {
+        const messages = error.errors
+            ? Object.entries(error.errors).map(([field, values]) => {
+                activeEditor?.mainRow.find(`[data-field="${field}"]`).addClass('is-invalid');
+                return values[0];
+            })
+            : [errorMessage(error)];
+
+        $('#inlineEditorError').html(messages.map(escapeHtml).join('<br>')).addClass('active');
+        showToast(messages[0] || 'Data tidak valid.', 'error');
+    }
+
+    function clearInlineErrors() {
+        activeEditor?.mainRow.find('.inline-field').removeClass('is-invalid');
+        $('#inlineEditorError').removeClass('active').empty();
+    }
+
+    function activateRecord(id) {
+        confirmAction('Aktifkan STO ini?', () => {
+            fetch(`${activateBase}/${id}/activate`, { method: 'POST', headers: { Accept: 'application/json' } })
+                .then(r => r.json()).then(response => {
+                    if (response.success) { 
+                        showToast(response.message); 
+                        masterTable.ajax.reload(null, false); 
+                        
+                        if (activateBase && activateBase.includes('master-sto') && window.masterRows && window.masterRows[id]) {
+                            if (window.top && window.top.document) {
+                                const topbarLabel = window.top.document.getElementById('current-sto-label');
+                                if (topbarLabel) topbarLabel.textContent = window.masterRows[id].code;
+                                
+                                // Reload other iframes so they get the new STO
+                                const iframes = window.top.document.querySelectorAll('iframe.tab-pane');
+                                iframes.forEach(iframe => {
+                                    if (iframe.contentWindow !== window.self) {
+                                        try { iframe.contentWindow.location.reload(); } catch(e) {}
+                                    }
+                                });
+                            }
+                        }
+                    }
+                    else showToast(response.message || 'Gagal aktivasi.', 'error');
+                });
+        });
+    }
+
+    function deactivateRecord(id) {
+        confirmAction('Nonaktifkan STO ini?', () => {
+            fetch(`${activateBase}/${id}/deactivate`, { method: 'POST', headers: { Accept: 'application/json' } })
+                .then(r => r.json()).then(response => {
+                    if (response.success) { showToast(response.message); masterTable.ajax.reload(null, false); }
+                    else showToast(response.message || 'Gagal nonaktivasi.', 'error');
+                });
+        });
+    }
+
+    function deleteRecord(id) {
+        confirmAction('Hapus data ini?', () => {
+            fetch(`${apiBase}/${id}`, { method: 'DELETE', headers: { Accept: 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content } })
+                .then(r => r.json()).then(response => {
+                    if (response.success) { showToast(response.message); masterTable.ajax.reload(null, false); }
+                    else showToast(response.message || 'Gagal hapus data.', 'error');
+                });
+        });
+    }
+</script>
+@endpush
+
+</x-layouts.app>

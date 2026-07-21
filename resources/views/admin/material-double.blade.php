@@ -1,5 +1,51 @@
 <x-layouts.app :title="'Material Double'">
 
+@push('styles')
+<style>
+    /* --- Searchable Filter Modal (Material Double) --- */
+    .srch-filter-overlay {
+        position: fixed; inset: 0;
+        background: rgba(0,0,0,0.5);
+        z-index: 1050;
+        display: flex; align-items: flex-end; justify-content: center;
+    }
+    .srch-filter-content {
+        background: #fff; width: 100%; max-width: 500px; max-height: 85vh;
+        border-radius: 16px 16px 0 0;
+        display: flex; flex-direction: column;
+        animation: slideUp 0.3s ease-out;
+    }
+    @media (min-width: 768px) {
+        .srch-filter-overlay { align-items: center; }
+        .srch-filter-content { border-radius: 12px; max-height: 80vh; animation: fadeIn 0.2s ease-out; }
+    }
+    .srch-filter-header {
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 16px; border-bottom: 1px solid var(--border-light);
+    }
+    .srch-filter-search {
+        padding: 12px 16px; border-bottom: 1px solid var(--border-light); background: #fafbfc;
+    }
+    .srch-filter-list { flex: 1; overflow-y: auto; padding: 8px 16px 16px 16px; }
+    .srch-filter-item {
+        padding: 12px; border-bottom: 1px solid var(--border-light);
+        cursor: pointer; font-size: 14px; font-weight: 500; color: var(--text);
+        transition: background 0.1s;
+    }
+    .srch-filter-item:last-child { border-bottom: none; }
+    .srch-filter-item:hover { background: #f4f8ff; }
+    .srch-filter-item.active {
+        background: var(--primary); color: #fff;
+        border-radius: 6px; border-bottom: none; margin-bottom: 1px; font-weight: 600;
+    }
+    .srch-filter-trigger {
+        text-align: left; background: #fff; cursor: pointer;
+        color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .srch-filter-trigger.has-value { color: var(--primary); font-weight: 600; }
+</style>
+@endpush
+
 <div class="enterprise-toolbar">
     <button class="btn btn-icon" type="button" onclick="reloadMaterialDouble()" title="Refresh">Refresh</button>
     <button class="btn btn-icon" type="button" onclick="resetMaterialDoubleFilters()" title="Reset">Reset</button>
@@ -19,21 +65,23 @@
     </div>
     <div style="width:130px;">
         <label class="form-label">Location</label>
-        <select id="filterLocation" class="form-control">
+        <select id="filterLocation" style="display:none;">
             <option value="">All</option>
             @foreach($locations as $location)
                 <option value="{{ $location->name }}">{{ $location->name }}</option>
             @endforeach
         </select>
+        <button type="button" id="filterLocationTrigger" class="form-control srch-filter-trigger" onclick="openMdSrchFilter('location')">All</button>
     </div>
     <div style="width:130px;">
         <label class="form-label">Material</label>
-        <select id="filterMaterial" class="form-control">
+        <select id="filterMaterial" style="display:none;">
             <option value="">All</option>
             @foreach($materials as $material)
                 <option value="{{ $material->material_code }}">{{ $material->material_code }} - {{ $material->material_name }}</option>
             @endforeach
         </select>
+        <button type="button" id="filterMaterialTrigger" class="form-control srch-filter-trigger" onclick="openMdSrchFilter('material')">All</button>
     </div>
     <div style="width:130px;">
         <label class="form-label">Status</label>
@@ -52,6 +100,38 @@
         <input type="date" id="filterDateTo" class="form-control">
     </div>
     <button class="btn btn-primary" type="button" onclick="reloadMaterialDouble()">Filter</button>
+</div>
+
+{{-- ─── Modal: Searchable Filter Location (MD) ─── --}}
+<div id="mdSrchFilterLocationModal" class="srch-filter-overlay" style="display:none;">
+    <div class="srch-filter-content">
+        <div class="srch-filter-header">
+            <h3 style="margin:0;font-size:16px;font-weight:700;">Filter Location</h3>
+            <button type="button" class="btn-icon" onclick="closeMdSrchFilter('location')">
+                <svg fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" width="20" height="20"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+        </div>
+        <div class="srch-filter-search">
+            <input type="text" id="mdSrchFilterLocationInput" class="form-control" placeholder="Cari lokasi..." oninput="mdSrchFilterSearch('location', this.value)">
+        </div>
+        <div class="srch-filter-list" id="mdSrchFilterLocationList"></div>
+    </div>
+</div>
+
+{{-- ─── Modal: Searchable Filter Material (MD) ─── --}}
+<div id="mdSrchFilterMaterialModal" class="srch-filter-overlay" style="display:none;">
+    <div class="srch-filter-content">
+        <div class="srch-filter-header">
+            <h3 style="margin:0;font-size:16px;font-weight:700;">Filter Material</h3>
+            <button type="button" class="btn-icon" onclick="closeMdSrchFilter('material')">
+                <svg fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" width="20" height="20"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+        </div>
+        <div class="srch-filter-search">
+            <input type="text" id="mdSrchFilterMaterialInput" class="form-control" placeholder="Cari material..." oninput="mdSrchFilterSearch('material', this.value)">
+        </div>
+        <div class="srch-filter-list" id="mdSrchFilterMaterialList"></div>
+    </div>
 </div>
 
 <div class="table-container" style="border-top:0;">
@@ -91,6 +171,7 @@
                             <th>Material</th>
                             <th>Shape</th>
                             <th>User</th>
+                            <th>Lot Number</th>
                             <th>Waktu Scan</th>
                         </tr>
                     </thead>
@@ -376,6 +457,7 @@
     
     const exportQueueUrl = '{{ route("admin.api.material-double.export.queue") }}';
     const exportStatusUrl = '{{ route("admin.api.material-double.export.status") }}';
+    const directExportExcelUrl = '{{ route("admin.api.material-double.export.excel") }}';
 
     function materialDoubleFilters() {
         return {
@@ -422,6 +504,85 @@
         updateExportLinks();
         materialDoubleTable.ajax.reload(null, false);
     }
+
+        // ─── Searchable Filter Modal (Material Double) ───
+    const _mdSrchFilterCfg = {
+        location: {
+            selectId: 'filterLocation', triggerId: 'filterLocationTrigger',
+            modalId: 'mdSrchFilterLocationModal', inputId: 'mdSrchFilterLocationInput',
+            listId: 'mdSrchFilterLocationList', placeholder: 'All',
+        },
+        material: {
+            selectId: 'filterMaterial', triggerId: 'filterMaterialTrigger',
+            modalId: 'mdSrchFilterMaterialModal', inputId: 'mdSrchFilterMaterialInput',
+            listId: 'mdSrchFilterMaterialList', placeholder: 'All',
+        },
+    };
+
+    function _mdSrchFilterBuildList(type) {
+        const cfg = _mdSrchFilterCfg[type];
+        const select = document.getElementById(cfg.selectId);
+        const list = document.getElementById(cfg.listId);
+        list.innerHTML = '';
+        Array.from(select.options).forEach(opt => {
+            const div = document.createElement('div');
+            div.className = 'srch-filter-item' + (opt.selected ? ' active' : '');
+            div.dataset.value = opt.value;
+            div.dataset.label = opt.text;
+            div.textContent = opt.value === '' ? 'All' : opt.text;
+            div.onclick = () => mdSrchFilterSelect(type, opt.value, opt.value === '' ? cfg.placeholder : opt.text);
+            list.appendChild(div);
+        });
+    }
+
+    function openMdSrchFilter(type) {
+        const cfg = _mdSrchFilterCfg[type];
+        _mdSrchFilterBuildList(type);
+        const modal = document.getElementById(cfg.modalId);
+        modal.style.display = 'flex';
+        const input = document.getElementById(cfg.inputId);
+        input.value = '';
+        mdSrchFilterSearch(type, '');
+        input.focus();
+        setTimeout(() => {
+            const active = modal.querySelector('.srch-filter-item.active');
+            if (active) active.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        }, 50);
+    }
+
+    function closeMdSrchFilter(type) {
+        document.getElementById(_mdSrchFilterCfg[type].modalId).style.display = 'none';
+    }
+
+    function mdSrchFilterSelect(type, value, label) {
+        const cfg = _mdSrchFilterCfg[type];
+        document.getElementById(cfg.selectId).value = value;
+        const trigger = document.getElementById(cfg.triggerId);
+        trigger.textContent = label;
+        trigger.classList.toggle('has-value', value !== '');
+        closeMdSrchFilter(type);
+    }
+
+    function mdSrchFilterSearch(type, query) {
+        const lq = query.toLowerCase();
+        document.querySelectorAll(`#${_mdSrchFilterCfg[type].listId} .srch-filter-item`).forEach(item => {
+            item.style.display = item.dataset.label.toLowerCase().includes(lq) ? '' : 'none';
+        });
+    }
+
+    function _mdSrchFilterReset(type) {
+        const cfg = _mdSrchFilterCfg[type];
+        document.getElementById(cfg.selectId).value = '';
+        const trigger = document.getElementById(cfg.triggerId);
+        trigger.textContent = cfg.placeholder;
+        trigger.classList.remove('has-value');
+    }
+
+    // Close on overlay click
+    ['location','material'].forEach(type => {
+        const modal = document.getElementById(_mdSrchFilterCfg[type].modalId);
+        if (modal) modal.addEventListener('click', e => { if (e.target === modal) closeMdSrchFilter(type); });
+    });
 
     function resetMaterialDoubleFilters() {
         $('#filterPlant,#filterLocation,#filterMaterial,#filterDateFrom,#filterDateTo,#filterStatus').val('');
@@ -552,6 +713,7 @@
                 { data: 'material_name' },
                 { data: 'shape_name' },
                 { data: 'user_name' },
+                { data: 'lot_number', className: 'mono' },
                 { data: 'scan_time', className: 'mono' },
             ],
             language: { emptyTable: 'Tidak ada data duplicate ditemukan.' }
@@ -1078,47 +1240,8 @@
     }
 
     function queueExport() {
-        setExportButtonsDisabled(true);
-
-        fetch(exportQueueUrl, {
-            method: 'POST',
-            headers: requestHeaders(),
-            body: JSON.stringify(materialDoubleFilters()),
-        })
-        .then(async response => {
-            const data = await response.json();
-            if (!response.ok) throw data;
-            return data;
-        })
-        .then(payload => {
-            if (payload.data?.id) {
-                pendingAutoDownloadExportIds.add(Number(payload.data.id));
-            }
-
-            Swal.fire({
-                toast: true,
-                position: 'bottom-end',
-                showConfirmButton: false,
-                timer: 3000,
-                icon: 'success',
-                title: payload.message
-            });
-
-            exportPollingFailureCount = 0;
-            refreshExportStatus();
-            startExportPolling();
-        })
-        .catch(error => {
-            Swal.fire({
-                toast: true,
-                position: 'bottom-end',
-                showConfirmButton: false,
-                timer: 3000,
-                icon: 'error',
-                title: error.message || 'Export gagal dimulai.'
-            });
-        })
-        .finally(() => setExportButtonsDisabled(false));
+        const query = new URLSearchParams(materialDoubleFilters()).toString();
+        window.location.href = query ? `${directExportExcelUrl}?${query}` : directExportExcelUrl;
     }
 
     function refreshExportStatus() {

@@ -96,6 +96,9 @@
                 <label style="display: flex; align-items: center; gap: 6px;">
                     <input type="radio" name="shape_code" value="RR" class="js-shape-radio"> Round (RR)
                 </label>
+                <label style="display: flex; align-items: center; gap: 6px;">
+                    <input type="radio" name="shape_code" value="RH" class="js-shape-radio"> Hollow (RH)
+                </label>
             </div>
         </div>
         
@@ -436,7 +439,7 @@
             diameter.style.backgroundColor = '';
             diameter.required = true;
             
-            if (shapeVal === 'RF') {
+            if (shapeVal === 'RF' || shapeVal === 'RH') {
                 diameter.disabled = true;
                 diameter.value = '';
                 diameter.style.backgroundColor = '#e9ecef';
@@ -486,8 +489,8 @@
                 let html = '<div style="font-weight: 600; font-size: 13px; color: var(--primary); margin-bottom: 8px; display: flex; align-items: center; gap: 6px;"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width:16px;height:16px;"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> Riwayat dimensi material ini (klik untuk otomatis mengisi):</div>';
                 html += '<div style="display: flex; gap: 8px; flex-wrap: wrap;">';
                 payload.history.forEach(item => {
-                    const shapeName = item.shape_code === 'RF' ? 'Flat' : 'Round';
-                    const dimDesc = item.shape_code === 'RF'
+                    const shapeName = item.shape_code === 'RF' ? 'Flat' : (item.shape_code === 'RH' ? 'Hollow' : 'Round');
+                    const dimDesc = (item.shape_code === 'RF' || item.shape_code === 'RH')
                         ? `T: ${item.thickness || '-'}, W: ${item.width || '-'}, L: ${item.length || '-'}`
                         : `D: ${item.diameter || '-'}, L: ${item.length || '-'}`;
                     const jsonStr = encodeURIComponent(JSON.stringify(item));
@@ -533,7 +536,7 @@
             shapeRadio.dispatchEvent(new Event('change'));
         }
 
-        if (item.shape_code === 'RF') {
+        if (item.shape_code === 'RF' || item.shape_code === 'RH') {
             if (item.thickness) document.getElementById('thickness').value = item.thickness;
             if (item.width) document.getElementById('width').value = item.width;
         } else if (item.shape_code === 'RR') {
@@ -608,7 +611,7 @@
                 { data: 'material_info', name: 'material_name' },
                 { data: 'shape_name', name: 'shape_name' },
                 { data: null, searchable: false, orderable: false, render: function(data, type, row) {
-                    if (row.shape_code === 'RF') return `${row.thickness} x ${row.width} x ${row.length}`;
+                    if (row.shape_code === 'RF' || row.shape_code === 'RH') return `${row.thickness} x ${row.width} x ${row.length}`;
                     if (row.shape_code === 'RR') return `${row.diameter} x ${row.length}`;
                     return '-';
                 }},

@@ -1,5 +1,51 @@
 <x-layouts.app :title="'All Scan Results'">
 
+@push('styles')
+<style>
+    /* --- Searchable Filter Modal (Location & Material) --- */
+    .srch-filter-overlay {
+        position: fixed; inset: 0;
+        background: rgba(0,0,0,0.5);
+        z-index: 1050;
+        display: flex; align-items: flex-end; justify-content: center;
+    }
+    .srch-filter-content {
+        background: #fff; width: 100%; max-width: 500px; max-height: 85vh;
+        border-radius: 16px 16px 0 0;
+        display: flex; flex-direction: column;
+        animation: slideUp 0.3s ease-out;
+    }
+    @media (min-width: 768px) {
+        .srch-filter-overlay { align-items: center; }
+        .srch-filter-content { border-radius: 12px; max-height: 80vh; animation: fadeIn 0.2s ease-out; }
+    }
+    .srch-filter-header {
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 16px; border-bottom: 1px solid var(--border-light);
+    }
+    .srch-filter-search {
+        padding: 12px 16px; border-bottom: 1px solid var(--border-light); background: #fafbfc;
+    }
+    .srch-filter-list { flex: 1; overflow-y: auto; padding: 8px 16px 16px 16px; }
+    .srch-filter-item {
+        padding: 12px; border-bottom: 1px solid var(--border-light);
+        cursor: pointer; font-size: 14px; font-weight: 500; color: var(--text);
+        transition: background 0.1s;
+    }
+    .srch-filter-item:last-child { border-bottom: none; }
+    .srch-filter-item:hover { background: #f4f8ff; }
+    .srch-filter-item.active {
+        background: var(--primary); color: #fff;
+        border-radius: 6px; border-bottom: none; margin-bottom: 1px; font-weight: 600;
+    }
+    .srch-filter-trigger {
+        text-align: left; background: #fff; cursor: pointer;
+        color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .srch-filter-trigger.has-value { color: var(--primary); font-weight: 600; }
+</style>
+@endpush
+
 <div class="enterprise-toolbar">
     <button class="btn btn-primary" type="button" onclick="openCreate()">Add Scan</button>
     <button class="btn btn-icon" type="button" onclick="reloadTable()" title="Refresh">Refresh</button>
@@ -11,15 +57,66 @@
 
 <div class="card" style="border-top:0;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
     <div style="width:130px;"><label class="form-label">Plant</label><select id="filterPlant" class="form-control"><option value="">All</option>@foreach($plants as $plant)<option value="{{ $plant->id }}">{{ $plant->name }}</option>@endforeach</select></div>
-    <div style="width:130px;"><label class="form-label">Location</label><select id="filterLocation" class="form-control"><option value="">All</option>@foreach($locations as $location)<option value="{{ $location->name }}">{{ $location->name }}</option>@endforeach</select></div>
+    <div style="width:130px;">
+        <label class="form-label">Location</label>
+        <select id="filterLocation" style="display:none;">
+            <option value="">All</option>
+            @foreach($locations as $location)
+                <option value="{{ $location->name }}">{{ $location->name }}</option>
+            @endforeach
+        </select>
+        <button type="button" id="filterLocationTrigger" class="form-control srch-filter-trigger" onclick="openSrchFilterModal('location')">All</button>
+    </div>
     <div style="width:130px;"><label class="form-label">User</label><select id="filterUser" class="form-control"><option value="">All</option>@foreach($users as $user)<option value="{{ $user->id }}">{{ $user->name }}</option>@endforeach</select></div>
-    <div style="width:130px;"><label class="form-label">Material</label><select id="filterMaterial" class="form-control"><option value="">All</option>@foreach($materials as $material)<option value="{{ $material->material_code }}">{{ $material->material_code }}</option>@endforeach</select></div>
+    <div style="width:130px;">
+        <label class="form-label">Material</label>
+        <select id="filterMaterial" style="display:none;">
+            <option value="">All</option>
+            @foreach($materials as $material)
+                <option value="{{ $material->material_code }}">{{ $material->material_code }} - {{ $material->material_name }}</option>
+            @endforeach
+        </select>
+        <button type="button" id="filterMaterialTrigger" class="form-control srch-filter-trigger" onclick="openSrchFilterModal('material')">All</button>
+    </div>
+    <div style="width:130px;"><label class="form-label">User</label><select id="filterUser" class="form-control"><option value="">All</option>@foreach($users as $user)<option value="{{ $user->id }}">{{ $user->name }}</option>@endforeach</select></div>
     <div style="width:130px;"><label class="form-label">Date From</label><input type="date" id="filterDateFrom" class="form-control"></div>
     <div style="width:130px;"><label class="form-label">Date To</label><input type="date" id="filterDateTo" class="form-control"></div>
     <button class="btn btn-primary" type="button" onclick="reloadTable()">Filter</button>
 </div>
 
 <div id="inlineEditorError" class="inline-editor-error"></div>
+
+{{-- ─── Modal: Searchable Filter Location ─── --}}
+<div id="srchFilterLocationModal" class="srch-filter-overlay" style="display:none;">
+    <div class="srch-filter-content">
+        <div class="srch-filter-header">
+            <h3 style="margin:0;font-size:16px;font-weight:700;">Filter Location</h3>
+            <button type="button" class="btn-icon" onclick="closeSrchFilterModal('location')">
+                <svg fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" width="20" height="20"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+        </div>
+        <div class="srch-filter-search">
+            <input type="text" id="srchFilterLocationInput" class="form-control" placeholder="Cari lokasi..." oninput="srchFilterSearch('location', this.value)">
+        </div>
+        <div class="srch-filter-list" id="srchFilterLocationList"></div>
+    </div>
+</div>
+
+{{-- ─── Modal: Searchable Filter Material ─── --}}
+<div id="srchFilterMaterialModal" class="srch-filter-overlay" style="display:none;">
+    <div class="srch-filter-content">
+        <div class="srch-filter-header">
+            <h3 style="margin:0;font-size:16px;font-weight:700;">Filter Material</h3>
+            <button type="button" class="btn-icon" onclick="closeSrchFilterModal('material')">
+                <svg fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" width="20" height="20"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+        </div>
+        <div class="srch-filter-search">
+            <input type="text" id="srchFilterMaterialInput" class="form-control" placeholder="Cari material..." oninput="srchFilterSearch('material', this.value)">
+        </div>
+        <div class="srch-filter-list" id="srchFilterMaterialList"></div>
+    </div>
+</div>
 
 <div class="table-container" style="border-top:0;">
     <table id="adminScanTable" class="table-enterprise" style="width:100%;">
@@ -286,10 +383,92 @@
     const plantOptions = @json($plants->map(fn($plant) => ['id' => $plant->id, 'label' => $plant->name])->values());
     const materialOptions = @json($materials->map(fn($material) => ['id' => $material->material_code, 'label' => $material->material_name])->values());
     const keteranganOptions = @json(collect($keteranganList)->map(fn($name) => ['id' => $name, 'label' => $name])->values());
-    const shapeCodeOptions = [{ id: 'RF', label: 'Flat' }, { id: 'RR', label: 'Round' }];
+    const shapeCodeOptions = [{ id: 'RF', label: 'Flat' }, { id: 'RR', label: 'Round' }, { id: 'RH', label: 'Hollow' }];
     const scanResultsCsrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
     const exportQueueUrlTemplate = @json(route('admin.export.scan-results.queue', ['format' => '__FORMAT__']));
     const exportStatusUrl = @json(route('admin.export.scan-results.status'));
+    const directExportExcelUrl = @json(route('admin.export.scan-results.excel'));
+    const directExportPdfUrl = @json(route('admin.export.scan-results.pdf'));
+
+     // ─── Searchable Filter Modal (scan-results) ───
+    const _srchFilterCfg = {
+        location: {
+            selectId: 'filterLocation', triggerId: 'filterLocationTrigger',
+            modalId: 'srchFilterLocationModal', inputId: 'srchFilterLocationInput',
+            listId: 'srchFilterLocationList', placeholder: 'All',
+        },
+        material: {
+            selectId: 'filterMaterial', triggerId: 'filterMaterialTrigger',
+            modalId: 'srchFilterMaterialModal', inputId: 'srchFilterMaterialInput',
+            listId: 'srchFilterMaterialList', placeholder: 'All',
+        },
+    };
+
+    function _srchFilterBuildList(type) {
+        const cfg = _srchFilterCfg[type];
+        const select = document.getElementById(cfg.selectId);
+        const list = document.getElementById(cfg.listId);
+        list.innerHTML = '';
+        Array.from(select.options).forEach(opt => {
+            const div = document.createElement('div');
+            div.className = 'srch-filter-item' + (opt.selected ? ' active' : '');
+            div.dataset.value = opt.value;
+            div.dataset.label = opt.text;
+            div.textContent = opt.value === '' ? ' All ' : opt.text;
+            div.onclick = () => srchFilterSelect(type, opt.value, opt.value === '' ? cfg.placeholder : opt.text);
+            list.appendChild(div);
+        });
+    }
+
+    function openSrchFilterModal(type) {
+        const cfg = _srchFilterCfg[type];
+        _srchFilterBuildList(type);
+        const modal = document.getElementById(cfg.modalId);
+        modal.style.display = 'flex';
+        const input = document.getElementById(cfg.inputId);
+        input.value = '';
+        srchFilterSearch(type, '');
+        input.focus();
+        setTimeout(() => {
+            const active = modal.querySelector('.srch-filter-item.active');
+            if (active) active.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        }, 50);
+    }
+
+    function closeSrchFilterModal(type) {
+        document.getElementById(_srchFilterCfg[type].modalId).style.display = 'none';
+    }
+
+    function srchFilterSelect(type, value, label) {
+        const cfg = _srchFilterCfg[type];
+        const select = document.getElementById(cfg.selectId);
+        select.value = value;
+        const trigger = document.getElementById(cfg.triggerId);
+        trigger.textContent = label;
+        trigger.classList.toggle('has-value', value !== '');
+        closeSrchFilterModal(type);
+    }
+
+    function srchFilterSearch(type, query) {
+        const lq = query.toLowerCase();
+        document.querySelectorAll(`#${_srchFilterCfg[type].listId} .srch-filter-item`).forEach(item => {
+            item.style.display = item.dataset.label.toLowerCase().includes(lq) ? '' : 'none';
+        });
+    }
+
+    function _srchFilterReset(type) {
+        const cfg = _srchFilterCfg[type];
+        document.getElementById(cfg.selectId).value = '';
+        const trigger = document.getElementById(cfg.triggerId);
+        trigger.textContent = cfg.placeholder;
+        trigger.classList.remove('has-value');
+    }
+
+    // Close on overlay click
+    ['location','material'].forEach(type => {
+        const modal = document.getElementById(_srchFilterCfg[type].modalId);
+        if (modal) modal.addEventListener('click', e => { if (e.target === modal) closeSrchFilterModal(type); });
+    });
 
     function filters() {
         return {
@@ -426,9 +605,16 @@
         payload.force_save = !!forceSave;
         clearInlineErrors();
 
-        fetch(mode === 'edit' ? `/admin/api/scan-results/${id}` : '{{ route("admin.api.scan-results.store") }}', {
-            method: mode === 'edit' ? 'PUT' : 'POST',
-            headers: requestHeaders(),
+        const isEdit = mode === 'edit';
+        // Relative URL keeps the application's current base path (for example /adasi_sto_test/public).
+        const apiUrl = 'api/scan-results';
+        const url = isEdit ? `${apiUrl}/${encodeURIComponent(id)}` : apiUrl;
+        const headers = requestHeaders();
+
+        fetch(url, {
+            method: isEdit ? 'PUT' : 'POST',
+            headers,
+            credentials: 'same-origin',
             body: JSON.stringify(payload)
         })
         .then(async response => {
@@ -522,46 +708,10 @@
             return;
         }
 
-        setExportButtonsDisabled(true);
+        const url = format === 'pdf' ? directExportPdfUrl : directExportExcelUrl;
+        const query = new URLSearchParams(filters()).toString();
 
-        fetch(exportQueueUrlTemplate.replace('__FORMAT__', format), {
-            method: 'POST',
-            headers: requestHeaders(),
-            body: JSON.stringify(filters()),
-        })
-        .then(async response => {
-            const data = await response.json();
-            if (!response.ok) throw data;
-            return data;
-        })
-        .then(payload => {
-            if (payload.data?.id) {
-                pendingAutoDownloadExportIds.add(Number(payload.data.id));
-            }
-
-            Swal.fire({
-                toast: true,
-                position: 'bottom-end',
-                showConfirmButton: false,
-                timer: 3000,
-                icon: 'success',
-                title: payload.message
-            });
-            exportPollingFailureCount = 0;
-            refreshExportStatus();
-            startExportPolling();
-        })
-        .catch(error => {
-            Swal.fire({
-                toast: true,
-                position: 'bottom-end',
-                showConfirmButton: false,
-                timer: 3000,
-                icon: 'error',
-                title: error.message || 'Export gagal dimulai.'
-            });
-        })
-        .finally(() => setExportButtonsDisabled(false));
+        window.location.href = query ? `${url}?${query}` : url;
     }
 
     function refreshExportStatus() {
@@ -765,7 +915,7 @@
         const shapeSelect = activeEditor.mainRow.find('.js-shape-select');
         shapeSelect.on('change', function() {
             const shapeVal = this.value;
-            activeEditor.mainRow.find('[data-field="shape_name"]').val(shapeVal === 'RR' ? 'Round' : (shapeVal === 'RF' ? 'Flat' : ''));
+            activeEditor.mainRow.find('[data-field="shape_name"]').val(shapeVal === 'RR' ? 'Round' : (shapeVal === 'RF' ? 'Flat' : (shapeVal === 'RH' ? 'Hollow' : '')));
             
             const thickness = activeEditor.mainRow.find('[data-field="thickness"]');
             const width = activeEditor.mainRow.find('[data-field="width"]');
@@ -777,7 +927,7 @@
             
             if (shapeVal === 'RF') {
                 diameter.prop('disabled', true).val('').css('background', '#e9ecef');
-            } else if (shapeVal === 'RR') {
+            } else if (shapeVal === 'RR' || shapeVal === 'RH') {
                 thickness.prop('disabled', true).val('').css('background', '#e9ecef');
                 width.prop('disabled', true).val('').css('background', '#e9ecef');
             }
@@ -833,6 +983,7 @@
     function emptyPayload() {
         return payloadSnapshot({
             user_id: '',
+            sto_code_id: '',
             plant_id: '',
             location_name: '',
             barcode_raw: '',
@@ -862,6 +1013,7 @@
     function normalizeRow(row) {
         return {
             user_id: row.user_id ?? '',
+            sto_code_id: row.sto_code_id || stoIdsByCode[row.sto_code] || '',
             plant_id: row.plant_id ?? '',
             location_name: row.location_name ?? '',
             barcode_raw: row.barcode_raw ?? '',
@@ -894,7 +1046,7 @@
 
     function emptyPayloadFields() {
         return {
-            user_id: '', plant_id: '', location_name: '', barcode_raw: '', barcode_material: '',
+            user_id: '', sto_code_id: '', plant_id: '', location_name: '', barcode_raw: '', barcode_material: '',
             lot_number: '', qty: '', material_code: '', material_name: '', shape_code: '', shape_name: '',
             thickness: '', width: '', diameter: '', length: '', keterangan: '', scan_source: '', created_at: '',
         };
@@ -921,7 +1073,8 @@
     function deleteRow(id, barcode) {
         confirmAction(`Apakah Anda yakin ingin menghapus data scan <b>${barcode}</b>?`, () => {
             clearActiveEditor();
-            fetch(`/admin/api/scan-results/${id}`, { method: 'DELETE', headers: requestHeaders() })
+            const deleteUrl = `api/scan-results/${encodeURIComponent(id)}`;
+            fetch(deleteUrl, { method: 'DELETE', headers: requestHeaders() })
                 .then(r => r.json()).then(payload => { if (payload.success) { showToast(payload.message); reloadTable(); } else showToast(payload.message || 'Gagal hapus', 'error'); });
         });
     }

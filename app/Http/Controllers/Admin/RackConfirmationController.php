@@ -44,7 +44,7 @@ class RackConfirmationController extends Controller
         // so the active_sto global scope is automatically applied.
         $barcodeCountSub = ScanResult::query()
             ->select('location_id')
-            ->selectRaw('COUNT(*) as total_barcode')
+            ->selectRaw('COUNT(DISTINCT barcode_material) as total_barcode')
             ->where('keterangan', 'OK')
             ->groupBy('location_id');
 
@@ -239,7 +239,7 @@ class RackConfirmationController extends Controller
     {
         $barcodeCountSub = ScanResult::query()
             ->select('location_id')
-            ->selectRaw('COUNT(*) as total_barcode')
+            ->selectRaw('COUNT(DISTINCT barcode_material) as total_barcode')
             ->where('keterangan', 'OK')
             ->groupBy('location_id');
 

@@ -18,12 +18,6 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\View\View;
-use PhpOffice\PhpSpreadsheet\Spreadsheet;
-use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
-use PhpOffice\PhpSpreadsheet\Worksheet\Drawing;
-use PhpOffice\PhpSpreadsheet\Style\Alignment;
-use PhpOffice\PhpSpreadsheet\Style\Border;
-use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 use Throwable;
 use Yajra\DataTables\Facades\DataTables;
 
@@ -75,11 +69,15 @@ class GenerateBarcodeController extends Controller
 
         $search = $request->input('search.value');
         if ($search) {
-            $query->where(function (Builder $q) use ($search) {
-                $q->where('material_code', 'like', "%{$search}%")
-                    ->orWhere('material_name', 'like', "%{$search}%")
-                    ->orWhere('lot_number', 'like', "%{$search}%")
-                    ->orWhere('shape_name', 'like', "%{$search}%");
+            $rawSearch = str_replace(['%', '_'], ['\\%', '\\_'], $search);
+            $query->where(function (Builder $q) use ($rawSearch) {
+                $q->where('material_code', 'like', "%{$rawSearch}%")
+                    ->orWhere('material_name', 'like', "%{$rawSearch}%")
+                    ->orWhere('lot_number', 'like', "%{$rawSearch}%")
+                    ->orWhere('shape_name', 'like', "%{$rawSearch}%")
+                    ->orWhereHas('user', fn ($u) => $u->where('name', 'like', "%{$rawSearch}%"))
+                    ->orWhereHas('plant', fn ($p) => $p->where('name', 'like', "%{$rawSearch}%"))
+                    ->orWhereHas('location', fn ($l) => $l->where('name', 'like', "%{$rawSearch}%"));
             });
         }
 
@@ -261,7 +259,6 @@ class GenerateBarcodeController extends Controller
             'barcode_material' => $result['barcode_material'],
             'full_barcode'     => $fullBarcode,
             'label_url'        => route('admin.generate-barcode.label', $barcodeRequest->id),
-            'label_xlsx_url'   => route('admin.generate-barcode.label-xlsx', $barcodeRequest->id),
         ], 201);
     }
 
@@ -346,8 +343,8 @@ class GenerateBarcodeController extends Controller
             'company'   => config('sto.company_name'),
         ]);
 
-        // Label size: 50mm × 20mm (landscape for thermal printer)
-        $pdf->setPaper([0, 0, 141.73, 56.69], 'portrait'); // ~50mm × 20mm in points
+        // Label size: 10cm × 4.2cm (landscape)
+        $pdf->setPaper([0, 0, 283.46, 119.06], 'portrait'); // ~10cm × 4.2cm in points
 
         return $pdf->download("label-{$barcodeRequest->material_code}-{$barcodeRequest->lot_number}.pdf");
     }
@@ -383,237 +380,8 @@ class GenerateBarcodeController extends Controller
             'company' => config('sto.company_name'),
         ]);
 
-        $pdf->setPaper([0, 0, 141.73, 56.69], 'portrait');
+        $pdf->setPaper([0, 0, 283.46, 119.06], 'portrait');
 
         return $pdf->download("labels-bulk-" . now()->format('Ymd-His') . ".pdf");
-    }
-
-    /**
-     * Helper to construct worksheet with physical label layout cards and embedded QR drawings.
-     */
-    private function buildLabelCardsSheet(Spreadsheet $spreadsheet, $requests): array
-    {
-        $sheet = $spreadsheet->getActiveSheet();
-        $sheet->setTitle('Labels QR');
-
-        // Set margin halaman seminimal mungkin (dalam inch) untuk label kecil 50x20 mm
-        // Set margin atas dan bawah 0.06 inch (~1.5 mm) sebagai safety buffer
-        // agar tidak terkena batas unprintable area driver printer TSC yang memicu page break otomatis
-        $sheet->getPageMargins()->setTop(0.06);
-        $sheet->getPageMargins()->setBottom(0.06);
-        $sheet->getPageMargins()->setLeft(0);
-        $sheet->getPageMargins()->setRight(0);
-        $sheet->getPageMargins()->setHeader(0);
-        $sheet->getPageMargins()->setFooter(0);
-
-        // Set orientasi potret dan fit to 1 page wide
-        $sheet->getPageSetup()->setOrientation(\PhpOffice\PhpSpreadsheet\Worksheet\PageSetup::ORIENTATION_PORTRAIT);
-        $sheet->getPageSetup()->setFitToWidth(1);
-        $sheet->getPageSetup()->setFitToHeight(0);
-
-        // Set lebar kolom agar tepat memenuhi 50 mm (A = 7 / ~15mm untuk QR, B = 16 / ~34mm untuk Teks)
-        $sheet->getColumnDimension('A')->setWidth(7);
-        $sheet->getColumnDimension('B')->setWidth(16);
-
-        $r = 1;
-        $qrPaths = [];
-        $company = config('sto.company_name', 'PT Astra Daido Steel Indonesia');
-
-        foreach ($requests as $request) {
-            if ($request->status !== 'approved' || !$request->generated_barcode_material) {
-                continue;
-            }
-
-            // Row 1 of label block: Company Name (Tinggi: 10 pt)
-            // Total 4 baris = 10 + 12 + 12 + 12 = 46 pt (~16.2 mm), aman di bawah batas maksimal 54-56 pt
-            $sheet->mergeCells("A{$r}:B{$r}");
-            $sheet->setCellValue("A{$r}", $company);
-            $sheet->getStyle("A{$r}")->applyFromArray([
-                'font' => [
-                    'name'  => 'Arial',
-                    'size'  => 7,
-                    'bold'  => true,
-                    'color' => ['argb' => 'FF000000'],
-                ],
-                'alignment' => [
-                    'horizontal' => Alignment::HORIZONTAL_CENTER,
-                    'vertical'   => Alignment::VERTICAL_CENTER,
-                ],
-            ]);
-            $sheet->getRowDimension($r)->setRowHeight(10);
-
-            // Row 2 of label block: Generated Barcode Material (Tinggi: 12 pt)
-            $sheet->setCellValue("B" . ($r + 1), $request->generated_barcode_material);
-            $sheet->getStyle("B" . ($r + 1))->applyFromArray([
-                'font' => [
-                    'name'  => 'Arial',
-                    'size'  => 8.5,
-                    'bold'  => true,
-                    'color' => ['argb' => 'FF000000'],
-                ],
-                'alignment' => [
-                    'horizontal' => Alignment::HORIZONTAL_LEFT,
-                    'vertical'   => Alignment::VERTICAL_CENTER,
-                    'shrinkToFit' => true,
-                ],
-            ]);
-            $sheet->getRowDimension($r + 1)->setRowHeight(12);
-
-            // Row 3 of label block: Lot Number (Tinggi: 12 pt)
-            $sheet->setCellValue("B" . ($r + 2), $request->lot_number);
-            $sheet->getStyle("B" . ($r + 2))->applyFromArray([
-                'font' => [
-                    'name'  => 'Arial',
-                    'size'  => 8.5,
-                    'bold'  => true,
-                    'color' => ['argb' => 'FF000000'],
-                ],
-                'alignment' => [
-                    'horizontal' => Alignment::HORIZONTAL_LEFT,
-                    'vertical'   => Alignment::VERTICAL_CENTER,
-                    'shrinkToFit' => true,
-                ],
-            ]);
-            $sheet->getRowDimension($r + 2)->setRowHeight(12);
-
-            // Row 4 of label block: Detail String / Dimensi (Tinggi: 12 pt)
-            $detail = trim(strtoupper($request->material_name . ' ' . $request->label_description));
-            $sheet->setCellValue("B" . ($r + 3), $detail);
-            $sheet->getStyle("B" . ($r + 3))->applyFromArray([
-                'font' => [
-                    'name'  => 'Arial',
-                    'size'  => 7.5,
-                    'bold'  => true,
-                    'color' => ['argb' => 'FF000000'],
-                ],
-                'alignment' => [
-                    'horizontal' => Alignment::HORIZONTAL_LEFT,
-                    'vertical'   => Alignment::VERTICAL_CENTER,
-                    'shrinkToFit' => true,
-                ],
-            ]);
-            $sheet->getRowDimension($r + 3)->setRowHeight(12);
-
-            // Generate QR Code PNG file for Drawing (Ukuran: 36x36 px, pas di sel A2:A4)
-            try {
-                $qrPath = $this->qrService->generateFile($request->full_barcode, 200);
-                if (file_exists($qrPath)) {
-                    $qrPaths[] = $qrPath;
-                    $drawing = new Drawing();
-                    $drawing->setName('QR ' . $request->id);
-                    $drawing->setDescription('QR Code');
-                    $drawing->setPath($qrPath);
-                    $drawing->setCoordinates('A' . ($r + 1));
-                    $drawing->setOffsetX(4);
-                    $drawing->setOffsetY(1);
-                    $drawing->setWidth(36);
-                    $drawing->setWorksheet($sheet);
-                }
-            } catch (\Throwable $e) {
-                Log::warning('Failed adding QR Drawing for label XLSX: ' . $e->getMessage());
-            }
-
-            // Apply outer border around A{$r}:B{$r+3}
-            $sheet->getStyle("A{$r}:B" . ($r + 3))->applyFromArray([
-                'borders' => [
-                    'outline' => [
-                        'borderStyle' => Border::BORDER_THIN,
-                        'color' => ['argb' => 'FFB0B0B0'],
-                    ],
-                ],
-            ]);
-
-            // Set Page Break SETELAH baris ke-4 (pada baris ke-5) agar 4 baris label tidak terbelah ke halaman berikutnya
-            $sheet->setBreak("A" . ($r + 4), \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet::BREAK_ROW);
-            $r += 4;
-        }
-
-        return $qrPaths;
-    }
-
-    /**
-     * Download a single QR label as an Excel (.xlsx) file with embedded QR drawing and formatted card.
-     */
-    public function labelXlsx(BarcodeRequest $barcodeRequest): SymfonyResponse
-    {
-        abort_unless(
-            $barcodeRequest->status === 'approved' && $barcodeRequest->generated_barcode_material,
-            404,
-            'Label hanya tersedia untuk request yang sudah di-approve.'
-        );
-
-        $spreadsheet = new Spreadsheet();
-        $qrPaths = $this->buildLabelCardsSheet($spreadsheet, collect([$barcodeRequest]));
-
-        $writer = new Xlsx($spreadsheet);
-        $tempXlsx = tempnam(sys_get_temp_dir(), 'sto_xlsx_');
-        $writer->save($tempXlsx);
-
-        foreach ($qrPaths as $qrPath) {
-            if (file_exists($qrPath)) {
-                @unlink($qrPath);
-            }
-        }
-
-        $filename = "label-{$barcodeRequest->material_code}-{$barcodeRequest->lot_number}.xlsx";
-
-        return response()->streamDownload(function () use ($tempXlsx) {
-            readfile($tempXlsx);
-            @unlink($tempXlsx);
-        }, $filename, [
-            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        ]);
-    }
-
-    /**
-     * Download bulk QR labels as an Excel (.xlsx) file with embedded QR drawings and formatted cards.
-     */
-    public function labelBulkXlsx(Request $request): SymfonyResponse
-    {
-        if ($request->has('ids') && is_array($request->ids) && count($request->ids) > 0) {
-            $requests = BarcodeRequest::with(['plant', 'location'])
-                ->whereIn('id', $request->ids)
-                ->where('status', 'approved')
-                ->whereNotNull('generated_barcode_material')
-                ->get();
-        } else {
-            // Fallback to active filters if no specific IDs checked
-            $query = BarcodeRequest::with(['plant', 'location'])
-                ->where('status', 'approved')
-                ->whereNotNull('generated_barcode_material');
-
-            if ($request->filled('filter_plant')) {
-                $query->where('plant_id', $request->filter_plant);
-            }
-            if ($request->filled('filter_material')) {
-                $query->where('material_code', $request->filter_material);
-            }
-
-            $requests = $query->get();
-        }
-
-        abort_if($requests->isEmpty(), 404, 'Tidak ada data label Approved yang valid untuk dicetak ke Excel.');
-
-        $spreadsheet = new Spreadsheet();
-        $qrPaths = $this->buildLabelCardsSheet($spreadsheet, $requests);
-
-        $writer = new Xlsx($spreadsheet);
-        $tempXlsx = tempnam(sys_get_temp_dir(), 'sto_xlsx_');
-        $writer->save($tempXlsx);
-
-        foreach ($qrPaths as $qrPath) {
-            if (file_exists($qrPath)) {
-                @unlink($qrPath);
-            }
-        }
-
-        $filename = "labels-bulk-" . now()->format('Ymd-His') . ".xlsx";
-
-        return response()->streamDownload(function () use ($tempXlsx) {
-            readfile($tempXlsx);
-            @unlink($tempXlsx);
-        }, $filename, [
-            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        ]);
     }
 }

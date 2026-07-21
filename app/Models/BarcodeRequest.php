@@ -84,7 +84,7 @@ class BarcodeRequest extends Model
      */
     public function getSizeAttribute(): string
     {
-        if ($this->shape_code === 'RF') {
+        if (in_array($this->shape_code, ['RF', 'RH'])) {
             return "{$this->thickness} x {$this->width} x {$this->length}";
         }
 
@@ -103,8 +103,9 @@ class BarcodeRequest extends Model
      */
     public function getLabelDescriptionAttribute(): string
     {
-        if ($this->shape_code === 'RF') {
-            return "Flat {$this->thickness} x {$this->width} x {$this->length}";
+        if (in_array($this->shape_code, ['RF', 'RH'])) {
+            $shapeName = $this->shape_code === 'RF' ? 'Flat' : 'Hollow';
+            return "{$shapeName} {$this->thickness} x {$this->width} x {$this->length}";
         }
 
         if ($this->shape_code === 'RR') {
