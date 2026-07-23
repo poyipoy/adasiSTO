@@ -27,14 +27,15 @@ class ScanController extends Controller
         private ScanService $scanService,
         private ActiveStoService $activeStoService,
         private OverviewService $overviewService,
-    ) {}
+    ) {
+    }
 
     public function overview(Request $request): View
     {
         $scopeUser = $request->user();
         $scanOverview = $this->overviewService->scanOverview($scopeUser);
         $scanPerDay = $this->overviewService->scanPerDay($scopeUser);
-        
+
         $validatorOverview = $request->user()->isValidator()
             ? $this->overviewService->validatorOverview()
             : null;
@@ -322,7 +323,7 @@ class ScanController extends Controller
             'message' => $duplicate ? 'Barcode sudah pernah discan sebelumnya.' : null,
         ]);
     }
-    
+
     public function store(StoreScanRequest $request): JsonResponse
     {
         $result = $this->scanService->store($request->user(), $request->validated());
@@ -349,7 +350,7 @@ class ScanController extends Controller
         return response()->json([
             'success' => true,
             'data' => $paginator->getCollection()
-                ->map(fn (ScanResult $scanResult) => $this->scanService->serializeScan($scanResult))
+                ->map(fn(ScanResult $scanResult) => $this->scanService->serializeScan($scanResult))
                 ->values(),
             'meta' => [
                 'page' => $paginator->currentPage(),
@@ -376,7 +377,7 @@ class ScanController extends Controller
         return response()->json([
             'success' => true,
             'data' => $paginator->getCollection()
-                ->map(fn (ScanResult $scanResult) => $this->scanService->serializeScan($scanResult))
+                ->map(fn(ScanResult $scanResult) => $this->scanService->serializeScan($scanResult))
                 ->values(),
             'meta' => $this->recentScanMeta($paginator),
             'total_today' => $totalToday,
@@ -406,8 +407,8 @@ class ScanController extends Controller
             ->with(['plant', 'location'])
             ->forUser($userId)
             ->today()
-            ->when($plantId, fn ($query) => $query->where('plant_id', $plantId))
-            ->when($locationId, fn ($query) => $query->where('location_id', $locationId))
+            ->when($plantId, fn($query) => $query->where('plant_id', $plantId))
+            ->when($locationId, fn($query) => $query->where('location_id', $locationId))
             ->latestFirst()
             ->paginate(self::RECENT_SCAN_PER_PAGE, ['*'], 'page', max($page, 1));
     }

@@ -1,5 +1,51 @@
 <x-layouts.app :title="'Generate Barcode'">
 
+@push('styles')
+<style>
+    /* --- Searchable Filter Modal --- */
+    .srch-filter-overlay {
+        position: fixed; inset: 0;
+        background: rgba(0,0,0,0.5);
+        z-index: 1050;
+        display: flex; align-items: flex-end; justify-content: center;
+    }
+    .srch-filter-content {
+        background: #fff; width: 100%; max-width: 500px; max-height: 85vh;
+        border-radius: 16px 16px 0 0;
+        display: flex; flex-direction: column;
+        animation: slideUp 0.3s ease-out;
+    }
+    @media (min-width: 768px) {
+        .srch-filter-overlay { align-items: center; }
+        .srch-filter-content { border-radius: 12px; max-height: 80vh; animation: fadeIn 0.2s ease-out; }
+    }
+    .srch-filter-header {
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 16px; border-bottom: 1px solid var(--border-light);
+    }
+    .srch-filter-search {
+        padding: 12px 16px; border-bottom: 1px solid var(--border-light); background: #fafbfc;
+    }
+    .srch-filter-list { flex: 1; overflow-y: auto; padding: 8px 16px 16px 16px; }
+    .srch-filter-item {
+        padding: 12px; border-bottom: 1px solid var(--border-light);
+        cursor: pointer; font-size: 14px; font-weight: 500; color: var(--text);
+        transition: background 0.1s;
+    }
+    .srch-filter-item:last-child { border-bottom: none; }
+    .srch-filter-item:hover { background: #f4f8ff; }
+    .srch-filter-item.active {
+        background: var(--primary); color: #fff;
+        border-radius: 6px; border-bottom: none; margin-bottom: 1px; font-weight: 600;
+    }
+    .srch-filter-trigger {
+        text-align: left; background: #fff; cursor: pointer;
+        color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .srch-filter-trigger.has-value { color: var(--primary); font-weight: 600; }
+</style>
+@endpush
+
 <div class="enterprise-toolbar">
     <button class="btn btn-icon" type="button" onclick="reloadTable()" title="Refresh">Refresh</button>
     <button class="btn btn-icon" type="button" onclick="resetFilters()" title="Reset">Reset</button>
@@ -11,13 +57,7 @@
         <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width:14px;height:14px;vertical-align:middle;margin-right:3px;">
             <path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/>
         </svg>
-        Cetak Label (pdf)
-    </button>
-    <button class="btn btn-outline-success" type="button" id="btnBulkPrintXlsx" onclick="bulkPrintXlsx()" title="Unduh label Approved ke format Excel (.xlsx)">
-        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width:14px;height:14px;vertical-align:middle;margin-right:3px;">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-        </svg>
-        Cetak Label (xlsx)
+        Cetak Label Terpilih
     </button>
     <button class="btn btn-outline-secondary" type="button" id="btnBulkPrintGrid" onclick="bulkPrintGrid()" title="Klik untuk info: Belum ada data Approved yang dipilih/ceklis">
         <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width:14px;height:14px;vertical-align:middle;margin-right:3px;">
@@ -38,14 +78,35 @@
             @endforeach
         </select>
     </div>
-    <div style="width:150px;">
-        <label class="form-label">Material</label>
-        <select id="filterMaterial" class="form-control">
+    <div style="width:130px;">
+        <label class="form-label">Location</label>
+        <select id="filterLocation" style="display:none;">
             <option value="">All</option>
-            @foreach($materials as $material)
-                <option value="{{ $material->material_code }}">{{ $material->material_code }}</option>
+            @foreach($locations as $location)
+                <option value="{{ $location->id }}">{{ $location->name }}</option>
             @endforeach
         </select>
+        <button type="button" id="filterLocationTrigger" class="form-control srch-filter-trigger" onclick="openSrchFilterModal('location')">All</button>
+    </div>
+    <div style="width:140px;">
+        <label class="form-label">Requester</label>
+        <select id="filterRequester" style="display:none;">
+            <option value="">All</option>
+            @foreach($users as $user)
+                <option value="{{ $user->id }}">{{ $user->name }}</option>
+            @endforeach
+        </select>
+        <button type="button" id="filterRequesterTrigger" class="form-control srch-filter-trigger" onclick="openSrchFilterModal('requester')">All</button>
+    </div>
+    <div style="width:150px;">
+        <label class="form-label">Material</label>
+        <select id="filterMaterial" style="display:none;">
+            <option value="">All</option>
+            @foreach($materials as $material)
+                <option value="{{ $material->material_code }}">{{ $material->material_code }} - {{ $material->material_name }}</option>
+            @endforeach
+        </select>
+        <button type="button" id="filterMaterialTrigger" class="form-control srch-filter-trigger" onclick="openSrchFilterModal('material')">All</button>
     </div>
     <div style="width:120px;">
         <label class="form-label">Status</label>
@@ -57,6 +118,54 @@
         </select>
     </div>
     <button class="btn btn-primary" type="button" onclick="reloadTable()">Filter</button>
+</div>
+
+{{-- ─── Modal: Searchable Filter Location ─── --}}
+<div id="srchFilterLocationModal" class="srch-filter-overlay" style="display:none;">
+    <div class="srch-filter-content">
+        <div class="srch-filter-header">
+            <h3 style="margin:0;font-size:16px;font-weight:700;">Filter Location</h3>
+            <button type="button" class="btn-icon" onclick="closeSrchFilterModal('location')">
+                <svg fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" width="20" height="20"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+        </div>
+        <div class="srch-filter-search">
+            <input type="text" id="srchFilterLocationInput" class="form-control" placeholder="Cari lokasi..." oninput="srchFilterSearch('location', this.value)">
+        </div>
+        <div class="srch-filter-list" id="srchFilterLocationList"></div>
+    </div>
+</div>
+
+{{-- ─── Modal: Searchable Filter Requester ─── --}}
+<div id="srchFilterRequesterModal" class="srch-filter-overlay" style="display:none;">
+    <div class="srch-filter-content">
+        <div class="srch-filter-header">
+            <h3 style="margin:0;font-size:16px;font-weight:700;">Filter Requester</h3>
+            <button type="button" class="btn-icon" onclick="closeSrchFilterModal('requester')">
+                <svg fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" width="20" height="20"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+        </div>
+        <div class="srch-filter-search">
+            <input type="text" id="srchFilterRequesterInput" class="form-control" placeholder="Cari requester..." oninput="srchFilterSearch('requester', this.value)">
+        </div>
+        <div class="srch-filter-list" id="srchFilterRequesterList"></div>
+    </div>
+</div>
+
+{{-- ─── Modal: Searchable Filter Material ─── --}}
+<div id="srchFilterMaterialModal" class="srch-filter-overlay" style="display:none;">
+    <div class="srch-filter-content">
+        <div class="srch-filter-header">
+            <h3 style="margin:0;font-size:16px;font-weight:700;">Filter Material</h3>
+            <button type="button" class="btn-icon" onclick="closeSrchFilterModal('material')">
+                <svg fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" width="20" height="20"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+        </div>
+        <div class="srch-filter-search">
+            <input type="text" id="srchFilterMaterialInput" class="form-control" placeholder="Cari material..." oninput="srchFilterSearch('material', this.value)">
+        </div>
+        <div class="srch-filter-list" id="srchFilterMaterialList"></div>
+    </div>
 </div>
 
 {{-- DataTable --}}
@@ -174,17 +283,11 @@
         <div class="modal-body" id="resultModalBody"></div>
         <div class="modal-footer">
             <button class="btn" type="button" onclick="closeModal('resultModal');reloadTable();">Tutup</button>
-            <a class="btn btn-primary" id="btnPrintLabel" href="#" target="_blank" style="margin-right:5px;">
+            <a class="btn btn-primary" id="btnPrintLabel" href="#" target="_blank">
                 <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/>
                 </svg>
                 Cetak Label PDF
-            </a>
-            <a class="btn btn-success" id="btnPrintLabelXlsx" href="#" target="_blank">
-                <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width:14px;height:14px;vertical-align:middle;margin-right:3px;">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                </svg>
-                Cetak Label (xlsx)
             </a>
         </div>
     </div>
@@ -198,9 +301,7 @@ const ROUTES = {
     generate:   (id) => `/admin/api/generate-barcode/${id}/generate`,
     reject:         (id) => `/admin/api/generate-barcode/${id}/reject`,
     label:          (id) => `/admin/generate-barcode/${id}/label`,
-    labelXlsx:      (id) => `/admin/generate-barcode/${id}/label-xlsx`,
     labelBulk:      '{{ route('admin.generate-barcode.label-bulk') }}',
-    labelBulkXlsx:  '{{ route('admin.generate-barcode.label-bulk-xlsx') }}',
     batchGenerate:  '{{ route('admin.api.generate-barcode.batch-generate') }}',
     batchPrintGrid: '{{ route('admin.generate-barcode.batch-print-grid') }}',
 };
@@ -218,9 +319,11 @@ document.addEventListener('DOMContentLoaded', function () {
         ajax: {
             url: ROUTES.datatable,
             data: function (d) {
-                d.filter_plant    = document.getElementById('filterPlant').value;
-                d.filter_material = document.getElementById('filterMaterial').value;
-                d.filter_status   = document.getElementById('filterStatus').value;
+                d.filter_plant     = document.getElementById('filterPlant').value;
+                d.filter_location  = document.getElementById('filterLocation').value;
+                d.filter_requester = document.getElementById('filterRequester').value;
+                d.filter_material  = document.getElementById('filterMaterial').value;
+                d.filter_status    = document.getElementById('filterStatus').value;
             },
         },
         language: { processing: '<div class="loading-equalizer"><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div></div>' },
@@ -274,8 +377,7 @@ function actionButtons(d) {
         btns += `<button class="btn btn-primary" style="font-size:11px;padding:2px 7px;margin-right:2px;" onclick="openGenerate(${d.id},'${escHtml(d.material_code)}','${escHtml(d.lot_number)}','${escHtml(d.size)}')">Generate</button>`;
         btns += `<button class="btn btn-danger" style="font-size:11px;padding:2px 7px;" onclick="openReject(${d.id},'${escHtml(d.material_code)}','${escHtml(d.lot_number)}')">Tolak</button>`;
     } else if (d.status === 'approved') {
-        btns += `<a class="btn btn-primary" style="font-size:11px;padding:2px 7px;margin-right:2px;" href="${ROUTES.label(d.id)}" target="_blank">Cetak PDF</a>`;
-        btns += `<a class="btn btn-success" style="font-size:11px;padding:2px 7px;" href="${ROUTES.labelXlsx(d.id)}" target="_blank">Cetak Excel</a>`;
+        btns += `<a class="btn btn-primary" style="font-size:11px;padding:2px 7px;" href="${ROUTES.label(d.id)}" target="_blank">Cetak Label</a>`;
     }
     return btns;
 }
@@ -289,11 +391,98 @@ function reloadTable() {
 }
 
 function resetFilters() {
-    document.getElementById('filterPlant').value    = '';
-    document.getElementById('filterMaterial').value = '';
-    document.getElementById('filterStatus').value   = '';
+    document.getElementById('filterPlant').value  = '';
+    document.getElementById('filterStatus').value = '';
+    _srchFilterReset('location');
+    _srchFilterReset('requester');
+    _srchFilterReset('material');
     reloadTable();
 }
+
+// ─── Searchable Filter Modals ───
+const _srchFilterCfg = {
+    location: {
+        selectId: 'filterLocation', triggerId: 'filterLocationTrigger',
+        modalId: 'srchFilterLocationModal', inputId: 'srchFilterLocationInput',
+        listId: 'srchFilterLocationList', placeholder: 'All',
+    },
+    requester: {
+        selectId: 'filterRequester', triggerId: 'filterRequesterTrigger',
+        modalId: 'srchFilterRequesterModal', inputId: 'srchFilterRequesterInput',
+        listId: 'srchFilterRequesterList', placeholder: 'All',
+    },
+    material: {
+        selectId: 'filterMaterial', triggerId: 'filterMaterialTrigger',
+        modalId: 'srchFilterMaterialModal', inputId: 'srchFilterMaterialInput',
+        listId: 'srchFilterMaterialList', placeholder: 'All',
+    },
+};
+
+function _srchFilterBuildList(type) {
+    const cfg = _srchFilterCfg[type];
+    const select = document.getElementById(cfg.selectId);
+    const list = document.getElementById(cfg.listId);
+    list.innerHTML = '';
+    Array.from(select.options).forEach(opt => {
+        const div = document.createElement('div');
+        div.className = 'srch-filter-item' + (opt.selected ? ' active' : '');
+        div.dataset.value = opt.value;
+        div.dataset.label = opt.text;
+        div.textContent = opt.value === '' ? ' All ' : opt.text;
+        div.onclick = () => srchFilterSelect(type, opt.value, opt.value === '' ? cfg.placeholder : opt.text);
+        list.appendChild(div);
+    });
+}
+
+function openSrchFilterModal(type) {
+    const cfg = _srchFilterCfg[type];
+    _srchFilterBuildList(type);
+    const modal = document.getElementById(cfg.modalId);
+    modal.style.display = 'flex';
+    const input = document.getElementById(cfg.inputId);
+    input.value = '';
+    srchFilterSearch(type, '');
+    input.focus();
+    setTimeout(() => {
+        const active = modal.querySelector('.srch-filter-item.active');
+        if (active) active.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }, 50);
+}
+
+function closeSrchFilterModal(type) {
+    document.getElementById(_srchFilterCfg[type].modalId).style.display = 'none';
+}
+
+function srchFilterSelect(type, value, label) {
+    const cfg = _srchFilterCfg[type];
+    const select = document.getElementById(cfg.selectId);
+    select.value = value;
+    const trigger = document.getElementById(cfg.triggerId);
+    trigger.textContent = label;
+    trigger.classList.toggle('has-value', value !== '');
+    closeSrchFilterModal(type);
+}
+
+function srchFilterSearch(type, query) {
+    const lq = query.toLowerCase();
+    document.querySelectorAll(`#${_srchFilterCfg[type].listId} .srch-filter-item`).forEach(item => {
+        item.style.display = item.dataset.label.toLowerCase().includes(lq) ? '' : 'none';
+    });
+}
+
+function _srchFilterReset(type) {
+    const cfg = _srchFilterCfg[type];
+    const select = document.getElementById(cfg.selectId);
+    select.value = '';
+    const trigger = document.getElementById(cfg.triggerId);
+    trigger.textContent = cfg.placeholder;
+    trigger.classList.remove('has-value');
+}
+
+['location', 'requester', 'material'].forEach(type => {
+    const modal = document.getElementById(_srchFilterCfg[type].modalId);
+    if (modal) modal.addEventListener('click', e => { if (e.target === modal) closeSrchFilterModal(type); });
+});
 
 // ─── Bulk Print & Batch Actions ───
 function updateBulkPrintBtn() {
@@ -320,8 +509,8 @@ function updateBulkPrintBtn() {
             ? `Cetak ${checkedApproved} label terpilih` 
             : 'Klik untuk info: Belum ada data berstatus Approved yang dipilih/ceklis';
         btnPrint.innerHTML = checkedApproved > 0
-            ? `<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width:14px;height:14px;vertical-align:middle;margin-right:3px;"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg> Cetak Label (pdf) (${checkedApproved})`
-            : `<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width:14px;height:14px;vertical-align:middle;margin-right:3px;"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg> Cetak Label (pdf)`;
+            ? `<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width:14px;height:14px;vertical-align:middle;margin-right:3px;"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg> Cetak Label Terpilih (${checkedApproved})`
+            : `<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width:14px;height:14px;vertical-align:middle;margin-right:3px;"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg> Cetak Label Terpilih`;
     }
 
     const btnPrintGrid = document.getElementById('btnBulkPrintGrid');
@@ -333,19 +522,7 @@ function updateBulkPrintBtn() {
             : 'Klik untuk info: Belum ada data berstatus Approved yang dipilih/ceklis';
         btnPrintGrid.innerHTML = checkedApproved > 0
             ? `<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width:14px;height:14px;vertical-align:middle;margin-right:3px;"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg> Cetak Grid 3x3 (${checkedApproved})`
-            : `<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width:14px;height:14px;vertical-align:middle;margin-right:3px;"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg> Cetak Grid 3x3 (Batch)`;
-    }
-
-    const btnPrintXlsx = document.getElementById('btnBulkPrintXlsx');
-    if (btnPrintXlsx) {
-        btnPrintXlsx.className = checkedApproved > 0 ? 'btn btn-success' : 'btn btn-outline-success';
-        btnPrintXlsx.style.opacity = checkedApproved > 0 ? '1' : '0.85';
-        btnPrintXlsx.title = checkedApproved > 0 
-            ? `Cetak ${checkedApproved} label terpilih ke format Excel (.xlsx)` 
-            : 'Unduh semua label Approved sesuai filter ke format Excel (.xlsx)';
-        btnPrintXlsx.innerHTML = checkedApproved > 0
-            ? `<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width:14px;height:14px;vertical-align:middle;margin-right:3px;"><path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg> Cetak Label (xlsx) (${checkedApproved})`
-            : `<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width:14px;height:14px;vertical-align:middle;margin-right:3px;"><path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg> Cetak Label (xlsx)`;
+            : `<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width:14px;height:14px;vertical-align:middle;margin-right:3px;"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg> Cetak Grid 3x3 (Batch)`;
     }
 }
 
@@ -425,46 +602,6 @@ function bulkPrintGrid() {
         form.submit();
         document.body.removeChild(form);
     });
-}
-
-function bulkPrintXlsx() {
-    const ids = Array.from(document.querySelectorAll('.row-check:checked[data-status="approved"]')).map(cb => cb.value);
-    
-    if (ids.length > 0) {
-        confirmAction(`Cetak ${ids.length} label QR terpilih ke format Excel (.xlsx)?`, function () {
-            const form = document.createElement('form');
-            form.method = 'POST';
-            form.action = ROUTES.labelBulkXlsx;
-            form.target = '_blank';
-
-            const csrf = document.createElement('input');
-            csrf.type  = 'hidden';
-            csrf.name  = '_token';
-            csrf.value = CSRF;
-            form.appendChild(csrf);
-
-            ids.forEach(id => {
-                const inp = document.createElement('input');
-                inp.type  = 'hidden';
-                inp.name  = 'ids[]';
-                inp.value = id;
-                form.appendChild(inp);
-            });
-
-            document.body.appendChild(form);
-            form.submit();
-            document.body.removeChild(form);
-        });
-    } else {
-        const plant    = document.getElementById('filterPlant').value;
-        const material = document.getElementById('filterMaterial').value;
-        const status   = document.getElementById('filterStatus').value;
-        
-        confirmAction(`Belum ada kotak centang dipilih. Unduh seluruh label Approved sesuai filter aktif ke format Excel (.xlsx)?`, function () {
-            const url = `${ROUTES.labelBulkXlsx}?filter_plant=${encodeURIComponent(plant)}&filter_material=${encodeURIComponent(material)}&filter_status=${encodeURIComponent(status)}`;
-            window.open(url, '_blank');
-        });
-    }
 }
 
 function bulkGenerate() {
@@ -646,12 +783,9 @@ function showGenerateResult(data) {
         <div style="background:#1a1a2e;color:#4ade80;font-family:monospace;padding:10px 14px;font-size:13px;margin-bottom:10px;border-radius:2px;">
             ${data.full_barcode}
         </div>
-        <p style="font-size:12px;color:var(--text-secondary);">Klik "Cetak Label PDF" atau "Cetak Label (xlsx)" untuk membuka/mengunduh label siap cetak.</p>
+        <p style="font-size:12px;color:var(--text-secondary);">Klik "Cetak Label PDF" untuk membuka label siap cetak di tab baru.</p>
     `;
     document.getElementById('btnPrintLabel').href = data.label_url;
-    if (document.getElementById('btnPrintLabelXlsx')) {
-        document.getElementById('btnPrintLabelXlsx').href = data.label_xlsx_url || (data.label_url ? data.label_url.replace('/label', '/label-xlsx') : '#');
-    }
     openModal('resultModal');
     reloadTable();
 }

@@ -10,20 +10,18 @@ class BarcodeParserService
     private const SHAPES = [
         'RF' => 'Flat',
         'RR' => 'Round',
+        'RH' => 'Hollow',
     ];
 
     public function parse(string $qr): array
     {
         $rawQr = $qr;
 
-        // Validasi STRICT: Menolak scan jika terdeteksi spasi panjang/ganda 
-        // (Sesuai request untuk memblokir format barcode lama yang memiliki gap spasi panjang)
-        if (preg_match('/\s{2,}/', $qr)) {
-            return $this->invalid('Format barcode tidak valid (Terdeteksi spasi panjang/ganda).', $rawQr);
-        }
-
+        // Normalisasi barcode untuk semua input (menghilangkan gap spasi yang panjang)
+        $qr = preg_replace('/\s+/', ' ', $qr);
+        $qr = preg_replace('/\s*\|\s*/', ' | ', $qr);
         $qr = trim($qr);
-        // Hapus karakter pipa | di paling akhir jika ada (handling edge case scanner)
+        // Hapus karakter pipa | di paling akhir jika ada
         $qr = rtrim($qr, '|');
         $qr = trim($qr);
 
@@ -48,7 +46,7 @@ class BarcodeParserService
             return $this->invalid('Qty tidak valid.', $rawQr);
         }
 
-        if (!preg_match('/^(RF|RR)([A-Z0-9]{2})(\d{3})-(\d{8})([A-Z])$/', $barcodeMaterial, $matches)) {
+        if (!preg_match('/^(RF|RR|RH)([A-Z0-9]{2})(\d{3})-(\d{8})([A-Z])$/', $barcodeMaterial, $matches)) {
             return $this->invalid('Format barcode tidak valid (Pola Material Code).', $rawQr);
         }
 
@@ -82,9 +80,9 @@ class BarcodeParserService
             'length' => $length,
         ];
 
-        if ($shapeCode === 'RF') {
+        if (in_array($shapeCode, ['RF', 'RH'])) {
             if ($primary <= 0 || $firstSecondary <= 0 || $length <= 0) {
-                return $this->invalid('Format barcode tidak valid. RF membutuhkan thickness, width, dan length yang lebih besar dari 0.', $rawQr);
+                return $this->invalid("Format barcode tidak valid. {$shapeCode} membutuhkan thickness, width, dan length yang lebih besar dari 0.", $rawQr);
             }
 
             $result['thickness'] = $primary;

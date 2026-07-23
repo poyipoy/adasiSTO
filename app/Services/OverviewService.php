@@ -13,7 +13,9 @@ use Illuminate\Support\Facades\DB;
 
 class OverviewService
 {
-    public function __construct(private MaterialDoubleQueryService $materialDoubleQuery) {}
+    public function __construct(private MaterialDoubleQueryService $materialDoubleQuery)
+    {
+    }
 
     public function scanOverview(?User $scopeUser = null, array $filters = []): array
     {
@@ -42,7 +44,7 @@ class OverviewService
             ->groupBy('scan_results.user_id', 'users.name')
             ->orderByDesc('total')
             ->get()
-            ->map(fn ($item) => [
+            ->map(fn($item) => [
                 'name' => $item->name ?? 'Unknown',
                 'total' => (int) $item->total,
             ]);
@@ -56,7 +58,7 @@ class OverviewService
             ->groupBy('date')
             ->orderBy('date')
             ->get()
-            ->map(fn ($item) => [
+            ->map(fn($item) => [
                 'date' => $item->date,
                 'total' => (int) $item->total,
             ]);
@@ -121,7 +123,7 @@ class OverviewService
                 ->groupBy('users.id', 'users.name')
                 ->orderByDesc('total');
 
-            return $query->get()->map(fn ($item) => [
+            return $query->get()->map(fn($item) => [
                 'name' => $item->name,
                 'total' => (int) $item->total,
             ]);

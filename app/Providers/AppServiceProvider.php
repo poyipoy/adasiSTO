@@ -34,13 +34,13 @@ class AppServiceProvider extends ServiceProvider
                 ->by("login:{$username}|{$request->ip()}");
         });
 
-        RateLimiter::for('scan-write', fn (Request $request) => Limit::perMinute(max((int) config('sto.rate_limits.scan_write_per_minute', 120), 1))
+        RateLimiter::for('scan-write', fn(Request $request) => Limit::perMinute(max((int) config('sto.rate_limits.scan_write_per_minute', 120), 1))
             ->by($this->rateLimitKey($request, 'scan-write')));
 
-        RateLimiter::for('export', fn (Request $request) => Limit::perMinute(max((int) config('sto.rate_limits.export_per_minute', 10), 1))
+        RateLimiter::for('export', fn(Request $request) => Limit::perMinute(max((int) config('sto.rate_limits.export_per_minute', 10), 1))
             ->by($this->rateLimitKey($request, 'export')));
 
-        RateLimiter::for('datatable', fn (Request $request) => Limit::perMinute(max((int) config('sto.rate_limits.datatable_per_minute', 240), 1))
+        RateLimiter::for('datatable', fn(Request $request) => Limit::perMinute(max((int) config('sto.rate_limits.datatable_per_minute', 240), 1))
             ->by($this->rateLimitKey($request, 'datatable')));
     }
 

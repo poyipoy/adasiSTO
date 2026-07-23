@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\BarcodeRequest;
+use App\Models\Location;
 use App\Models\MasterMaterial;
 use App\Models\Plant;
+use App\Models\User;
 use App\Services\ActivityLogService;
 use App\Services\BarcodeGeneratorService;
 use App\Services\QrGeneratorService;
@@ -38,6 +40,8 @@ class GenerateBarcodeController extends Controller
 
         return view('admin.generate-barcode', [
             'plants'    => Plant::active()->orderBy('name')->limit($filterLimit)->get(),
+            'locations' => Location::active()->orderBy('name')->limit($filterLimit)->get(),
+            'users'     => User::active()->orderBy('name')->limit($filterLimit)->get(),
             'materials' => MasterMaterial::active()->orderBy('material_code')->limit($filterLimit)->get(),
         ]);
     }
@@ -61,6 +65,14 @@ class GenerateBarcodeController extends Controller
 
         if ($plantId = $request->input('filter_plant')) {
             $query->where('plant_id', $plantId);
+        }
+
+        if ($locationId = $request->input('filter_location')) {
+            $query->where('location_id', $locationId);
+        }
+
+        if ($requesterId = $request->input('filter_requester')) {
+            $query->where('user_id', $requesterId);
         }
 
         if ($materialCode = $request->input('filter_material')) {

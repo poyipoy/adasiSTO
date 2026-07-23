@@ -28,7 +28,8 @@ class MasterController extends Controller
     public function __construct(
         private ActiveStoService $activeStoService,
         private ActivityLogService $activityLog,
-    ) {}
+    ) {
+    }
 
     public function sto(): View
     {
@@ -66,7 +67,7 @@ class MasterController extends Controller
             StoCode::query(),
             $request,
             ['code', 'description'],
-            fn (StoCode $stoCode, int $no) => [
+            fn(StoCode $stoCode, int $no) => [
                 'no' => $no,
                 'id' => $stoCode->id,
                 'code' => $stoCode->code,
@@ -122,7 +123,7 @@ class MasterController extends Controller
     public function deactivateSto(int $id): JsonResponse
     {
         $stoCode = StoCode::findOrFail($id);
-        
+
         if ($stoCode->is_active) {
             $oldActiveValues = $stoCode->toArray();
             $stoCode->update(['is_active' => false]);
@@ -156,7 +157,7 @@ class MasterController extends Controller
             Plant::query(),
             $request,
             ['name'],
-            fn (Plant $plant, int $no) => [
+            fn(Plant $plant, int $no) => [
                 'no' => $no,
                 'id' => $plant->id,
                 'name' => $plant->name,
@@ -203,7 +204,7 @@ class MasterController extends Controller
             MasterMaterial::query(),
             $request,
             ['material_code', 'material_name'],
-            fn (MasterMaterial $material, int $no) => [
+            fn(MasterMaterial $material, int $no) => [
                 'no' => $no,
                 'id' => $material->id,
                 'material_code' => $material->material_code,
@@ -251,7 +252,7 @@ class MasterController extends Controller
             MasterKeterangan::query(),
             $request,
             ['name'],
-            fn (MasterKeterangan $keterangan, int $no) => [
+            fn(MasterKeterangan $keterangan, int $no) => [
                 'no' => $no,
                 'id' => $keterangan->id,
                 'name' => $keterangan->name,
@@ -298,7 +299,7 @@ class MasterController extends Controller
             User::query(),
             $request,
             ['name', 'username', 'role'],
-            fn (User $user, int $no) => [
+            fn(User $user, int $no) => [
                 'no' => $no,
                 'id' => $user->id,
                 'name' => $user->name,
@@ -393,7 +394,7 @@ class MasterController extends Controller
             $query,
             $request,
             ['name', 'old_location_name', 'description', 'warehouse'],
-            fn (Location $location, int $no) => [
+            fn(Location $location, int $no) => [
                 'no' => $no,
                 'id' => $location->id,
                 'name' => $location->name,
@@ -412,12 +413,12 @@ class MasterController extends Controller
     public function storeLocation(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'name'              => ['required', 'string', 'max:100'],
+            'name' => ['required', 'string', 'max:100'],
             'old_location_name' => ['nullable', 'string', 'max:100'],
-            'description'       => ['nullable', 'string', 'max:255'],
-            'warehouse'         => ['nullable', 'string', 'max:100'],
-            'plant_id'          => ['required', 'integer', 'exists:plants,id'],
-            'is_active'         => ['nullable', 'boolean'],
+            'description' => ['nullable', 'string', 'max:255'],
+            'warehouse' => ['nullable', 'string', 'max:100'],
+            'plant_id' => ['required', 'integer', 'exists:plants,id'],
+            'is_active' => ['nullable', 'boolean'],
         ]);
 
         // Check uniqueness per plant
@@ -426,12 +427,12 @@ class MasterController extends Controller
         }
 
         $location = Location::create([
-            'name'              => $data['name'],
+            'name' => $data['name'],
             'old_location_name' => $data['old_location_name'] ?? null,
-            'description'       => $data['description'] ?? null,
-            'warehouse'         => $data['warehouse'] ?? null,
-            'plant_id'          => $data['plant_id'],
-            'is_active'         => $request->boolean('is_active', true),
+            'description' => $data['description'] ?? null,
+            'warehouse' => $data['warehouse'] ?? null,
+            'plant_id' => $data['plant_id'],
+            'is_active' => $request->boolean('is_active', true),
             'created_by_user_id' => $request->user()->id,
         ]);
 
@@ -445,30 +446,32 @@ class MasterController extends Controller
         $location = Location::findOrFail($id);
 
         $data = $request->validate([
-            'name'              => ['required', 'string', 'max:100'],
+            'name' => ['required', 'string', 'max:100'],
             'old_location_name' => ['nullable', 'string', 'max:100'],
-            'description'       => ['nullable', 'string', 'max:255'],
-            'warehouse'         => ['nullable', 'string', 'max:100'],
-            'plant_id'          => ['required', 'integer', 'exists:plants,id'],
-            'is_active'         => ['nullable', 'boolean'],
+            'description' => ['nullable', 'string', 'max:255'],
+            'warehouse' => ['nullable', 'string', 'max:100'],
+            'plant_id' => ['required', 'integer', 'exists:plants,id'],
+            'is_active' => ['nullable', 'boolean'],
         ]);
 
         // Check uniqueness per plant (excluding self)
-        if (Location::where('plant_id', $data['plant_id'])
-                    ->where('name', $data['name'])
-                    ->where('id', '!=', $id)
-                    ->exists()) {
+        if (
+            Location::where('plant_id', $data['plant_id'])
+                ->where('name', $data['name'])
+                ->where('id', '!=', $id)
+                ->exists()
+        ) {
             return response()->json(['success' => false, 'message' => 'Lokasi dengan nama tersebut sudah ada untuk plant ini.'], 422);
         }
 
         $oldValues = $location->toArray();
         $location->update([
-            'name'              => $data['name'],
+            'name' => $data['name'],
             'old_location_name' => $data['old_location_name'] ?? null,
-            'description'       => $data['description'] ?? null,
-            'warehouse'         => $data['warehouse'] ?? null,
-            'plant_id'          => $data['plant_id'],
-            'is_active'         => $request->boolean('is_active'),
+            'description' => $data['description'] ?? null,
+            'warehouse' => $data['warehouse'] ?? null,
+            'plant_id' => $data['plant_id'],
+            'is_active' => $request->boolean('is_active'),
         ]);
 
         $this->activityLog->record($request->user(), 'master.location.updated', $location, $oldValues, $location->fresh()->toArray());
@@ -512,7 +515,7 @@ class MasterController extends Controller
             ->skip($start)
             ->take($length)
             ->get()
-            ->map(fn ($item, int $index) => $map($item, $filteredRecords - $start - $index))
+            ->map(fn($item, int $index) => $map($item, $filteredRecords - $start - $index))
             ->values();
 
         return response()->json([
@@ -602,10 +605,15 @@ class MasterController extends Controller
                     ['name' => 'name', 'label' => 'Name', 'type' => 'text', 'required' => true],
                     ['name' => 'username', 'label' => 'Username', 'type' => 'text', 'required' => true],
                     ['name' => 'password', 'label' => 'Password', 'type' => 'password'],
-                    ['name' => 'role', 'label' => 'Role', 'type' => 'select', 'options' => [
-                        ['value' => 'admin', 'label' => 'Admin'],
-                        ['value' => 'scanner', 'label' => 'Scanner'],
-                    ]],
+                    [
+                        'name' => 'role',
+                        'label' => 'Role',
+                        'type' => 'select',
+                        'options' => [
+                            ['value' => 'admin', 'label' => 'Admin'],
+                            ['value' => 'scanner', 'label' => 'Scanner'],
+                        ]
+                    ],
                     ['name' => 'is_validator', 'label' => 'Validator', 'type' => 'switch'],
                     ['name' => 'is_active', 'label' => 'Active', 'type' => 'switch', 'default' => 1],
                 ],
@@ -629,9 +637,13 @@ class MasterController extends Controller
                     ['name' => 'old_location_name', 'label' => 'Old Location Name', 'type' => 'text'],
                     ['name' => 'description', 'label' => 'Description', 'type' => 'text'],
                     ['name' => 'warehouse', 'label' => 'Warehouse', 'type' => 'text'],
-                    ['name' => 'plant_id', 'label' => 'Plant', 'type' => 'select',
-                     'options' => Plant::orderBy('name')->get()->map(fn($p) => ['value' => $p->id, 'label' => $p->name])->toArray(),
-                     'required' => true],
+                    [
+                        'name' => 'plant_id',
+                        'label' => 'Plant',
+                        'type' => 'select',
+                        'options' => Plant::orderBy('name')->get()->map(fn($p) => ['value' => $p->id, 'label' => $p->name])->toArray(),
+                        'required' => true
+                    ],
                     ['name' => 'is_active', 'label' => 'Active', 'type' => 'switch', 'default' => 1],
                 ],
                 'filters' => [

@@ -1,5 +1,51 @@
 <x-layouts.app :title="'Generate Barcode'">
 
+@push('styles')
+<style>
+    /* --- Searchable Filter Modal --- */
+    .srch-filter-overlay {
+        position: fixed; inset: 0;
+        background: rgba(0,0,0,0.5);
+        z-index: 1050;
+        display: flex; align-items: flex-end; justify-content: center;
+    }
+    .srch-filter-content {
+        background: #fff; width: 100%; max-width: 500px; max-height: 85vh;
+        border-radius: 16px 16px 0 0;
+        display: flex; flex-direction: column;
+        animation: slideUp 0.3s ease-out;
+    }
+    @media (min-width: 768px) {
+        .srch-filter-overlay { align-items: center; }
+        .srch-filter-content { border-radius: 12px; max-height: 80vh; animation: fadeIn 0.2s ease-out; }
+    }
+    .srch-filter-header {
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 16px; border-bottom: 1px solid var(--border-light);
+    }
+    .srch-filter-search {
+        padding: 12px 16px; border-bottom: 1px solid var(--border-light); background: #fafbfc;
+    }
+    .srch-filter-list { flex: 1; overflow-y: auto; padding: 8px 16px 16px 16px; }
+    .srch-filter-item {
+        padding: 12px; border-bottom: 1px solid var(--border-light);
+        cursor: pointer; font-size: 14px; font-weight: 500; color: var(--text);
+        transition: background 0.1s;
+    }
+    .srch-filter-item:last-child { border-bottom: none; }
+    .srch-filter-item:hover { background: #f4f8ff; }
+    .srch-filter-item.active {
+        background: var(--primary); color: #fff;
+        border-radius: 6px; border-bottom: none; margin-bottom: 1px; font-weight: 600;
+    }
+    .srch-filter-trigger {
+        text-align: left; background: #fff; cursor: pointer;
+        color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .srch-filter-trigger.has-value { color: var(--primary); font-weight: 600; }
+</style>
+@endpush
+
 <div class="enterprise-toolbar">
     <button class="btn btn-icon" type="button" onclick="reloadTable()" title="Refresh">Refresh</button>
     <button class="btn btn-icon" type="button" onclick="resetFilters()" title="Reset">Reset</button>
@@ -32,14 +78,35 @@
             @endforeach
         </select>
     </div>
-    <div style="width:150px;">
-        <label class="form-label">Material</label>
-        <select id="filterMaterial" class="form-control">
+    <div style="width:130px;">
+        <label class="form-label">Location</label>
+        <select id="filterLocation" style="display:none;">
             <option value="">All</option>
-            @foreach($materials as $material)
-                <option value="{{ $material->material_code }}">{{ $material->material_code }}</option>
+            @foreach($locations as $location)
+                <option value="{{ $location->id }}">{{ $location->name }}</option>
             @endforeach
         </select>
+        <button type="button" id="filterLocationTrigger" class="form-control srch-filter-trigger" onclick="openSrchFilterModal('location')">All</button>
+    </div>
+    <div style="width:140px;">
+        <label class="form-label">Requester</label>
+        <select id="filterRequester" style="display:none;">
+            <option value="">All</option>
+            @foreach($users as $user)
+                <option value="{{ $user->id }}">{{ $user->name }}</option>
+            @endforeach
+        </select>
+        <button type="button" id="filterRequesterTrigger" class="form-control srch-filter-trigger" onclick="openSrchFilterModal('requester')">All</button>
+    </div>
+    <div style="width:150px;">
+        <label class="form-label">Material</label>
+        <select id="filterMaterial" style="display:none;">
+            <option value="">All</option>
+            @foreach($materials as $material)
+                <option value="{{ $material->material_code }}">{{ $material->material_code }} - {{ $material->material_name }}</option>
+            @endforeach
+        </select>
+        <button type="button" id="filterMaterialTrigger" class="form-control srch-filter-trigger" onclick="openSrchFilterModal('material')">All</button>
     </div>
     <div style="width:120px;">
         <label class="form-label">Status</label>
@@ -51,6 +118,54 @@
         </select>
     </div>
     <button class="btn btn-primary" type="button" onclick="reloadTable()">Filter</button>
+</div>
+
+{{-- ─── Modal: Searchable Filter Location ─── --}}
+<div id="srchFilterLocationModal" class="srch-filter-overlay" style="display:none;">
+    <div class="srch-filter-content">
+        <div class="srch-filter-header">
+            <h3 style="margin:0;font-size:16px;font-weight:700;">Filter Location</h3>
+            <button type="button" class="btn-icon" onclick="closeSrchFilterModal('location')">
+                <svg fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" width="20" height="20"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+        </div>
+        <div class="srch-filter-search">
+            <input type="text" id="srchFilterLocationInput" class="form-control" placeholder="Cari lokasi..." oninput="srchFilterSearch('location', this.value)">
+        </div>
+        <div class="srch-filter-list" id="srchFilterLocationList"></div>
+    </div>
+</div>
+
+{{-- ─── Modal: Searchable Filter Requester ─── --}}
+<div id="srchFilterRequesterModal" class="srch-filter-overlay" style="display:none;">
+    <div class="srch-filter-content">
+        <div class="srch-filter-header">
+            <h3 style="margin:0;font-size:16px;font-weight:700;">Filter Requester</h3>
+            <button type="button" class="btn-icon" onclick="closeSrchFilterModal('requester')">
+                <svg fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" width="20" height="20"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+        </div>
+        <div class="srch-filter-search">
+            <input type="text" id="srchFilterRequesterInput" class="form-control" placeholder="Cari requester..." oninput="srchFilterSearch('requester', this.value)">
+        </div>
+        <div class="srch-filter-list" id="srchFilterRequesterList"></div>
+    </div>
+</div>
+
+{{-- ─── Modal: Searchable Filter Material ─── --}}
+<div id="srchFilterMaterialModal" class="srch-filter-overlay" style="display:none;">
+    <div class="srch-filter-content">
+        <div class="srch-filter-header">
+            <h3 style="margin:0;font-size:16px;font-weight:700;">Filter Material</h3>
+            <button type="button" class="btn-icon" onclick="closeSrchFilterModal('material')">
+                <svg fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" width="20" height="20"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+        </div>
+        <div class="srch-filter-search">
+            <input type="text" id="srchFilterMaterialInput" class="form-control" placeholder="Cari material..." oninput="srchFilterSearch('material', this.value)">
+        </div>
+        <div class="srch-filter-list" id="srchFilterMaterialList"></div>
+    </div>
 </div>
 
 {{-- DataTable --}}
@@ -204,9 +319,11 @@ document.addEventListener('DOMContentLoaded', function () {
         ajax: {
             url: ROUTES.datatable,
             data: function (d) {
-                d.filter_plant    = document.getElementById('filterPlant').value;
-                d.filter_material = document.getElementById('filterMaterial').value;
-                d.filter_status   = document.getElementById('filterStatus').value;
+                d.filter_plant     = document.getElementById('filterPlant').value;
+                d.filter_location  = document.getElementById('filterLocation').value;
+                d.filter_requester = document.getElementById('filterRequester').value;
+                d.filter_material  = document.getElementById('filterMaterial').value;
+                d.filter_status    = document.getElementById('filterStatus').value;
             },
         },
         language: { processing: '<div class="loading-equalizer"><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div></div>' },
@@ -274,11 +391,98 @@ function reloadTable() {
 }
 
 function resetFilters() {
-    document.getElementById('filterPlant').value    = '';
-    document.getElementById('filterMaterial').value = '';
-    document.getElementById('filterStatus').value   = '';
+    document.getElementById('filterPlant').value  = '';
+    document.getElementById('filterStatus').value = '';
+    _srchFilterReset('location');
+    _srchFilterReset('requester');
+    _srchFilterReset('material');
     reloadTable();
 }
+
+// ─── Searchable Filter Modals ───
+const _srchFilterCfg = {
+    location: {
+        selectId: 'filterLocation', triggerId: 'filterLocationTrigger',
+        modalId: 'srchFilterLocationModal', inputId: 'srchFilterLocationInput',
+        listId: 'srchFilterLocationList', placeholder: 'All',
+    },
+    requester: {
+        selectId: 'filterRequester', triggerId: 'filterRequesterTrigger',
+        modalId: 'srchFilterRequesterModal', inputId: 'srchFilterRequesterInput',
+        listId: 'srchFilterRequesterList', placeholder: 'All',
+    },
+    material: {
+        selectId: 'filterMaterial', triggerId: 'filterMaterialTrigger',
+        modalId: 'srchFilterMaterialModal', inputId: 'srchFilterMaterialInput',
+        listId: 'srchFilterMaterialList', placeholder: 'All',
+    },
+};
+
+function _srchFilterBuildList(type) {
+    const cfg = _srchFilterCfg[type];
+    const select = document.getElementById(cfg.selectId);
+    const list = document.getElementById(cfg.listId);
+    list.innerHTML = '';
+    Array.from(select.options).forEach(opt => {
+        const div = document.createElement('div');
+        div.className = 'srch-filter-item' + (opt.selected ? ' active' : '');
+        div.dataset.value = opt.value;
+        div.dataset.label = opt.text;
+        div.textContent = opt.value === '' ? ' All ' : opt.text;
+        div.onclick = () => srchFilterSelect(type, opt.value, opt.value === '' ? cfg.placeholder : opt.text);
+        list.appendChild(div);
+    });
+}
+
+function openSrchFilterModal(type) {
+    const cfg = _srchFilterCfg[type];
+    _srchFilterBuildList(type);
+    const modal = document.getElementById(cfg.modalId);
+    modal.style.display = 'flex';
+    const input = document.getElementById(cfg.inputId);
+    input.value = '';
+    srchFilterSearch(type, '');
+    input.focus();
+    setTimeout(() => {
+        const active = modal.querySelector('.srch-filter-item.active');
+        if (active) active.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }, 50);
+}
+
+function closeSrchFilterModal(type) {
+    document.getElementById(_srchFilterCfg[type].modalId).style.display = 'none';
+}
+
+function srchFilterSelect(type, value, label) {
+    const cfg = _srchFilterCfg[type];
+    const select = document.getElementById(cfg.selectId);
+    select.value = value;
+    const trigger = document.getElementById(cfg.triggerId);
+    trigger.textContent = label;
+    trigger.classList.toggle('has-value', value !== '');
+    closeSrchFilterModal(type);
+}
+
+function srchFilterSearch(type, query) {
+    const lq = query.toLowerCase();
+    document.querySelectorAll(`#${_srchFilterCfg[type].listId} .srch-filter-item`).forEach(item => {
+        item.style.display = item.dataset.label.toLowerCase().includes(lq) ? '' : 'none';
+    });
+}
+
+function _srchFilterReset(type) {
+    const cfg = _srchFilterCfg[type];
+    const select = document.getElementById(cfg.selectId);
+    select.value = '';
+    const trigger = document.getElementById(cfg.triggerId);
+    trigger.textContent = cfg.placeholder;
+    trigger.classList.remove('has-value');
+}
+
+['location', 'requester', 'material'].forEach(type => {
+    const modal = document.getElementById(_srchFilterCfg[type].modalId);
+    if (modal) modal.addEventListener('click', e => { if (e.target === modal) closeSrchFilterModal(type); });
+});
 
 // ─── Bulk Print & Batch Actions ───
 function updateBulkPrintBtn() {

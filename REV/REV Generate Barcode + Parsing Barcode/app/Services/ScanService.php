@@ -429,8 +429,8 @@ class ScanService
                 'material_name' => $parsed['material_name'],
                 'shape_code' => $shapeCode,
                 'shape_name' => $parsed['shape_name'],
-                'thickness' => $shapeCode === 'RF' ? $parsed['thickness'] : null,
-                'width' => $shapeCode === 'RF' ? $parsed['width'] : null,
+                'thickness' => in_array($shapeCode, ['RF', 'RH']) ? $parsed['thickness'] : null,
+                'width' => in_array($shapeCode, ['RF', 'RH']) ? $parsed['width'] : null,
                 'diameter' => $shapeCode === 'RR' ? $parsed['diameter'] : null,
                 'length' => $parsed['length'],
                 'keterangan' => $this->defaultKeterangan(),
@@ -498,7 +498,9 @@ class ScanService
         return [
             'id' => $scanResult->id,
             'barcode_material' => $scanResult->barcode_material,
+            'material_code' => $scanResult->material_code,
             'material_name' => $scanResult->material_name,
+            'shape_code' => $scanResult->shape_code,
             'shape_name' => $scanResult->shape_name,
             'thickness' => $scanResult->thickness,
             'width' => $scanResult->width,
@@ -537,8 +539,9 @@ class ScanService
     private function manualScanAttributes(array $payload, StoCode $stoCode, Location $location): array
     {
         $shapeCode = $payload['shape_code'];
+        $shapeName = $payload['shape_name'];
 
-        return [
+        return array_merge($payload, [
             'user_id' => $payload['user_id'],
             'sto_code_id' => $stoCode->id,
             'plant_id' => $payload['plant_id'],
@@ -551,14 +554,14 @@ class ScanService
             'material_code' => strtoupper($payload['material_code']),
             'material_name' => $payload['material_name'],
             'shape_code' => $shapeCode,
-            'shape_name' => $payload['shape_name'],
-            'thickness' => $shapeCode === 'RF' ? $payload['thickness'] : null,
-            'width' => $shapeCode === 'RF' ? $payload['width'] : null,
+            'shape_name' => $shapeName,
+            'thickness' => in_array($shapeCode, ['RF', 'RH']) ? $payload['thickness'] : null,
+            'width' => in_array($shapeCode, ['RF', 'RH']) ? $payload['width'] : null,
             'diameter' => $shapeCode === 'RR' ? $payload['diameter'] : null,
             'length' => $payload['length'],
             'keterangan' => $payload['keterangan'],
             'scan_source' => $payload['scan_source'] ?? 'admin',
-        ];
+        ]);
     }
 
     private function auditValues(ScanResult $scanResult): array

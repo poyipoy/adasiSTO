@@ -455,7 +455,9 @@
     const pendingAutoDownloadExportIds = new Set();
     const autoDownloadedExportIds = new Set();
     
-      const directExportExcelUrl = '{{ route("admin.api.material-double.export.excel") }}';
+    const exportQueueUrl = '{{ route("admin.api.material-double.export.queue") }}';
+    const exportStatusUrl = '{{ route("admin.api.material-double.export.status") }}';
+    const directExportExcelUrl = '{{ route("admin.api.material-double.export.excel") }}';
 
     function materialDoubleFilters() {
         return {

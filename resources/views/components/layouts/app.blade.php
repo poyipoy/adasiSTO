@@ -427,7 +427,7 @@
             padding: 2px 7px;
             border-radius: 12px;
             line-height: 1.2;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
         }
 
         .sidebar-counter.counter-danger {
@@ -576,8 +576,15 @@
         }
 
         @keyframes fadeInTab {
-            from { opacity: 0; transform: translateY(5px); }
-            to { opacity: 1; transform: translateY(0); }
+            from {
+                opacity: 0;
+                transform: translateY(5px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
 
         .tab-pane {
@@ -1297,9 +1304,9 @@
             }
 
             /* --- Filter card: stack filter items vertically --- */
-            .card > div[style*="width:130px"],
-            .card > div[style*="width:150px"],
-            .card > div[style*="width:120px"] {
+            .card>div[style*="width:130px"],
+            .card>div[style*="width:150px"],
+            .card>div[style*="width:120px"] {
                 width: 100% !important;
             }
 
@@ -1482,7 +1489,8 @@
             <div class="topbar-divider"></div>
             <div class="topbar-app">STO<small>Scan To Office</small></div>
             <div class="topbar-divider"></div>
-            <div class="topbar-app"><small>Current STO:</small> <span id="current-sto-label">{{ $currentSto?->code ?? '-' }}</span></div>
+            <div class="topbar-app"><small>Current STO:</small> <span
+                    id="current-sto-label">{{ $currentSto?->code ?? '-' }}</span></div>
         </div>
         <div class="topbar-right">
             <div class="topbar-user">
@@ -1534,186 +1542,188 @@
     <aside class="sidebar" id="sidebar">
         <nav class="sidebar-menu" aria-label="Main navigation">
             @if(auth()->user()->isAdmin())
-                <?php
-                    $sidebarBadges = \Illuminate\Support\Facades\Cache::remember('sidebar_badges', 15, function() {
-                        try {
-                            return [
-                                'pending_barcode' => \App\Models\BarcodeRequest::where('status', 'pending')->count(),
-                                'unconfirmed_rak' => \App\Models\Location::where('is_confirmed', false)->count(),
-                            ];
-                        } catch (\Throwable $e) {
-                            return [
-                                'pending_barcode' => 0,
-                                'unconfirmed_rak' => 0,
-                            ];
-                        }
-                    });
-                ?>
-                <div class="sidebar-section {{ request()->routeIs('admin.dashboard') ? 'is-open has-active' : '' }}">
-                    <button type="button" class="sidebar-section-toggle" data-sidebar-toggle title="Dashboard">
-                        <svg class="sidebar-section-icon" fill="none" stroke="currentColor" stroke-width="2"
-                            viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round"
-                                d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z">
-                            </path>
-                        </svg>
-                        <span class="sidebar-section-label">Dashboard</span>
-                        <svg class="sidebar-chevron" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path>
-                        </svg>
-                    </button>
-                    <div class="sidebar-section-items">
-                        <div class="sidebar-section-items-inner">
-                        <a href="{{ route('admin.dashboard') }}"
-                            class="nav-item {{ request()->routeIs('admin.dashboard') ? 'active' : '' }}" title="Overview">
-                            <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round"
-                                    d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"></path>
-                            </svg>
-                            <span>Overview</span>
-                        </a>
+                        <?php
+                $sidebarBadges = \Illuminate\Support\Facades\Cache::remember('sidebar_badges', 15, function () {
+                    try {
+                        return [
+                            'pending_barcode' => \App\Models\BarcodeRequest::where('status', 'pending')->count(),
+                            'unconfirmed_rak' => \App\Models\Location::where('is_confirmed', false)->count(),
+                        ];
+                    } catch (\Throwable $e) {
+                        return [
+                            'pending_barcode' => 0,
+                            'unconfirmed_rak' => 0,
+                        ];
+                    }
+                });
+                            ?>
+                        <div class="sidebar-section {{ request()->routeIs('admin.dashboard') ? 'is-open has-active' : '' }}">
+                            <button type="button" class="sidebar-section-toggle" data-sidebar-toggle title="Dashboard">
+                                <svg class="sidebar-section-icon" fill="none" stroke="currentColor" stroke-width="2"
+                                    viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round"
+                                        d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z">
+                                    </path>
+                                </svg>
+                                <span class="sidebar-section-label">Dashboard</span>
+                                <svg class="sidebar-chevron" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path>
+                                </svg>
+                            </button>
+                            <div class="sidebar-section-items">
+                                <div class="sidebar-section-items-inner">
+                                    <a href="{{ route('admin.dashboard') }}"
+                                        class="nav-item {{ request()->routeIs('admin.dashboard') ? 'active' : '' }}"
+                                        title="Overview">
+                                        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round"
+                                                d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"></path>
+                                        </svg>
+                                        <span>Overview</span>
+                                    </a>
+                                </div>
+                            </div>
                         </div>
-                    </div>
-                </div>
-                <div
-                    class="sidebar-section {{ request()->routeIs('admin.scan-results*') || request()->routeIs('admin.material-summary*') || request()->routeIs('admin.material-double*') || request()->routeIs('admin.generate-barcode*') ? 'is-open has-active' : '' }}">
-                    <button type="button" class="sidebar-section-toggle" data-sidebar-toggle title="STO Result">
-                        <svg class="sidebar-section-icon" fill="none" stroke="currentColor" stroke-width="2"
-                            viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M9 17v-6m4 6V7m4 10v-4M5 21h14M5 3v18">
-                            </path>
-                        </svg>
-                        <span class="sidebar-section-label">STO Result</span>
-                        <svg class="sidebar-chevron" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path>
-                        </svg>
-                    </button>
-                    <div class="sidebar-section-items">
-                        <div class="sidebar-section-items-inner">
-                        <a href="{{ route('admin.scan-results') }}"
-                            class="nav-item {{ request()->routeIs('admin.scan-results*') ? 'active' : '' }}"
-                            title="All Scan Results">
-                            <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round"
-                                    d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"></path>
-                            </svg>
-                            <span>All Scan Results</span>
-                        </a>
-                        <a href="{{ route('admin.material-summary') }}"
-                            class="nav-item {{ request()->routeIs('admin.material-summary*') ? 'active' : '' }}"
-                            title="Material Summary">
-                            <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round"
-                                    d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707L13.293 3.293A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z">
-                                </path>
-                            </svg>
-                            <span>Material Summary</span>
-                        </a>
-                        <a href="{{ route('admin.material-double') }}"
-                            class="nav-item {{ request()->routeIs('admin.material-double*') ? 'active' : '' }}"
-                            title="Material Double">
-                            <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round"
-                                    d="M8 7h8M8 12h8M8 17h5M4 5a2 2 0 012-2h10l4 4v12a2 2 0 01-2 2H6a2 2 0 01-2-2V5z">
-                                </path>
-                            </svg>
-                            <span>Material Double</span>
-                        </a>
-                        <a href="{{ route('admin.generate-barcode') }}"
-                            class="nav-item {{ request()->routeIs('admin.generate-barcode*') ? 'active' : '' }}"
-                            title="Generate Barcode">
-                            <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round"
-                                    d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm14 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z">
-                                </path>
-                            </svg>
-                            <span>Generate Barcode</span>
-                            @if(($sidebarBadges['pending_barcode'] ?? 0) > 0)
-                                <span class="sidebar-counter">{{ $sidebarBadges['pending_barcode'] }}</span>
-                            @endif
-                        </a>
+                        <div
+                            class="sidebar-section {{ request()->routeIs('admin.scan-results*') || request()->routeIs('admin.material-summary*') || request()->routeIs('admin.material-double*') || request()->routeIs('admin.generate-barcode*') ? 'is-open has-active' : '' }}">
+                            <button type="button" class="sidebar-section-toggle" data-sidebar-toggle title="STO Result">
+                                <svg class="sidebar-section-icon" fill="none" stroke="currentColor" stroke-width="2"
+                                    viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 17v-6m4 6V7m4 10v-4M5 21h14M5 3v18">
+                                    </path>
+                                </svg>
+                                <span class="sidebar-section-label">STO Result</span>
+                                <svg class="sidebar-chevron" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path>
+                                </svg>
+                            </button>
+                            <div class="sidebar-section-items">
+                                <div class="sidebar-section-items-inner">
+                                    <a href="{{ route('admin.scan-results') }}"
+                                        class="nav-item {{ request()->routeIs('admin.scan-results*') ? 'active' : '' }}"
+                                        title="All Scan Results">
+                                        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round"
+                                                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"></path>
+                                        </svg>
+                                        <span>All Scan Results</span>
+                                    </a>
+                                    <a href="{{ route('admin.material-summary') }}"
+                                        class="nav-item {{ request()->routeIs('admin.material-summary*') ? 'active' : '' }}"
+                                        title="Material Summary">
+                                        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round"
+                                                d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707L13.293 3.293A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z">
+                                            </path>
+                                        </svg>
+                                        <span>Material Summary</span>
+                                    </a>
+                                    <a href="{{ route('admin.material-double') }}"
+                                        class="nav-item {{ request()->routeIs('admin.material-double*') ? 'active' : '' }}"
+                                        title="Material Double">
+                                        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round"
+                                                d="M8 7h8M8 12h8M8 17h5M4 5a2 2 0 012-2h10l4 4v12a2 2 0 01-2 2H6a2 2 0 01-2-2V5z">
+                                            </path>
+                                        </svg>
+                                        <span>Material Double</span>
+                                    </a>
+                                    <a href="{{ route('admin.generate-barcode') }}"
+                                        class="nav-item {{ request()->routeIs('admin.generate-barcode*') ? 'active' : '' }}"
+                                        title="Generate Barcode">
+                                        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round"
+                                                d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm14 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z">
+                                            </path>
+                                        </svg>
+                                        <span>Generate Barcode</span>
+                                        @if(($sidebarBadges['pending_barcode'] ?? 0) > 0)
+                                            <span class="sidebar-counter">{{ $sidebarBadges['pending_barcode'] }}</span>
+                                        @endif
+                                    </a>
+                                </div>
+                            </div>
                         </div>
-                    </div>
-                </div>
-                <div
-                    class="sidebar-section {{ request()->routeIs('admin.master-sto') || request()->routeIs('admin.master-plant') || request()->routeIs('admin.master-material') || request()->routeIs('admin.master-keterangan') || request()->routeIs('admin.master-location') || request()->routeIs('admin.users') || request()->routeIs('admin.rack-confirmation') ? 'is-open has-active' : '' }}">
-                    <button type="button" class="sidebar-section-toggle" data-sidebar-toggle title="Master Data">
-                        <svg class="sidebar-section-icon" fill="none" stroke="currentColor" stroke-width="2"
-                            viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M5 5h14v14H5zM9 9h6M9 13h6M9 17h3">
-                            </path>
-                        </svg>
-                        <span class="sidebar-section-label">Master Data</span>
-                        <svg class="sidebar-chevron" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path>
-                        </svg>
-                    </button>
-                    <div class="sidebar-section-items">
-                        <div class="sidebar-section-items-inner">
-                        <a href="{{ route('admin.master-sto') }}"
-                            class="nav-item {{ request()->routeIs('admin.master-sto') ? 'active' : '' }}"
-                            title="Master STO"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round"
-                                    d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4">
-                                </path>
-                            </svg> <span>Master STO</span></a>
-                        <a href="{{ route('admin.master-plant') }}"
-                            class="nav-item {{ request()->routeIs('admin.master-plant') ? 'active' : '' }}"
-                            title="Master Plant"><svg fill="none" stroke="currentColor" stroke-width="2"
-                                viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round"
-                                    d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1v1H9V7zm5 0h1v1h-1V7zm-5 4h1v1H9v-1zm5 0h1v1h-1v-1zm-5 4h1v1H9v-1zm5 0h1v1h-1v-1z">
-                                </path>
-                            </svg> <span>Master Plant</span></a>
-                        <a href="{{ route('admin.master-material') }}"
-                            class="nav-item {{ request()->routeIs('admin.master-material') ? 'active' : '' }}"
-                            title="Master Material"><svg fill="none" stroke="currentColor" stroke-width="2"
-                                viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round"
-                                    d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path>
-                            </svg> <span>Master Material</span></a>
-                        <a href="{{ route('admin.master-keterangan') }}"
-                            class="nav-item {{ request()->routeIs('admin.master-keterangan') ? 'active' : '' }}"
-                            title="Master Keterangan"><svg fill="none" stroke="currentColor" stroke-width="2"
-                                viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round"
-                                    d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z">
-                                </path>
-                            </svg> <span>Master Keterangan</span></a>
-                        <a href="{{ route('admin.master-location') }}"
-                            class="nav-item {{ request()->routeIs('admin.master-location') ? 'active' : '' }}"
-                            title="Master Location"><svg fill="none" stroke="currentColor" stroke-width="2"
-                                viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round"
-                                    d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z">
-                                </path>
-                                <path stroke-linecap="round" stroke-linejoin="round"
-                                    d="M15 11a3 3 0 11-6 0 3 3 0 016 0z">
-                                </path>
-                            </svg> <span>Master Location</span></a>
-                        <a href="{{ route('admin.rack-confirmation') }}"
-                            class="nav-item {{ request()->routeIs('admin.rack-confirmation') ? 'active' : '' }}"
-                            title="Konfirmasi Rak"><svg fill="none" stroke="currentColor" stroke-width="2"
-                                viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round"
-                                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z">
-                                </path>
-                            </svg> <span>Konfirmasi Rak</span>
-                            @if(($sidebarBadges['unconfirmed_rak'] ?? 0) > 0)
-                                <span class="sidebar-counter counter-danger">{{ $sidebarBadges['unconfirmed_rak'] }}</span>
-                            @endif
-                        </a>
-                        <a href="{{ route('admin.users') }}"
-                            class="nav-item {{ request()->routeIs('admin.users') ? 'active' : '' }}"
-                            title="User Management"><svg fill="none" stroke="currentColor" stroke-width="2"
-                                viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round"
-                                    d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z">
-                                </path>
-                            </svg> <span>User Management</span></a>
+                        <div
+                            class="sidebar-section {{ request()->routeIs('admin.master-sto') || request()->routeIs('admin.master-plant') || request()->routeIs('admin.master-material') || request()->routeIs('admin.master-keterangan') || request()->routeIs('admin.master-location') || request()->routeIs('admin.users') || request()->routeIs('admin.rack-confirmation') ? 'is-open has-active' : '' }}">
+                            <button type="button" class="sidebar-section-toggle" data-sidebar-toggle title="Master Data">
+                                <svg class="sidebar-section-icon" fill="none" stroke="currentColor" stroke-width="2"
+                                    viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M5 5h14v14H5zM9 9h6M9 13h6M9 17h3">
+                                    </path>
+                                </svg>
+                                <span class="sidebar-section-label">Master Data</span>
+                                <svg class="sidebar-chevron" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path>
+                                </svg>
+                            </button>
+                            <div class="sidebar-section-items">
+                                <div class="sidebar-section-items-inner">
+                                    <a href="{{ route('admin.master-sto') }}"
+                                        class="nav-item {{ request()->routeIs('admin.master-sto') ? 'active' : '' }}"
+                                        title="Master STO"><svg fill="none" stroke="currentColor" stroke-width="2"
+                                            viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round"
+                                                d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4">
+                                            </path>
+                                        </svg> <span>Master STO</span></a>
+                                    <a href="{{ route('admin.master-plant') }}"
+                                        class="nav-item {{ request()->routeIs('admin.master-plant') ? 'active' : '' }}"
+                                        title="Master Plant"><svg fill="none" stroke="currentColor" stroke-width="2"
+                                            viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round"
+                                                d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1v1H9V7zm5 0h1v1h-1V7zm-5 4h1v1H9v-1zm5 0h1v1h-1v-1zm-5 4h1v1H9v-1zm5 0h1v1h-1v-1z">
+                                            </path>
+                                        </svg> <span>Master Plant</span></a>
+                                    <a href="{{ route('admin.master-material') }}"
+                                        class="nav-item {{ request()->routeIs('admin.master-material') ? 'active' : '' }}"
+                                        title="Master Material"><svg fill="none" stroke="currentColor" stroke-width="2"
+                                            viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round"
+                                                d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path>
+                                        </svg> <span>Master Material</span></a>
+                                    <a href="{{ route('admin.master-keterangan') }}"
+                                        class="nav-item {{ request()->routeIs('admin.master-keterangan') ? 'active' : '' }}"
+                                        title="Master Keterangan"><svg fill="none" stroke="currentColor" stroke-width="2"
+                                            viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round"
+                                                d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z">
+                                            </path>
+                                        </svg> <span>Master Keterangan</span></a>
+                                    <a href="{{ route('admin.master-location') }}"
+                                        class="nav-item {{ request()->routeIs('admin.master-location') ? 'active' : '' }}"
+                                        title="Master Location"><svg fill="none" stroke="currentColor" stroke-width="2"
+                                            viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round"
+                                                d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z">
+                                            </path>
+                                            <path stroke-linecap="round" stroke-linejoin="round"
+                                                d="M15 11a3 3 0 11-6 0 3 3 0 016 0z">
+                                            </path>
+                                        </svg> <span>Master Location</span></a>
+                                    <a href="{{ route('admin.rack-confirmation') }}"
+                                        class="nav-item {{ request()->routeIs('admin.rack-confirmation') ? 'active' : '' }}"
+                                        title="Konfirmasi Rak"><svg fill="none" stroke="currentColor" stroke-width="2"
+                                            viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round"
+                                                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z">
+                                            </path>
+                                        </svg> <span>Konfirmasi Rak</span>
+                                        @if(($sidebarBadges['unconfirmed_rak'] ?? 0) > 0)
+                                            <span class="sidebar-counter counter-danger">{{ $sidebarBadges['unconfirmed_rak'] }}</span>
+                                        @endif
+                                    </a>
+                                    <a href="{{ route('admin.users') }}"
+                                        class="nav-item {{ request()->routeIs('admin.users') ? 'active' : '' }}"
+                                        title="User Management"><svg fill="none" stroke="currentColor" stroke-width="2"
+                                            viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round"
+                                                d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z">
+                                            </path>
+                                        </svg> <span>User Management</span></a>
+                                </div>
+                            </div>
                         </div>
-                    </div>
-                </div>
             @else
                 <div
                     class="sidebar-section {{ request()->routeIs('scan.overview') || request()->routeIs('scan.setup') || request()->routeIs('scan.scanner') || request()->routeIs('scan.history') || request()->routeIs('scan.barcode-request') || request()->routeIs('scan.material-summary') || request()->routeIs('admin.material-double*') ? 'is-open has-active' : '' }}">
@@ -1730,65 +1740,67 @@
                     </button>
                     <div class="sidebar-section-items">
                         <div class="sidebar-section-items-inner">
-                        <a href="{{ route('scan.overview') }}"
-                            class="nav-item {{ request()->routeIs('scan.overview') ? 'active' : '' }}" title="Overview">
-                            <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round"
-                                    d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"></path>
-                            </svg>
-                            <span>Overview</span>
-                        </a>
-                        <a href="{{ route('scan.setup') }}"
-                            class="nav-item {{ request()->routeIs('scan.setup') ? 'active' : '' }}" title="Setup STO"><svg
-                                fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round"
-                                    d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z">
-                                </path>
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z">
-                                </path>
-                            </svg> <span>Setup STO</span></a>
-                        <a href="{{ route('scan.scanner') }}"
-                            class="nav-item {{ request()->routeIs('scan.scanner') ? 'active' : '' }}" title="Scanner"><svg
-                                fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round"
-                                    d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm14 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z">
-                                </path>
-                            </svg> <span>Scanner</span></a>
-                        <a href="{{ route('scan.barcode-request') }}"
-                            class="nav-item {{ request()->routeIs('scan.barcode-request') ? 'active' : '' }}"
-                            title="Request QR/Barcode">
-                            <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round"
-                                    d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
-                                </path>
-                            </svg> <span>Request QR/Barcode</span></a>
-                        <a href="{{ route('scan.history') }}"
-                            class="nav-item {{ request()->routeIs('scan.history') ? 'active' : '' }}"
-                            title="Scan History"><svg fill="none" stroke="currentColor" stroke-width="2"
-                                viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round"
-                                    d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                            </svg> <span>Scan History</span></a>
-                        <a href="{{ route('scan.material-summary') }}"
-                            class="nav-item {{ request()->routeIs('scan.material-summary') ? 'active' : '' }}"
-                            title="Material Summary"><svg fill="none" stroke="currentColor" stroke-width="2"
-                                viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round"
-                                    d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707L13.293 3.293A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z">
-                                </path>
-                            </svg> <span>Material Summary</span></a>
-                        @if(auth()->user()->canAccessMaterialDouble())
-                            <a href="{{ route('admin.material-double') }}"
-                                class="nav-item {{ request()->routeIs('admin.material-double*') ? 'active' : '' }}"
-                                title="Material Double">
+                            <a href="{{ route('scan.overview') }}"
+                                class="nav-item {{ request()->routeIs('scan.overview') ? 'active' : '' }}" title="Overview">
                                 <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round"
-                                        d="M8 7h8M8 12h8M8 17h5M4 5a2 2 0 012-2h10l4 4v12a2 2 0 01-2 2H6a2 2 0 01-2-2V5z">
-                                    </path>
+                                        d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"></path>
                                 </svg>
-                                <span>Material Double</span>
+                                <span>Overview</span>
                             </a>
-                        @endif
+                            <a href="{{ route('scan.setup') }}"
+                                class="nav-item {{ request()->routeIs('scan.setup') ? 'active' : '' }}"
+                                title="Setup STO"><svg fill="none" stroke="currentColor" stroke-width="2"
+                                    viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round"
+                                        d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z">
+                                    </path>
+                                    <path stroke-linecap="round" stroke-linejoin="round"
+                                        d="M15 12a3 3 0 11-6 0 3 3 0 016 0z">
+                                    </path>
+                                </svg> <span>Setup STO</span></a>
+                            <a href="{{ route('scan.scanner') }}"
+                                class="nav-item {{ request()->routeIs('scan.scanner') ? 'active' : '' }}"
+                                title="Scanner"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round"
+                                        d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm14 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z">
+                                    </path>
+                                </svg> <span>Scanner</span></a>
+                            <a href="{{ route('scan.barcode-request') }}"
+                                class="nav-item {{ request()->routeIs('scan.barcode-request') ? 'active' : '' }}"
+                                title="Request QR/Barcode">
+                                <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round"
+                                        d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
+                                    </path>
+                                </svg> <span>Request QR/Barcode</span></a>
+                            <a href="{{ route('scan.history') }}"
+                                class="nav-item {{ request()->routeIs('scan.history') ? 'active' : '' }}"
+                                title="Scan History"><svg fill="none" stroke="currentColor" stroke-width="2"
+                                    viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round"
+                                        d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                </svg> <span>Scan History</span></a>
+                            <a href="{{ route('scan.material-summary') }}"
+                                class="nav-item {{ request()->routeIs('scan.material-summary') ? 'active' : '' }}"
+                                title="Material Summary"><svg fill="none" stroke="currentColor" stroke-width="2"
+                                    viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round"
+                                        d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707L13.293 3.293A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z">
+                                    </path>
+                                </svg> <span>Material Summary</span></a>
+                            @if(auth()->user()->canAccessMaterialDouble())
+                                <a href="{{ route('admin.material-double') }}"
+                                    class="nav-item {{ request()->routeIs('admin.material-double*') ? 'active' : '' }}"
+                                    title="Material Double">
+                                    <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round"
+                                            d="M8 7h8M8 12h8M8 17h5M4 5a2 2 0 012-2h10l4 4v12a2 2 0 01-2 2H6a2 2 0 01-2-2V5z">
+                                        </path>
+                                    </svg>
+                                    <span>Material Double</span>
+                                </a>
+                            @endif
                         </div>
                     </div>
                 </div>
@@ -2046,7 +2058,7 @@
                                 $body.append(newLink);
                             });
 
-                             const left = rect.right; // Align directly next to the sidebar
+                            const left = rect.right; // Align directly next to the sidebar
                             const top = rect.top;
 
                             $menu.css({
@@ -2112,7 +2124,7 @@
                     $(document).on('click', '.page-tab', function () {
                         const id = $(this).data('id');
                         tabManager.switchTo(id);
-                        
+
                         if (window.innerWidth <= 768) {
                             const sidebar = document.getElementById('sidebar');
                             const overlay = document.getElementById('sidebarOverlay');

@@ -121,6 +121,8 @@
             </div>
         </div>
         
+        <div id="dimensionSuggestionBox" style="display:none; margin-top: 12px; margin-bottom: 16px; background: #f0f7ff; border: 1px solid #cce3ff; border-radius: 8px; padding: 12px 14px;"></div>
+        
         <div class="form-group">
             <label class="form-label" for="lot_number">Lot Number</label>
             <input type="text" id="lot_number" name="lot_number" class="form-control" required maxlength="255">
@@ -459,11 +461,13 @@
     // Trigger initial state
     document.querySelector('.js-shape-radio:checked').dispatchEvent(new Event('change'));
 
-    // --- Auto-Suggestion Lot Number ---
+    // --- Auto-Suggestion Dimensi & Lot Number (Pilar 3) ---
     function fetchDimensionSuggestions() {
         const materialCode = materialSelect.value;
+        const suggestionBox = document.getElementById('dimensionSuggestionBox');
         const lotBox = document.getElementById('lotNumberSuggestionBox');
         if (!materialCode) {
+            if (suggestionBox) suggestionBox.style.display = 'none';
             if (lotBox) lotBox.style.display = 'none';
             return;
         }
@@ -474,6 +478,32 @@
         .then(res => res.json())
         .then(payload => {
             if (!payload.success) return;
+
+            // Jika ada suggestion terbaru, otomatis pilih shape_code dan isi form (termasuk lot_number jika kosong)
+            if (payload.suggestion) {
+                applyDimensionSuggestion(payload.suggestion);
+            }
+
+            // Tampilkan riwayat dimensi di suggestionBox
+            if (payload.history && payload.history.length > 0) {
+                let html = '<div style="font-weight: 600; font-size: 13px; color: var(--primary); margin-bottom: 8px; display: flex; align-items: center; gap: 6px;"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width:16px;height:16px;"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> Riwayat dimensi material ini (klik untuk otomatis mengisi):</div>';
+                html += '<div style="display: flex; gap: 8px; flex-wrap: wrap;">';
+                payload.history.forEach(item => {
+                    const shapeName = item.shape_code === 'RF' ? 'Flat' : (item.shape_code === 'RH' ? 'Hollow' : 'Round');
+                    const dimDesc = (item.shape_code === 'RF' || item.shape_code === 'RH')
+                        ? `T: ${item.thickness || '-'}, W: ${item.width || '-'}, L: ${item.length || '-'}`
+                        : `D: ${item.diameter || '-'}, L: ${item.length || '-'}`;
+                    const jsonStr = encodeURIComponent(JSON.stringify(item));
+                    html += `<button type="button" class="btn btn-sm" style="background: #fff; border: 1px solid #b6effb; color: #0d6efd; font-size: 12px; padding: 4px 10px; border-radius: 20px; transition: all 0.2s; cursor: pointer;" onclick="applyDimensionSuggestion(JSON.parse(decodeURIComponent('${jsonStr}')))" onmouseover="this.style.background='#d0ebff'" onmouseout="this.style.background='#fff'">
+                        <strong>${shapeName}</strong> (${dimDesc})
+                    </button>`;
+                });
+                html += '</div>';
+                suggestionBox.innerHTML = html;
+                suggestionBox.style.display = 'block';
+            } else {
+                suggestionBox.style.display = 'none';
+            }
 
             // Tampilkan riwayat lot number di lotNumberSuggestionBox
             if (lotBox) {
@@ -494,7 +524,26 @@
                 }
             }
         })
-        .catch(err => console.error('Gagal memuat saran lot:', err));
+        .catch(err => console.error('Gagal memuat saran dimensi dan lot:', err));
+    }
+
+    function applyDimensionSuggestion(item) {
+        if (!item || !item.shape_code) return;
+        
+        const shapeRadio = document.querySelector(`.js-shape-radio[value="${item.shape_code}"]`);
+        if (shapeRadio) {
+            shapeRadio.checked = true;
+            shapeRadio.dispatchEvent(new Event('change'));
+        }
+
+        if (item.shape_code === 'RF' || item.shape_code === 'RH') {
+            if (item.thickness) document.getElementById('thickness').value = item.thickness;
+            if (item.width) document.getElementById('width').value = item.width;
+        } else if (item.shape_code === 'RR') {
+            if (item.diameter) document.getElementById('diameter').value = item.diameter;
+        }
+        if (item.length) document.getElementById('length').value = item.length;
+        if (item.lot_number) document.getElementById('lot_number').value = item.lot_number;
     }
 
     materialSelect.addEventListener('change', fetchDimensionSuggestions);

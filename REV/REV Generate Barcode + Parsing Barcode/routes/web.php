@@ -37,7 +37,7 @@ Route::get('/', function () {
 
 Route::middleware('guest')->group(function () {
     // Halaman antarmuka/form untuk login
-    Route::get('/login', fn () => view('auth.login'))->name('login');
+    Route::get('/login', fn() => view('auth.login'))->name('login');
 
     // Memproses data form login (validasi kredensial username & password)
     Route::post('/login', function (Request $request) {
@@ -68,6 +68,12 @@ Route::middleware('guest')->group(function () {
     })->middleware('throttle:login')->name('login.store');
 });
 
+// URL logout yang dibuka langsung dari browser selalu menggunakan GET.
+// Jangan logout melalui GET agar tidak rentan CSRF; arahkan ke login saja.
+Route::get('/logout', function () {
+    return redirect()->route('login');
+})->name('logout.redirect');
+
 // Memproses permintaan logout, menghapus session user, dan mereset token keamanan
 Route::post('/logout', function (Request $request) {
     Auth::logout();
@@ -90,12 +96,12 @@ Route::middleware(['auth', 'role:scanner'])->group(function () {
     Route::get('/scan/overview', [ScanController::class, 'overview'])->name('scan.overview');
     // API pengambilan data ringkasan scanner (dipakai untuk chart/tabel)
     Route::get('/api/scan/overview', [ScanController::class, 'overviewData'])->middleware('throttle:datatable')->name('api.scan.overview');
-    
+
     // Halaman penentuan sesi operasional (memilih STO aktif, Plant, dan Lokasi Rak)
     Route::get('/scan/setup', [ScanController::class, 'setup'])->name('scan.setup');
     // Memproses pemilihan sesi operasional dan menyimpannya di session
     Route::post('/scan/setup', [ScanController::class, 'storeSetup'])->name('scan.setup.store');
-    
+
     // Halaman operasional utama tempat menggunakan alat scanner tembak (gun scanner)
     Route::get('/scan/scanner', [ScanController::class, 'scanner'])->name('scan.scanner');
     // Halaman riwayat (history) daftar seluruh hasil scan dari user tersebut
@@ -111,26 +117,26 @@ Route::middleware(['auth', 'role:scanner'])->group(function () {
     Route::delete('/api/barcode-request/{id}', [BarcodeRequestController::class, 'destroy'])->middleware('throttle:scan-write')->name('api.barcode-request.destroy');
 
     // --- API ENDPOINTS UNTUK APLIKASI SCANNER ---
-    
+
     // Mengambil daftar Lokasi Rak dinamis berdasarkan ID Plant yang dipilih
     Route::get('/api/locations', [ScanController::class, 'locations'])->middleware('throttle:datatable')->name('api.locations');
     // Membuat Lokasi Rak baru secara dinamis (on-the-fly) dari form setup
     Route::post('/api/locations', [ScanController::class, 'storeLocation'])->middleware('throttle:scan-write')->name('api.locations.store');
     // Menghapus Lokasi Rak yang belum pernah dipakai untuk scan
     Route::delete('/api/locations/{id}', [ScanController::class, 'destroyLocation'])->middleware('throttle:scan-write')->name('api.locations.destroy');
-    
+
     // Membaca/Parsing teks raw dari QR code dan menerjemahkannya ke material attributes
     Route::post('/api/scan/preview', [ScanController::class, 'preview'])->middleware('throttle:scan-write')->name('api.scan.preview');
     // Memeriksa apakah suatu barcode pernah di-scan sebelumnya (Duplicate Warning)
     Route::post('/api/scan/check-duplicate', [ScanController::class, 'checkDuplicate'])->middleware('throttle:scan-write')->name('api.scan.check-duplicate');
     // Menyimpan final dari hasil scan ke dalam tabel scan_results di database
     Route::post('/api/scan/store', [ScanController::class, 'store'])->middleware('throttle:scan-write')->name('api.scan.store');
-    
+
     // Endpoint API untuk memuat data tabel secara dinamis (DataTables)
     Route::get('/api/scan/recent', [ScanController::class, 'recent'])->middleware('throttle:datatable')->name('api.scan.recent');
     Route::get('/api/scan/history', [ScanController::class, 'history'])->middleware('throttle:datatable')->name('api.scan.history');
     Route::get('/api/scan/material-summary', [ScanController::class, 'materialSummaryData'])->middleware('throttle:datatable')->name('api.scan.material-summary');
-    
+
     // Membatalkan atau menghapus baris hasil scan jika terjadi kesalahan (oleh scanner itu sendiri)
     Route::delete('/api/scan/{id}', [ScanController::class, 'destroy'])->middleware('throttle:scan-write')->name('api.scan.destroy');
 });
@@ -148,12 +154,12 @@ Route::middleware(['auth', 'material-double-access'])
     ->group(function () {
         // Halaman antarmuka manajemen material ganda/duplikat
         Route::get('/material-double', [MaterialDoubleController::class, 'index'])->name('material-double');
-        
+
         // Memuat rekapitulasi data barcode mana saja yang discan > 1 kali
         Route::get('/api/material-double', [MaterialDoubleController::class, 'datatable'])->middleware('throttle:datatable')->name('api.material-double');
         // Melihat deretan data mentah dari satu barcode yang sama (di-scan siapa saja, kapan, dsb)
         Route::get('/api/material-double/detail', [MaterialDoubleController::class, 'showDuplicateDetail'])->middleware('throttle:datatable')->name('api.material-double.detail');
-        
+
         // Aksi menyetujui salah satu (atau beberapa) baris duplikat sebagai data valid
         Route::post('/api/material-double/validate', [MaterialDoubleController::class, 'validateDuplicate'])->name('api.material-double.validate');
         // Melakukan scan "tembak tiban" khusus jika baris duplikat yg ada salah semua
@@ -162,7 +168,12 @@ Route::middleware(['auth', 'material-double-access'])
             ->name('api.material-double.scan');
         // Menghapus baris-baris data duplikat yang disalahkan
         Route::delete('/api/material-double/delete-selected', [MaterialDoubleController::class, 'deleteSelected'])->name('api.material-double.delete-selected');
-        
+
+        // Download XLSX langsung agar tidak bergantung pada queue worker.
+        Route::get('/api/material-double/export/excel', [MaterialDoubleController::class, 'exportExcel'])
+            ->middleware('throttle:export')
+            ->name('api.material-double.export.excel');
+
         // Export file excel laporan daftar material ganda melalui metode background jobs (antrean)
         Route::post('/api/material-double/export', [MaterialDoubleController::class, 'queueExport'])
             ->middleware('throttle:export')
@@ -204,7 +215,7 @@ Route::middleware(['auth', 'role:admin'])
         // Halaman tabel yang mengakumulasi Qty berdasarkan tipe material
         Route::get('/material-summary', [DashboardController::class, 'materialSummary'])->name('material-summary');
         Route::get('/api/material-summary', [DashboardController::class, 'materialSummaryData'])->middleware('throttle:datatable')->name('api.material-summary');
-        
+
         // --- EXPORT SCAN RESULTS ---
         // Mengantre export Excel/PDF secara Asynchronous (cocok untuk jumlah data besar >50.000 row)
         Route::post('/export/scan-results/{format}', [DashboardController::class, 'queueExport'])
@@ -213,7 +224,7 @@ Route::middleware(['auth', 'role:admin'])
             ->name('export.scan-results.queue');
         Route::get('/export/scan-results/status', [DashboardController::class, 'exportStatus'])->name('export.scan-results.status');
         Route::get('/export/scan-results/{exportRequest}/download', [DashboardController::class, 'downloadExport'])->name('export.scan-results.download');
-        
+
         // Export laporan langsung mem-blocking response PHP (synchronous stream)
         Route::get('/export/scan-results/excel', [DashboardController::class, 'exportExcel'])
             ->middleware('throttle:export')
@@ -289,11 +300,6 @@ Route::middleware(['auth', 'role:admin'])
             ->name('generate-barcode.label');
         Route::post('/generate-barcode/label-bulk', [GenerateBarcodeController::class, 'labelBulk'])
             ->name('generate-barcode.label-bulk');
-        Route::get('/generate-barcode/{barcodeRequest}/label-xlsx', [GenerateBarcodeController::class, 'labelXlsx'])
-            ->name('generate-barcode.label-xlsx');
-        Route::match(['get', 'post'], '/generate-barcode/label-bulk-xlsx', [GenerateBarcodeController::class, 'labelBulkXlsx'])
-            ->name('generate-barcode.label-bulk-xlsx');
-
 
         // --- RACK CONFIRMATION (Admin konfirmasi rak secara fisik) ---
         Route::get('/rack-confirmation', [RackConfirmationController::class, 'index'])

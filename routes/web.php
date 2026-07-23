@@ -173,15 +173,6 @@ Route::middleware(['auth', 'material-double-access'])
         Route::get('/api/material-double/export/excel', [MaterialDoubleController::class, 'exportExcel'])
             ->middleware('throttle:export')
             ->name('api.material-double.export.excel');
-
-        // Export file excel laporan daftar material ganda melalui metode background jobs (antrean)
-        Route::post('/api/material-double/export', [MaterialDoubleController::class, 'queueExport'])
-            ->middleware('throttle:export')
-            ->name('api.material-double.export.queue');
-        // Polling melihat progres persen export background job
-        Route::get('/api/material-double/export/status', [MaterialDoubleController::class, 'exportStatus'])->name('api.material-double.export.status');
-        // Mengunduh file hasil export jika antrean job telah selesai
-        Route::get('/api/material-double/export/{exportRequest}/download', [MaterialDoubleController::class, 'downloadExport'])->name('api.material-double.export.download');
     });
 
 /*
@@ -217,14 +208,6 @@ Route::middleware(['auth', 'role:admin'])
         Route::get('/api/material-summary', [DashboardController::class, 'materialSummaryData'])->middleware('throttle:datatable')->name('api.material-summary');
 
         // --- EXPORT SCAN RESULTS ---
-        // Mengantre export Excel/PDF secara Asynchronous (cocok untuk jumlah data besar >50.000 row)
-        Route::post('/export/scan-results/{format}', [DashboardController::class, 'queueExport'])
-            ->whereIn('format', ['excel', 'pdf'])
-            ->middleware('throttle:export')
-            ->name('export.scan-results.queue');
-        Route::get('/export/scan-results/status', [DashboardController::class, 'exportStatus'])->name('export.scan-results.status');
-        Route::get('/export/scan-results/{exportRequest}/download', [DashboardController::class, 'downloadExport'])->name('export.scan-results.download');
-
         // Export laporan langsung mem-blocking response PHP (synchronous stream)
         Route::get('/export/scan-results/excel', [DashboardController::class, 'exportExcel'])
             ->middleware('throttle:export')

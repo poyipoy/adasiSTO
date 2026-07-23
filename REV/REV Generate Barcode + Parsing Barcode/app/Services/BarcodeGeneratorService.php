@@ -44,8 +44,8 @@ class BarcodeGeneratorService
         $materialCode = strtoupper(trim($data['material_code'] ?? ''));
 
         // --- 1. Validate shape ---
-        if (!in_array($shapeCode, ['RF', 'RR'], true)) {
-            $errors[] = "Shape code tidak valid. Harus RF atau RR.";
+        if (!in_array($shapeCode, ['RF', 'RR', 'RH'], true)) {
+            $errors[] = "Shape code tidak valid. Harus RF, RR, atau RH.";
         }
 
         // --- 2. Validate material exists and is active ---
@@ -64,16 +64,16 @@ class BarcodeGeneratorService
         }
 
         // --- 3. Validate dimensions by shape ---
-        if ($shapeCode === 'RF') {
+        if (in_array($shapeCode, ['RF', 'RH'])) {
             $thickness = (int) ($data['thickness'] ?? 0);
             $width     = (int) ($data['width'] ?? 0);
             $length    = (int) ($data['length'] ?? 0);
 
             if ($thickness <= 0) {
-                $errors[] = "Thickness harus lebih dari 0 untuk shape RF.";
+                $errors[] = "Thickness harus lebih dari 0 untuk shape {$shapeCode}.";
             }
             if ($width <= 0) {
-                $errors[] = "Width harus lebih dari 0 untuk shape RF.";
+                $errors[] = "Width harus lebih dari 0 untuk shape {$shapeCode}.";
             }
             if ($length <= 0) {
                 $errors[] = "Length harus lebih dari 0.";
