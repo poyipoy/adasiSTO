@@ -460,6 +460,14 @@ class ScanService
         $this->deleteWithAudit($scanResult, $admin->id);
     }
 
+    public function deleteFromMaterialDouble(User $validator, int $id): void
+    {
+        $scanResult = ScanResult::findOrFail($id);
+        Gate::forUser($validator)->authorize('deleteFromMaterialDouble', $scanResult);
+
+        $this->deleteWithAudit($scanResult, $validator->id);
+    }
+
     public function serializeScan(ScanResult $scanResult): array
     {
         return [

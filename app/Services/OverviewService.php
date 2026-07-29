@@ -133,8 +133,10 @@ class OverviewService
     public function materialSummaryQuery(?User $scopeUser = null, array $filters = []): Builder
     {
         $query = $this->scanQuery($scopeUser, $filters)
-            ->selectRaw('barcode_material, material_code, material_name, shape_code, shape_name, thickness, width, diameter, length, SUM(qty) as qty_total, COUNT(*) as scan_count, MAX(scan_results.created_at) as max_created_at')
-            ->groupBy('barcode_material', 'material_code', 'material_name', 'shape_code', 'shape_name', 'thickness', 'width', 'diameter', 'length');
+            ->leftJoin('plants', 'scan_results.plant_id', '=', 'plants.id')
+            ->leftJoin('locations', 'scan_results.location_id', '=', 'locations.id')
+            ->selectRaw('barcode_material, material_code, material_name, shape_code, shape_name, thickness, width, diameter, length, scan_results.plant_id, scan_results.location_id, plants.name as plant_name, locations.name as location_name, SUM(qty) as qty_total, COUNT(*) as scan_count, MAX(scan_results.created_at) as max_created_at')
+            ->groupBy('barcode_material', 'material_code', 'material_name', 'shape_code', 'shape_name', 'thickness', 'width', 'diameter', 'length', 'scan_results.plant_id', 'scan_results.location_id', 'plants.name', 'locations.name');
 
         if (!empty($filters['material_code'])) {
             $searchMatCode = str_replace(['%', '_'], ['\\%', '\\_'], $filters['material_code']);
@@ -165,7 +167,9 @@ class OverviewService
             $query->where('scan_results.plant_id', $filters['plant_id']);
         }
 
-
+        if (!empty($filters['location_id'])) {
+            $query->where('scan_results.location_id', $filters['location_id']);
+        }
 
         if (!empty($filters['date_from'])) {
             $query->where('scan_results.created_at', '>=', Carbon::parse($filters['date_from'])->startOfDay());

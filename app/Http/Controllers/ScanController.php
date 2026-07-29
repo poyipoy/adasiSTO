@@ -149,6 +149,7 @@ class ScanController extends Controller
     {
         return view('scan.material-summary', [
             'plants' => Plant::active()->orderBy('name')->get(),
+            'locations' => Location::active()->orderBy('name')->get(),
         ]);
     }
 
@@ -162,12 +163,15 @@ class ScanController extends Controller
             $searchData = \App\Services\BarcodeParserService::normalizeSearch($search);
             $normalizedSearch = str_replace(['%', '_'], ['\\%', '\\_'], $searchData['normalized']);
             $firstPartSearch = str_replace(['%', '_'], ['\\%', '\\_'], $searchData['first_part']);
+            $rawSearch = str_replace(['%', '_'], ['\\%', '\\_'], $search);
 
-            $query->where(function ($q) use ($normalizedSearch, $firstPartSearch) {
+            $query->where(function ($q) use ($normalizedSearch, $firstPartSearch, $rawSearch) {
                 $q->where('barcode_material', 'like', "%{$firstPartSearch}%")
                     ->orWhere('barcode_raw', 'like', "%{$normalizedSearch}%")
                     ->orWhere('material_name', 'like', "%{$normalizedSearch}%")
-                    ->orWhere('material_code', 'like', "%{$normalizedSearch}%");
+                    ->orWhere('material_code', 'like', "%{$normalizedSearch}%")
+                    ->orWhere('plants.name', 'like', "%{$rawSearch}%")
+                    ->orWhere('locations.name', 'like', "%{$rawSearch}%");
             });
         }
 
@@ -189,6 +193,8 @@ class ScanController extends Controller
                 'barcode_material' => 'barcode_material',
                 'material_code' => 'material_code',
                 'material_name' => 'material_name',
+                'plant' => 'plant_name',
+                'location' => 'location_name',
                 'shape_name' => 'shape_name',
                 'qty_total' => 'qty_total',
                 'scan_count' => 'scan_count',
@@ -220,6 +226,8 @@ class ScanController extends Controller
                     'barcode_material' => $item->barcode_material,
                     'material_code' => $item->material_code,
                     'material_name' => $item->material_name,
+                    'plant' => $item->plant_name ?? '-',
+                    'location' => $item->location_name ?? '-',
                     'shape_name' => $item->shape_name,
                     'size' => $size,
                     'qty_total' => (int) $item->qty_total,

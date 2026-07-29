@@ -68,7 +68,7 @@
         <select id="filterLocation" style="display:none;">
             <option value="">All</option>
             @foreach($locations as $location)
-                <option value="{{ $location->name }}">{{ $location->name }}</option>
+                <option value="{{ $location->name }}" data-plant-id="{{ $location->plant_id }}">{{ $location->name }}</option>
             @endforeach
         </select>
         <button type="button" id="filterLocationTrigger" class="form-control srch-filter-trigger" onclick="openMdSrchFilter('location')">All</button>
@@ -99,7 +99,7 @@
         <label class="form-label">Date To</label>
         <input type="date" id="filterDateTo" class="form-control">
     </div>
-    <button class="btn btn-primary" type="button" onclick="reloadMaterialDouble()">Filter</button>
+    <button class="btn btn-primary" type="button" onclick="applyMaterialDoubleFilter()">Filter</button>
 </div>
 
 {{-- ─── Modal: Searchable Filter Location (MD) ─── --}}
@@ -498,9 +498,18 @@
         return escapeHtml(value);
     }
 
+    function applyMaterialDoubleFilter() {
+        updateExportLinks();
+        if (typeof materialDoubleTable !== 'undefined') {
+            materialDoubleTable.ajax.reload(null, true);
+        }
+    }
+
     function reloadMaterialDouble() {
         updateExportLinks();
-        materialDoubleTable.ajax.reload(null, false);
+        if (typeof materialDoubleTable !== 'undefined') {
+            materialDoubleTable.ajax.reload(null, false);
+        }
     }
 
         // ─── Searchable Filter Modal (Material Double) ───
@@ -523,6 +532,7 @@
         const list = document.getElementById(cfg.listId);
         list.innerHTML = '';
         Array.from(select.options).forEach(opt => {
+            if (opt.disabled) return;
             const div = document.createElement('div');
             div.className = 'srch-filter-item' + (opt.selected ? ' active' : '');
             div.dataset.value = opt.value;
@@ -584,7 +594,19 @@
 
     function resetMaterialDoubleFilters() {
         $('#filterPlant,#filterLocation,#filterMaterial,#filterDateFrom,#filterDateTo,#filterStatus').val('');
-        reloadMaterialDouble();
+        
+        _mdSrchFilterReset('location');
+        _mdSrchFilterReset('material');
+
+        const locationSelect = document.getElementById('filterLocation');
+        if (locationSelect) {
+            Array.from(locationSelect.options).forEach(opt => opt.disabled = false);
+        }
+
+        if (typeof materialDoubleTable !== 'undefined') {
+            materialDoubleTable.search('').order([]);
+            materialDoubleTable.ajax.reload(null, true);
+        }
     }
 
     function renderAction(row) {
@@ -1234,7 +1256,7 @@
     }
 
     function updateExportLinks() {
-        refreshExportStatus();
+        // Export is synchronous via direct link, no polling needed
     }
 
     function queueExport() {
@@ -1365,6 +1387,19 @@
     }
 
     $(document).ready(function() {
+        $('#filterPlant').on('change', function() {
+            const plantId = $(this).val();
+            const locationSelect = document.getElementById('filterLocation');
+            if (locationSelect) {
+                _mdSrchFilterReset('location');
+                Array.from(locationSelect.options).forEach(opt => {
+                    if (opt.value === '') return;
+                    const optPlantId = opt.getAttribute('data-plant-id');
+                    opt.disabled = !!(plantId && optPlantId && optPlantId !== plantId);
+                });
+            }
+        });
+
         materialDoubleTable = $('#materialDoubleTable').DataTable({
             processing: true,
             serverSide: true,

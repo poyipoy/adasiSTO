@@ -1,6 +1,6 @@
 # STO Scan To Office
 
-STO adalah aplikasi Laravel 12 untuk proses Scan To Office material, dengan role `admin` dan `scanner`, active STO, parser QR final, audit log, export queued, dan dashboard admin server-side.
+STO adalah aplikasi Laravel 12 untuk proses Scan To Office material, dengan role `admin` dan `scanner`, active STO, parser QR final, audit log, export synchronous, dan dashboard admin server-side.
 
 ## Requirement
 
@@ -8,7 +8,6 @@ STO adalah aplikasi Laravel 12 untuk proses Scan To Office material, dengan role
 - Composer
 - Node.js dan npm
 - MySQL
-- Queue worker untuk export
 
 ## Setup Lokal
 
@@ -35,19 +34,11 @@ npm run vendor:publish
 
 `npm run build` otomatis menjalankan `vendor:publish` sebelum Vite build.
 
-## Queue Export
+## Export
 
-Export scan result berjalan queued. Jalankan worker:
+Export scan result saat ini berjalan secara synchronous di dalam request HTTP. Project belum mengoperasikan queue worker. Saat export berjalan, browser harus menunggu response selesai; hindari mengirim request export yang sama berulang kali.
 
-```bash
-php artisan queue:work database --queue=default --sleep=3 --tries=3 --timeout=300
-```
-
-Setelah deploy:
-
-```bash
-php artisan queue:restart
-```
+Class job dan `ExportRequest` yang tersedia adalah infrastructure awal dan bukan bukti bahwa queued export sudah aktif. Penerapan worker, retry, monitoring, serta perubahan UI status export harus dilakukan sebagai pekerjaan deployment terpisah.
 
 ## Deploy Production
 
@@ -58,7 +49,7 @@ Gunakan `.env.example` sebagai baseline production:
 - `SESSION_DRIVER=database`
 - `SESSION_ENCRYPT=true`
 - `SESSION_SECURE_COOKIE=true`
-- `QUEUE_CONNECTION=database`
+- `QUEUE_CONNECTION=sync` selama queue worker belum diterapkan
 - `CACHE_STORE=database`
 - `TRUSTED_PROXIES` sesuai reverse proxy/load balancer
 
@@ -89,12 +80,7 @@ composer validate --strict
 
 ## Dokumentasi
 
-Dokumentasi requirement dan operasional ada di:
+Dokumen canonical yang tersedia di repository:
 
-- `docs/AGENTS.md`
-- `docs/DESIGN.md`
-- `docs/DATABASE.md`
-- `docs/BARCODE_PARSING.md`
-- `docs/API_SPECIFICATION.md`
-- `docs/OPERATIONS_RUNBOOK.md`
-
+- `AGENTS.md` - engineering conventions, business constraints, dan source of truth kode.
+- `DESIGN.md` - pedoman canonical UI/UX, responsive behavior, accessibility, dan page patterns.

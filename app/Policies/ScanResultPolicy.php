@@ -28,4 +28,11 @@ class ScanResultPolicy
             ? Response::allow()
             : Response::deny('Anda tidak memiliki akses untuk menghapus data ini.');
     }
+
+    public function deleteFromMaterialDouble(User $user, ScanResult $scanResult): Response
+    {
+        return $user->canAccessMaterialDouble()
+            ? Response::allow()
+            : Response::deny('Anda tidak memiliki akses untuk menghapus data Material Double.');
+    }
 }

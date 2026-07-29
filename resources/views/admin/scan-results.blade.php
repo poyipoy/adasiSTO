@@ -62,7 +62,7 @@
         <select id="filterLocation" style="display:none;">
             <option value="">All</option>
             @foreach($locations as $location)
-                <option value="{{ $location->name }}">{{ $location->name }}</option>
+                <option value="{{ $location->name }}" data-plant-id="{{ $location->plant_id }}">{{ $location->name }}</option>
             @endforeach
         </select>
         <button type="button" id="filterLocationTrigger" class="form-control srch-filter-trigger" onclick="openSrchFilterModal('location')">All</button>
@@ -78,10 +78,9 @@
         </select>
         <button type="button" id="filterMaterialTrigger" class="form-control srch-filter-trigger" onclick="openSrchFilterModal('material')">All</button>
     </div>
-    <div style="width:130px;"><label class="form-label">User</label><select id="filterUser" class="form-control"><option value="">All</option>@foreach($users as $user)<option value="{{ $user->id }}">{{ $user->name }}</option>@endforeach</select></div>
     <div style="width:130px;"><label class="form-label">Date From</label><input type="date" id="filterDateFrom" class="form-control"></div>
     <div style="width:130px;"><label class="form-label">Date To</label><input type="date" id="filterDateTo" class="form-control"></div>
-    <button class="btn btn-primary" type="button" onclick="reloadTable()">Filter</button>
+    <button class="btn btn-primary" type="button" onclick="applyFilter()">Filter</button>
 </div>
 
 <div id="inlineEditorError" class="inline-editor-error"></div>
@@ -408,6 +407,7 @@
             const list = document.getElementById(cfg.listId);
             list.innerHTML = '';
             Array.from(select.options).forEach(opt => {
+                if (opt.disabled) return;
                 const div = document.createElement('div');
                 div.className = 'srch-filter-item' + (opt.selected ? ' active' : '');
                 div.dataset.value = opt.value;
@@ -456,10 +456,14 @@
 
         function _srchFilterReset(type) {
             const cfg = _srchFilterCfg[type];
-            document.getElementById(cfg.selectId).value = '';
+            if (!cfg) return;
+            const select = document.getElementById(cfg.selectId);
+            if (select) select.value = '';
             const trigger = document.getElementById(cfg.triggerId);
-            trigger.textContent = cfg.placeholder;
-            trigger.classList.remove('has-value');
+            if (trigger) {
+                trigger.textContent = cfg.placeholder;
+                trigger.classList.remove('has-value');
+            }
         }
 
         // Close on overlay click
@@ -480,10 +484,23 @@
         }
 
         function updateExportLinks() {
-            refreshExportStatus();
+            // Export is synchronous via direct link, no polling needed
         }
 
         $(document).ready(function() {
+            $('#filterPlant').on('change', function() {
+                const plantId = $(this).val();
+                const locationSelect = document.getElementById('filterLocation');
+                if (locationSelect) {
+                    _srchFilterReset('location');
+                    Array.from(locationSelect.options).forEach(opt => {
+                        if (opt.value === '') return;
+                        const optPlantId = opt.getAttribute('data-plant-id');
+                        opt.disabled = !!(plantId && optPlantId && optPlantId !== plantId);
+                    });
+                }
+            });
+
             adminTable = $('#adminScanTable').DataTable({
                 processing: true,
                 serverSide: true,
@@ -534,6 +551,18 @@
             });
         });
 
+        function applyFilter() {
+            if (!closeActiveEditor(true, () => applyFilter())) {
+                suppressOutsideUntil = Date.now() + 250;
+                return;
+            }
+
+            updateExportLinks();
+            if (typeof adminTable !== 'undefined') {
+                adminTable.ajax.reload(null, true);
+            }
+        }
+
         function reloadTable(confirmClose = true) {
             if (confirmClose && !closeActiveEditor(true, () => reloadTable(false))) {
                 suppressOutsideUntil = Date.now() + 250;
@@ -541,7 +570,9 @@
             }
 
             updateExportLinks();
-            adminTable.ajax.reload();
+            if (typeof adminTable !== 'undefined') {
+                adminTable.ajax.reload(null, false);
+            }
         }
 
         function resetFilters() {
@@ -551,8 +582,18 @@
             }
 
             $('#filterSto,#filterPlant,#filterLocation,#filterUser,#filterMaterial,#filterDateFrom,#filterDateTo').val('');
-            adminTable.order([]).search('').page('first');
-            reloadTable(false);
+            _srchFilterReset('location');
+            _srchFilterReset('material');
+
+            const locationSelect = document.getElementById('filterLocation');
+            if (locationSelect) {
+                Array.from(locationSelect.options).forEach(opt => opt.disabled = false);
+            }
+
+            if (typeof adminTable !== 'undefined') {
+                adminTable.search('').order([]);
+                adminTable.ajax.reload(null, true);
+            }
         }
 
         function openCreate() {

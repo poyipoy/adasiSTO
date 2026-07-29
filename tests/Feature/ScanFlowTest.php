@@ -1127,6 +1127,41 @@ class ScanFlowTest extends TestCase
         $this->assertDatabaseHas('scan_results', ['id' => $other->id]);
     }
 
+    public function test_scanner_validator_can_delete_another_scanners_material_double_row_with_audit(): void
+    {
+        $validator = User::factory()->validator()->create();
+        $targetOne = $this->createScan($this->scanner, 'RF1H059-00960099B|LOT001|1');
+        $targetTwo = $this->createScan($this->scanner, 'RF1H059-00960099B|LOT002|1');
+
+        $this->actingAs($validator)
+            ->deleteJson('/admin/api/material-double/delete-selected', [
+                'barcode_material' => 'RF1H059-00960099B',
+                'plant_id' => $this->plant->id,
+                'location_id' => $this->location->id,
+                'ids' => [$targetOne->id],
+            ])
+            ->assertOk()
+            ->assertJsonPath('deleted_count', 1);
+
+        $this->assertDatabaseMissing('scan_results', ['id' => $targetOne->id]);
+        $this->assertDatabaseHas('scan_results', ['id' => $targetTwo->id]);
+        $this->assertDatabaseHas('scan_result_logs', [
+            'scan_result_id' => $targetOne->id,
+            'user_id' => $validator->id,
+            'action' => 'deleted',
+        ]);
+        $this->assertDatabaseHas('material_double_validations', [
+            'barcode_material' => 'RF1H059-00960099B',
+            'plant_id' => $this->plant->id,
+            'location_id' => $this->location->id,
+            'validated_by' => $validator->id,
+        ]);
+
+        $this->actingAs($validator)
+            ->deleteJson('/api/scan/'.$targetTwo->id)
+            ->assertForbidden();
+    }
+
     public function test_material_double_scan_returns_duplicate_warning_then_force_save_creates_admin_scan(): void
     {
         $this->createScan($this->scanner, 'RF1H059-00960099B|LOT001|1');

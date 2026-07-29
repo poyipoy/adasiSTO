@@ -198,7 +198,7 @@ class MaterialDoubleController extends Controller
         }
 
         foreach ($requestedIds as $scanResultId) {
-            $this->scanService->deleteByAdmin($request->user(), $scanResultId);
+            $this->scanService->deleteFromMaterialDouble($request->user(), $scanResultId);
         }
 
         $this->markDuplicateValidated($request, $payload);

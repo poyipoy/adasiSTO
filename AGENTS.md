@@ -10,6 +10,7 @@ Laravel 12 app untuk proses Scan To Office (STO) — stock opname material via s
 | File | Kenapa penting |
 |---|---|
 | `routes/web.php` | Konvensi penamaan route: **tanda hubung**, bukan dot (`admin.master-plant`, `scan.setup`) | 
+| `DESIGN.md` | **Pedoman canonical UI/UX**: token, application shell, komponen, responsive, accessibility, dan page patterns. Baca sebelum mengubah Blade/CSS. |
 | `resources/views/components/layouts/app.blade.php` | **Layout utama yang benar-benar dipakai** (`<x-layouts.app>`) |
 | `resources/views/layouts/app.blade.php` | ⚠️ LEGACY, tidak dipakai, route-name di dalamnya sudah tidak sinkron. **Jangan edit atau jadikan acuan.** |
 | `app/Http/Controllers/Admin/MaterialDoubleController.php` + `resources/views/admin/material-double.blade.php` | Pola controller+view untuk halaman workflow custom (bukan CRUD generic) — ini pattern paling relevan untuk fitur-fitur baru |

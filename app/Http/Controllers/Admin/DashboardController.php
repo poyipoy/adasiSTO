@@ -370,20 +370,25 @@ class DashboardController extends Controller
     {
         return view('admin.barcode-overview', [
             'plants' => Plant::active()->orderBy('name')->get(),
+            'locations' => Location::active()->orderBy('name')->get(),
         ]);
     }
 
     public function materialSummaryData(Request $request): JsonResponse
     {
         $query = ScanResult::query()
-            ->selectRaw('barcode_material, material_code, material_name, shape_code, shape_name, thickness, width, diameter, length, SUM(qty) as qty_total, COUNT(*) as scan_count, MAX(scan_results.created_at) as max_created_at')
-            ->groupBy('barcode_material', 'material_code', 'material_name', 'shape_code', 'shape_name', 'thickness', 'width', 'diameter', 'length');
+            ->leftJoin('plants', 'scan_results.plant_id', '=', 'plants.id')
+            ->leftJoin('locations', 'scan_results.location_id', '=', 'locations.id')
+            ->selectRaw('barcode_material, material_code, material_name, shape_code, shape_name, thickness, width, diameter, length, scan_results.plant_id, scan_results.location_id, plants.name as plant_name, locations.name as location_name, SUM(qty) as qty_total, COUNT(*) as scan_count, MAX(scan_results.created_at) as max_created_at')
+            ->groupBy('barcode_material', 'material_code', 'material_name', 'shape_code', 'shape_name', 'thickness', 'width', 'diameter', 'length', 'scan_results.plant_id', 'scan_results.location_id', 'plants.name', 'locations.name');
 
         if ($request->filled('plant_id')) {
-            $query->where('plant_id', $request->plant_id);
+            $query->where('scan_results.plant_id', $request->plant_id);
         }
 
-
+        if ($request->filled('location_id')) {
+            $query->where('scan_results.location_id', $request->location_id);
+        }
 
         if ($request->filled('material_code')) {
             $searchMatCode = str_replace(['%', '_'], ['\\%', '\\_'], $request->material_code);
@@ -419,7 +424,9 @@ class DashboardController extends Controller
                     ->orWhere('barcode_raw', 'like', "%{$normalizedSearch}%")
                     ->orWhere('material_name', 'like', "%{$rawSearch}%")
                     ->orWhere('material_code', 'like', "%{$rawSearch}%")
-                    ->orWhere('shape_name', 'like', "%{$rawSearch}%");
+                    ->orWhere('shape_name', 'like', "%{$rawSearch}%")
+                    ->orWhere('plants.name', 'like', "%{$rawSearch}%")
+                    ->orWhere('locations.name', 'like', "%{$rawSearch}%");
             });
         }
 
@@ -442,6 +449,8 @@ class DashboardController extends Controller
                 'barcode_material' => 'barcode_material',
                 'material_code' => 'material_code',
                 'material_name' => 'material_name',
+                'plant' => 'plant_name',
+                'location' => 'location_name',
                 'shape_name' => 'shape_name',
                 'qty_total' => 'qty_total',
                 'scan_count' => 'scan_count',
@@ -475,6 +484,8 @@ class DashboardController extends Controller
                     'barcode_material' => $item->barcode_material,
                     'material_code' => $item->material_code,
                     'material_name' => $item->material_name,
+                    'plant' => $item->plant_name ?? '-',
+                    'location' => $item->location_name ?? '-',
                     'shape_name' => $item->shape_name,
                     'size' => $size,
                     'qty_total' => (int) $item->qty_total,
