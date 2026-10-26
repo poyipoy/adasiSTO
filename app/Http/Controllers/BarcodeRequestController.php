@@ -7,19 +7,20 @@ use App\Models\BarcodeRequest;
 use App\Models\MasterMaterial;
 use App\Models\Plant;
 use App\Models\ScanResult;
-use App\Services\ActiveStoService;
 use App\Services\ActivityLogService;
+use App\Services\BarcodeRequestService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\View\View;
 use Yajra\DataTables\Facades\DataTables;
 
 class BarcodeRequestController extends Controller
 {
     public function __construct(
-        private ActiveStoService $activeStoService,
-        private ActivityLogService $activityLog
+        private ActivityLogService $activityLog,
+        private BarcodeRequestService $barcodeRequestService,
     ) {}
 
     /**
@@ -41,40 +42,16 @@ class BarcodeRequestController extends Controller
      */
     public function store(StoreBarcodeRequestRequest $request): JsonResponse
     {
-        $validated = $request->validated();
-        
-        $material = MasterMaterial::where('material_code', $validated['material_code'])->first();
-        
-        $barcodeRequest = new BarcodeRequest();
-        $barcodeRequest->user_id = Auth::id();
-        $barcodeRequest->sto_code_id = $this->activeStoService->active()?->id;
-        $barcodeRequest->plant_id = $validated['plant_id'];
-        $barcodeRequest->location_id = $validated['location_id'];
-        $barcodeRequest->material_code = $validated['material_code'];
-        $barcodeRequest->material_name = $material->material_name;
-        $barcodeRequest->shape_code = $validated['shape_code'];
-        $barcodeRequest->shape_name = $validated['shape_code'] === 'RR' ? 'Round' : ($validated['shape_code'] === 'RH' ? 'Hollow' : 'Flat');
-        $barcodeRequest->thickness = $validated['thickness'] ?? null;
-        $barcodeRequest->width = $validated['width'] ?? null;
-        $barcodeRequest->diameter = $validated['diameter'] ?? null;
-        $barcodeRequest->length = $validated['length'];
-        $barcodeRequest->lot_number = $validated['lot_number'];
-        $barcodeRequest->status = 'pending';
-        
-        $barcodeRequest->save();
-
-        // Log the activity
-        $this->activityLog->record(
-            user: Auth::user(),
-            action: 'create_barcode_request',
-            subject: $barcodeRequest,
-            newValues: $barcodeRequest->toArray()
+        $barcodeRequest = $this->barcodeRequestService->create(
+            $request->user(),
+            $request->validated(),
         );
 
         return response()->json([
             'success' => true,
-            'message' => 'Request berhasil dibuat'
-        ]);
+            'message' => 'Request berhasil dibuat.',
+            'data' => ['id' => $barcodeRequest->id],
+        ], 201);
     }
 
     /**
@@ -88,7 +65,7 @@ class BarcodeRequestController extends Controller
 
         return DataTables::of($query)
             ->addColumn('material_info', function (BarcodeRequest $request) {
-                return $request->material_name . ' (' . $request->material_code . ')';
+                return $request->material_name.' ('.$request->material_code.')';
             })
             ->addColumn('plant_name', function (BarcodeRequest $request) {
                 return $request->plant?->name ?? '-';
@@ -119,6 +96,7 @@ class BarcodeRequestController extends Controller
 
         $oldValues = $barcodeRequest->toArray();
         $barcodeRequest->delete();
+        Cache::forget('sidebar_badges');
 
         // Log the activity
         $this->activityLog->record(
@@ -130,7 +108,7 @@ class BarcodeRequestController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'Request berhasil dibatalkan'
+            'message' => 'Request berhasil dibatalkan',
         ]);
     }
 
@@ -188,10 +166,10 @@ class BarcodeRequestController extends Controller
         $combined = $scansHistory->concat($reqsHistory)->map(function ($item) {
             return [
                 'shape_code' => $item->shape_code,
-                'thickness'  => $item->thickness,
-                'width'      => $item->width,
-                'diameter'   => $item->diameter,
-                'length'     => $item->length,
+                'thickness' => $item->thickness,
+                'width' => $item->width,
+                'diameter' => $item->diameter,
+                'length' => $item->length,
                 'lot_number' => $item->lot_number,
             ];
         })->unique(function ($item) {
@@ -227,19 +205,19 @@ class BarcodeRequestController extends Controller
             ->take(5);
 
         return response()->json([
-            'success'       => true,
+            'success' => true,
             'material_code' => $material->material_code,
             'material_name' => $material->material_name,
-            'suggestion'    => $suggestion ? [
+            'suggestion' => $suggestion ? [
                 'shape_code' => $suggestion->shape_code,
-                'thickness'  => $suggestion->thickness,
-                'width'      => $suggestion->width,
-                'diameter'   => $suggestion->diameter,
-                'length'     => $suggestion->length,
+                'thickness' => $suggestion->thickness,
+                'width' => $suggestion->width,
+                'diameter' => $suggestion->diameter,
+                'length' => $suggestion->length,
                 'lot_number' => $suggestion->lot_number,
             ] : null,
-            'history'       => $combined,
-            'lot_history'   => $lotHistory,
+            'history' => $combined,
+            'lot_history' => $lotHistory,
         ]);
     }
 }

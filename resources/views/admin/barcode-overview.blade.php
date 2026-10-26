@@ -90,7 +90,7 @@
 
 <div class="table-container" style="border-top:0;">
     <table id="summaryTable" class="table-enterprise" style="width:100%;">
-        <thead><tr><th>No</th><th>QR Code</th><th>Material Code</th><th>Material</th><th>Plant</th><th>Location</th><th>Shape</th><th>Size</th><th>Qty Total</th><th>Scan Count</th></tr></thead>
+        <thead><tr><th>No</th><th>QR Code</th><th>Material Code</th><th>Material</th><th>Plant</th><th>Location</th><th>Shape</th><th>Size</th><th>Qty Total</th><th>Total Scan Count</th></tr></thead>
     </table>
 </div>
 

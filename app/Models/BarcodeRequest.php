@@ -2,12 +2,22 @@
 
 namespace App\Models;
 
+use App\Services\ShapeFormatter;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class BarcodeRequest extends Model
 {
+    public const STATUS_PENDING = 'pending';
+
+    public const STATUS_APPROVED = 'approved';
+
+    public const STATUS_PRINTED = 'printed';
+
+    public const STATUS_REJECTED = 'rejected';
+
     protected $fillable = [
         'user_id',
         'sto_code_id',
@@ -23,20 +33,25 @@ class BarcodeRequest extends Model
         'length',
         'lot_number',
         'qty',
+        'print_count',
         'status',
         'rejection_reason',
         'generated_barcode_material',
         'reviewed_by_user_id',
         'reviewed_at',
+        'printed_by_user_id',
+        'printed_at',
     ];
 
     protected $casts = [
         'reviewed_at' => 'datetime',
-        'thickness'   => 'integer',
-        'width'       => 'integer',
-        'diameter'    => 'integer',
-        'length'      => 'integer',
-        'qty'         => 'integer',
+        'thickness' => 'integer',
+        'width' => 'integer',
+        'diameter' => 'integer',
+        'length' => 'integer',
+        'qty' => 'integer',
+        'print_count' => 'integer',
+        'printed_at' => 'datetime',
     ];
 
     /**
@@ -71,12 +86,24 @@ class BarcodeRequest extends Model
         return $this->belongsTo(User::class, 'reviewed_by_user_id');
     }
 
+    public function printedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'printed_by_user_id');
+    }
+
     /**
      * Scope a query to only include pending requests.
      */
     public function scopePending(Builder $query): void
     {
-        $query->where('status', 'pending');
+        $query->where('status', self::STATUS_PENDING);
+    }
+
+    protected function shapeName(): Attribute
+    {
+        return Attribute::make(
+            get: fn ($value) => ShapeFormatter::name($this->shape_code, $value),
+        );
     }
 
     /**
@@ -104,15 +131,16 @@ class BarcodeRequest extends Model
     public function getLabelDescriptionAttribute(): string
     {
         if (in_array($this->shape_code, ['RF', 'RH'])) {
-            $shapeName = $this->shape_code === 'RF' ? 'Flat' : 'Hollow';
+            $shapeName = ShapeFormatter::name($this->shape_code, $this->shape_name);
+
             return "{$shapeName} {$this->thickness} x {$this->width} x {$this->length}";
         }
 
         if ($this->shape_code === 'RR') {
-            return "Round Ø{$this->diameter} x {$this->length}";
+            return ShapeFormatter::name('RR')." \u{2300}{$this->diameter} x {$this->length}";
         }
 
-        return $this->shape_name . ' ' . $this->getSizeAttribute();
+        return $this->shape_name.' '.$this->getSizeAttribute();
     }
 
     /**
@@ -121,10 +149,10 @@ class BarcodeRequest extends Model
      */
     public function getFullBarcodeAttribute(): string
     {
-        if (!$this->generated_barcode_material || !$this->qty) {
+        if (! $this->generated_barcode_material) {
             return '';
         }
 
-        return "{$this->generated_barcode_material} | {$this->lot_number} | {$this->qty}";
+        return "{$this->generated_barcode_material}|{$this->lot_number}|1";
     }
 }

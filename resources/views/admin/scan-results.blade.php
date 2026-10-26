@@ -51,8 +51,8 @@
     <button class="btn btn-icon" type="button" onclick="reloadTable()" title="Refresh">Refresh</button>
     <button class="btn btn-icon" type="button" onclick="resetFilters()" title="Reset">Reset</button>
     <div class="toolbar-sep"></div>
-    <button class="btn btn-success" type="button" id="exportExcel" onclick="queueExport('excel')">Export Excel</button>
-    <button class="btn" type="button" id="exportPdf" onclick="queueExport('pdf')">Export PDF</button>
+    <button class="btn btn-success" type="button" id="exportExcel" onclick="downloadExport('excel')">Export Excel</button>
+    <button class="btn" type="button" id="exportPdf" onclick="downloadExport('pdf')">Export PDF</button>
 </div>
 
 <div class="card" style="border-top:0;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
@@ -370,11 +370,6 @@
         let activeEditor = null;
         let pendingCreatePayload = null;
         let suppressOutsideUntil = 0;
-        let exportPollingTimer = null;
-        let exportPollingFailureCount = 0;
-        const maxExportPollingFailures = 3;
-        const pendingAutoDownloadExportIds = new Set();
-        const autoDownloadedExportIds = new Set();
         window.scanResultRows = {};
 
         const materialNames = @json($materials->mapWithKeys(fn($material) => [$material->material_code => $material->material_name]));
@@ -741,8 +736,8 @@
             return headers;
         }
 
-        function queueExport(format) {
-            if (!closeActiveEditor(true, () => queueExport(format))) {
+        function downloadExport(format) {
+            if (!closeActiveEditor(true, () => downloadExport(format))) {
                 suppressOutsideUntil = Date.now() + 250;
                 return;
             }
@@ -751,128 +746,6 @@
             const query = new URLSearchParams(filters()).toString();
 
             window.location.href = query ? `${url}?${query}` : url;
-        }
-
-        function refreshExportStatus() {
-            fetch(exportStatusUrl, { headers: { Accept: 'application/json' } })
-                .then(async response => {
-                    const payload = await response.json();
-                    if (!response.ok) throw payload;
-                    return payload;
-                })
-                .then(payload => {
-                    exportPollingFailureCount = 0;
-                    const exports = payload.data || [];
-                    triggerAutoDownloads(exports);
-
-                    const waitingForAutoDownload = exports.some(item => {
-                        const id = Number(item.id);
-
-                        return pendingAutoDownloadExportIds.has(id)
-                            && ['queued', 'processing'].includes(item.status);
-                    });
-
-                    if (waitingForAutoDownload) {
-                        startExportPolling();
-                    } else {
-                        stopExportPolling();
-                    }
-                })
-                .catch(() => handleExportPollingFailure());
-        }
-
-        function handleExportPollingFailure() {
-            if (pendingAutoDownloadExportIds.size === 0) {
-                stopExportPolling();
-                return;
-            }
-
-            exportPollingFailureCount++;
-
-            if (exportPollingFailureCount < maxExportPollingFailures) {
-                return;
-            }
-
-            stopExportPolling();
-            pendingAutoDownloadExportIds.clear();
-            exportPollingFailureCount = 0;
-            Swal.fire({
-                toast: true,
-                position: 'bottom-end',
-                showConfirmButton: false,
-                timer: 3000,
-                icon: 'error',
-                title: 'Status export gagal dimuat. Silakan coba export ulang.'
-            });
-        }
-
-        function triggerAutoDownloads(exports) {
-            exports.forEach(item => {
-                const id = Number(item.id);
-
-                if (!pendingAutoDownloadExportIds.has(id)) {
-                    return;
-                }
-
-                if (item.status === 'failed') {
-                    pendingAutoDownloadExportIds.delete(id);
-                    Swal.fire({
-                        toast: true,
-                        position: 'bottom-end',
-                        showConfirmButton: false,
-                        timer: 3000,
-                        icon: 'error',
-                        title: item.message || 'Export gagal diproses.'
-                    });
-                    return;
-                }
-
-                if (item.status !== 'completed' || !item.download_url || autoDownloadedExportIds.has(id)) {
-                    return;
-                }
-
-                pendingAutoDownloadExportIds.delete(id);
-                autoDownloadedExportIds.add(id);
-                autoDownloadExport(item.download_url);
-                Swal.fire({
-                    toast: true,
-                    position: 'bottom-end',
-                    showConfirmButton: false,
-                    timer: 3000,
-                    icon: 'success',
-                    title: 'Export selesai. Download dimulai.'
-                });
-            });
-        }
-
-        function autoDownloadExport(downloadUrl) {
-            let frame = document.getElementById('exportAutoDownloadFrame');
-
-            if (!frame) {
-                frame = document.createElement('iframe');
-                frame.id = 'exportAutoDownloadFrame';
-                frame.hidden = true;
-                frame.style.display = 'none';
-                document.body.appendChild(frame);
-            }
-
-            frame.src = downloadUrl;
-        }
-
-        function startExportPolling() {
-            if (exportPollingTimer) return;
-            exportPollingTimer = setInterval(() => refreshExportStatus(), 3000);
-        }
-
-        function stopExportPolling() {
-            if (!exportPollingTimer) return;
-            clearInterval(exportPollingTimer);
-            exportPollingTimer = null;
-        }
-
-        function setExportButtonsDisabled(disabled) {
-            document.getElementById('exportExcel').disabled = disabled;
-            document.getElementById('exportPdf').disabled = disabled;
         }
 
         function nowForInput() {

@@ -1,6 +1,6 @@
 # STO Scan To Office
 
-STO adalah aplikasi Laravel 12 untuk proses Scan To Office material, dengan role `admin` dan `scanner`, active STO, parser QR final, audit log, export synchronous, dan dashboard admin server-side.
+STO adalah aplikasi Laravel 12 untuk proses Scan To Office material, dengan role `admin` dan `scanner`, capability scanner validator, Active STO, workflow barcode/print, Rack Confirmation per STO, audit hard delete, export synchronous, dan tabel server-side.
 
 ## Requirement
 
@@ -84,3 +84,6 @@ Dokumen canonical yang tersedia di repository:
 
 - `AGENTS.md` - engineering conventions, business constraints, dan source of truth kode.
 - `DESIGN.md` - pedoman canonical UI/UX, responsive behavior, accessibility, dan page patterns.
+- `DATABASE.md` - kontrak tabel, relasi, index, lifecycle, dan transaction.
+- `API_SPECIFICATION.md` - endpoint aktif, payload, response, dan runtime export.
+- `AUTHORIZATION_MATRIX.md` - hak akses admin, scanner, dan scanner validator.

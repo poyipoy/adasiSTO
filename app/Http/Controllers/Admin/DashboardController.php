@@ -2,37 +2,35 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Exports\ScanResultsExport;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\AdminUpsertScanResultRequest;
-use App\Models\ExportRequest;
 use App\Models\Location;
 use App\Models\MasterKeterangan;
 use App\Models\MasterMaterial;
 use App\Models\Plant;
 use App\Models\ScanResult;
-use App\Models\StoCode;
 use App\Models\User;
-use App\Services\ActivityLogService;
+use App\Services\ActiveStoService;
+use App\Services\BarcodeParserService;
 use App\Services\ExportService;
 use App\Services\OverviewService;
 use App\Services\ScanService;
+use App\Services\ShapeFormatter;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
-use Throwable;
+use Maatwebsite\Excel\Facades\Excel;
 
 class DashboardController extends Controller
 {
     public function __construct(
         private ScanService $scanService,
         private ExportService $exportService,
-        private ActivityLogService $activityLog,
         private OverviewService $overviewService,
     ) {}
 
@@ -45,7 +43,7 @@ class DashboardController extends Controller
         $monthEnd = now()->endOfMonth();
 
         $dashboardFilters = $request->only(['plant_id', 'date_from', 'date_to']);
-        $cacheKey = 'admin_dashboard_stats_' . md5(serialize($dashboardFilters) . '_' . app(\App\Services\ActiveStoService::class)->active()?->id);
+        $cacheKey = 'admin_dashboard_stats_'.md5(serialize($dashboardFilters).'_'.app(ActiveStoService::class)->active()?->id);
 
         $stats = Cache::remember($cacheKey, 60, function () use ($baseQuery, $todayStart, $todayEnd, $monthStart, $monthEnd, $dashboardFilters) {
             // Combine 4 count queries into 1 using SUM(CASE...)
@@ -94,7 +92,7 @@ class DashboardController extends Controller
             $validationByScanner = $this->overviewService->validationByScanner($dashboardFilters);
 
             $locQuery = Location::active();
-            if (!empty($dashboardFilters['plant_id'])) {
+            if (! empty($dashboardFilters['plant_id'])) {
                 $locQuery->where('plant_id', $dashboardFilters['plant_id']);
             }
             $total_locations = (clone $locQuery)->count();
@@ -159,7 +157,7 @@ class DashboardController extends Controller
 
         $search = trim((string) $request->input('search.value', ''));
         if ($search !== '') {
-            $searchData = \App\Services\BarcodeParserService::normalizeSearch($search);
+            $searchData = BarcodeParserService::normalizeSearch($search);
             $normalizedSearch = str_replace(['%', '_'], ['\\%', '\\_'], $searchData['normalized']);
             $firstPartSearch = str_replace(['%', '_'], ['\\%', '\\_'], $searchData['first_part']);
 
@@ -244,7 +242,7 @@ class DashboardController extends Controller
 
         $search = $request->input('search.value');
         if ($search) {
-            $searchData = \App\Services\BarcodeParserService::normalizeSearch($search);
+            $searchData = BarcodeParserService::normalizeSearch($search);
             $normalizedSearch = str_replace(['%', '_'], ['\\%', '\\_'], $searchData['normalized']);
             $firstPartSearch = str_replace(['%', '_'], ['\\%', '\\_'], $searchData['first_part']);
             $rawSearch = str_replace(['%', '_'], ['\\%', '\\_'], $search);
@@ -336,7 +334,7 @@ class DashboardController extends Controller
     {
         $result = $this->scanService->storeByAdmin($request->user(), $request->validated());
 
-        if (!$result['success']) {
+        if (! $result['success']) {
             return response()->json(
                 collect($result)->except('status')->all(),
                 $result['status'] ?? 422
@@ -376,45 +374,11 @@ class DashboardController extends Controller
 
     public function materialSummaryData(Request $request): JsonResponse
     {
-        $query = ScanResult::query()
-            ->leftJoin('plants', 'scan_results.plant_id', '=', 'plants.id')
-            ->leftJoin('locations', 'scan_results.location_id', '=', 'locations.id')
-            ->selectRaw('barcode_material, material_code, material_name, shape_code, shape_name, thickness, width, diameter, length, scan_results.plant_id, scan_results.location_id, plants.name as plant_name, locations.name as location_name, SUM(qty) as qty_total, COUNT(*) as scan_count, MAX(scan_results.created_at) as max_created_at')
-            ->groupBy('barcode_material', 'material_code', 'material_name', 'shape_code', 'shape_name', 'thickness', 'width', 'diameter', 'length', 'scan_results.plant_id', 'scan_results.location_id', 'plants.name', 'locations.name');
-
-        if ($request->filled('plant_id')) {
-            $query->where('scan_results.plant_id', $request->plant_id);
-        }
-
-        if ($request->filled('location_id')) {
-            $query->where('scan_results.location_id', $request->location_id);
-        }
-
-        if ($request->filled('material_code')) {
-            $searchMatCode = str_replace(['%', '_'], ['\\%', '\\_'], $request->material_code);
-            $query->where('material_code', 'like', '%' . $searchMatCode . '%');
-        }
-
-        if ($request->filled('material_name')) {
-            $searchMatName = str_replace(['%', '_'], ['\\%', '\\_'], $request->material_name);
-            $query->where('material_name', 'like', '%' . $searchMatName . '%');
-        }
-
-        if ($request->filled('shape_code')) {
-            $query->where('shape_code', $request->shape_code);
-        }
-
-        if ($request->filled('date_from')) {
-            $query->where('scan_results.created_at', '>=', $request->date_from . ' 00:00:00');
-        }
-
-        if ($request->filled('date_to')) {
-            $query->where('scan_results.created_at', '<=', $request->date_to . ' 23:59:59');
-        }
+        $query = $this->overviewService->materialSummaryQuery(null, $request->all());
 
         $search = $request->input('search.value');
         if ($search) {
-            $searchData = \App\Services\BarcodeParserService::normalizeSearch($search);
+            $searchData = BarcodeParserService::normalizeSearch($search);
             $normalizedSearch = str_replace(['%', '_'], ['\\%', '\\_'], $searchData['normalized']);
             $firstPartSearch = str_replace(['%', '_'], ['\\%', '\\_'], $searchData['first_part']);
             $rawSearch = str_replace(['%', '_'], ['\\%', '\\_'], $search);
@@ -486,7 +450,7 @@ class DashboardController extends Controller
                     'material_name' => $item->material_name,
                     'plant' => $item->plant_name ?? '-',
                     'location' => $item->location_name ?? '-',
-                    'shape_name' => $item->shape_name,
+                    'shape_name' => ShapeFormatter::name($item->shape_code, $item->shape_name),
                     'size' => $size,
                     'qty_total' => (int) $item->qty_total,
                     'scan_count' => (int) $item->scan_count,
@@ -498,116 +462,9 @@ class DashboardController extends Controller
     public function exportExcel(Request $request)
     {
         $filters = $request->only(['plant_id', 'location_id', 'location_name', 'user_id', 'material_code', 'lot_number', 'date_from', 'date_to']);
-        $fileName = 'STO_Scan_Results_' . now()->format('Ymd_His') . '.xlsx';
+        $fileName = 'STO_Scan_Results_'.now()->format('Ymd_His').'.xlsx';
 
-        return \Maatwebsite\Excel\Facades\Excel::download(new \App\Exports\ScanResultsExport($filters), $fileName);
-    }
-
-    public function queueExport(Request $request, string $format): JsonResponse
-    {
-        $response = $this->queueExportRequest($request, $format, redirectForBrowser: false);
-
-        if ($response instanceof JsonResponse) {
-            return $response;
-        }
-
-        return response()->json([
-            'success' => false,
-            'message' => 'Export gagal dimulai.',
-        ], 500);
-    }
-
-    private function queueExportRequest(Request $request, string $format, bool $redirectForBrowser = true): JsonResponse|RedirectResponse
-    {
-        try {
-            $exportRequest = $this->exportService->queueScanResultsExport($request->user(), $format, $request->all());
-
-            $this->activityLog->record($request->user(), 'export.scan_results.requested', $exportRequest, metadata: [
-                'format' => $exportRequest->format,
-                'filters' => $exportRequest->filters,
-                'async' => true,
-            ]);
-
-            $payload = [
-                'success' => true,
-                'message' => 'Export sedang diproses. File akan tersedia saat status selesai.',
-                'data' => $this->exportService->serializeExportRequest($exportRequest),
-            ];
-
-            return $this->exportResponse($request, $payload, 202, $redirectForBrowser);
-        } catch (\InvalidArgumentException $exception) {
-            $payload = [
-                'success' => false,
-                'message' => $exception->getMessage(),
-            ];
-
-            return $this->exportResponse($request, $payload, 422, $redirectForBrowser, flashKey: 'error');
-        } catch (Throwable $exception) {
-            Log::error('Async scan export queue failed', [
-                'user_id' => $request->user()?->id,
-                'format' => $format,
-                'exception' => $exception::class,
-            ]);
-
-            $this->activityLog->record($request->user(), 'export.scan_results.failed', metadata: [
-                'format' => $format,
-                'filters' => $this->exportService->exportFilters($request->all()),
-                'async' => true,
-                'exception' => $exception::class,
-            ]);
-
-            $payload = [
-                'success' => false,
-                'message' => 'Export gagal dimulai.',
-            ];
-
-            return $this->exportResponse($request, $payload, 500, $redirectForBrowser, flashKey: 'error');
-        }
-    }
-
-    private function queueLegacyExport(Request $request, string $format): JsonResponse|RedirectResponse
-    {
-        return $this->queueExportRequest($request, $format);
-    }
-
-    private function exportResponse(
-        Request $request,
-        array $payload,
-        int $status,
-        bool $redirectForBrowser,
-        string $flashKey = 'success'
-    ): JsonResponse|RedirectResponse {
-        if (!$redirectForBrowser || $request->expectsJson() || $request->ajax()) {
-            return response()->json($payload, $status);
-        }
-
-        return back()->with($flashKey, $payload['message']);
-    }
-
-    public function exportStatus(Request $request): JsonResponse
-    {
-        $exports = $this->exportService
-            ->recentScanResultExports($request->user())
-            ->map(fn (ExportRequest $exportRequest) => $this->exportService->serializeExportRequest($exportRequest))
-            ->values();
-
-        return response()->json([
-            'success' => true,
-            'data' => $exports,
-        ]);
-    }
-
-    public function downloadExport(Request $request, ExportRequest $exportRequest)
-    {
-        abort_unless($exportRequest->user_id === $request->user()->id, 403);
-        abort_unless($exportRequest->isCompleted(), 404);
-        abort_unless($exportRequest->file_path && Storage::disk($exportRequest->file_disk)->exists($exportRequest->file_path), 404);
-
-        return Storage::disk($exportRequest->file_disk)->download(
-            $exportRequest->file_path,
-            $exportRequest->file_name,
-            ['Content-Type' => $exportRequest->mime_type ?: 'application/octet-stream'],
-        );
+        return Excel::download(new ScanResultsExport($filters), $fileName);
     }
 
     public function exportPdf(Request $request)
@@ -617,9 +474,9 @@ class DashboardController extends Controller
             ->limit((int) config('sto.export_pdf_row_limit', 5000))
             ->get();
 
-        $fileName = 'STO_Scan_Results_' . now()->format('Ymd_His') . '.pdf';
+        $fileName = 'STO_Scan_Results_'.now()->format('Ymd_His').'.pdf';
 
-        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('exports.scan-results-pdf', compact('rows', 'filters'))
+        $pdf = Pdf::loadView('exports.scan-results-pdf', compact('rows', 'filters'))
             ->setPaper('a4', 'landscape');
 
         return $pdf->download($fileName);

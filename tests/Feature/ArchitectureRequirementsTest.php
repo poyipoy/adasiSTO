@@ -11,8 +11,8 @@ use App\Models\Plant;
 use App\Models\ScanResult;
 use App\Models\StoCode;
 use App\Models\User;
-use App\Services\ActivityLogService;
 use App\Services\ActiveStoService;
+use App\Services\ActivityLogService;
 use App\Services\ExportService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
@@ -24,10 +24,15 @@ class ArchitectureRequirementsTest extends TestCase
     use RefreshDatabase;
 
     private User $scanner;
+
     private User $otherScanner;
+
     private User $admin;
+
     private Plant $plant;
+
     private Location $location;
+
     private StoCode $stoCode;
 
     protected function setUp(): void
@@ -76,7 +81,7 @@ class ArchitectureRequirementsTest extends TestCase
             ->assertJsonPath('checks.app.status', 'ok')
             ->assertJsonPath('checks.database.status', 'ok')
             ->assertJsonPath('checks.storage.status', 'ok')
-            ->assertJsonPath('checks.queue.status', 'ok');
+            ->assertJsonMissingPath('checks.queue');
 
         $this->assertArrayNotHasKey('environment', $response->json('checks.app'));
     }
@@ -182,76 +187,30 @@ class ArchitectureRequirementsTest extends TestCase
         Queue::assertPushed(RecalculateScanSummaryJob::class);
     }
 
-    public function test_async_export_endpoint_queues_request_and_status_lists_it(): void
+    public function test_scan_result_excel_export_is_synchronous(): void
     {
         Queue::fake();
-        config(['sto.export_disk' => 'public']);
-
-        $response = $this->actingAs($this->admin)->postJson('/admin/export/scan-results/excel', [
-            'sto_code' => 'STO2606',
-        ]);
-
-        $response->assertStatus(202)
-            ->assertJsonPath('success', true)
-            ->assertJsonPath('data.format', 'excel')
-            ->assertJsonPath('data.status', ExportRequest::STATUS_QUEUED);
-
-        $exportRequest = ExportRequest::firstOrFail();
-
-        $this->assertDatabaseHas('export_requests', [
-            'id' => $exportRequest->id,
-            'user_id' => $this->admin->id,
-            'report' => 'scan_results',
-            'format' => 'excel',
-            'status' => ExportRequest::STATUS_QUEUED,
-            'file_disk' => 'public',
-        ]);
-        Queue::assertPushed(ExportScanResultsJob::class, fn (ExportScanResultsJob $job) => $job->exportRequestId === $exportRequest->id);
-
-        $status = $this->actingAs($this->admin)->getJson('/admin/export/scan-results/status');
-
-        $status->assertOk()
-            ->assertJsonPath('data.0.id', $exportRequest->id)
-            ->assertJsonPath('data.0.status', ExportRequest::STATUS_QUEUED);
-    }
-
-    public function test_legacy_export_get_endpoint_queues_request_instead_of_sync_download(): void
-    {
-        Queue::fake();
-        config(['sto.export_disk' => 'public']);
-
-        $response = $this->actingAs($this->admin)
-            ->getJson('/admin/export/scan-results/pdf?sto_code=STO2606');
-
-        $response->assertStatus(202)
-            ->assertJsonPath('success', true)
-            ->assertJsonPath('data.format', 'pdf')
-            ->assertJsonPath('data.status', ExportRequest::STATUS_QUEUED);
-
-        $exportRequest = ExportRequest::firstOrFail();
-
-        $this->assertSame('pdf', $exportRequest->format);
-        $this->assertSame(ExportRequest::STATUS_QUEUED, $exportRequest->status);
-        $this->assertSame(['sto_code' => 'STO2606'], $exportRequest->filters);
-        Queue::assertPushed(ExportScanResultsJob::class, fn (ExportScanResultsJob $job) => $job->exportRequestId === $exportRequest->id);
-    }
-
-    public function test_legacy_export_get_endpoint_redirects_browser_with_flash_message(): void
-    {
-        Queue::fake();
+        $this->createScan($this->scanner);
 
         $response = $this->actingAs($this->admin)
             ->get('/admin/export/scan-results/excel');
 
-        $response->assertRedirect();
-        $response->assertSessionHas('success', 'Export sedang diproses. File akan tersedia saat status selesai.');
-        $this->assertDatabaseHas('export_requests', [
-            'user_id' => $this->admin->id,
-            'report' => 'scan_results',
-            'format' => 'excel',
-            'status' => ExportRequest::STATUS_QUEUED,
-        ]);
-        Queue::assertPushed(ExportScanResultsJob::class);
+        $response->assertOk()->assertDownload();
+        $this->assertDatabaseCount('export_requests', 0);
+        Queue::assertNotPushed(ExportScanResultsJob::class);
+    }
+
+    public function test_scan_result_pdf_export_is_synchronous(): void
+    {
+        Queue::fake();
+        $this->createScan($this->scanner);
+
+        $response = $this->actingAs($this->admin)
+            ->get('/admin/export/scan-results/pdf');
+
+        $response->assertOk()->assertDownload();
+        $this->assertDatabaseCount('export_requests', 0);
+        Queue::assertNotPushed(ExportScanResultsJob::class);
     }
 
     public function test_export_job_generates_excel_file_and_marks_request_completed(): void
@@ -276,42 +235,6 @@ class ArchitectureRequirementsTest extends TestCase
         ]);
     }
 
-    public function test_completed_async_export_can_be_downloaded_by_owner(): void
-    {
-        Storage::fake('local');
-        Storage::disk('local')->put('exports/scan-results/test.xlsx', 'xlsx');
-
-        $exportRequest = $this->createExportRequest([
-            'status' => ExportRequest::STATUS_COMPLETED,
-            'file_path' => 'exports/scan-results/test.xlsx',
-            'completed_at' => now(),
-        ]);
-
-        $response = $this->actingAs($this->admin)
-            ->get("/admin/export/scan-results/{$exportRequest->id}/download");
-
-        $response->assertOk()
-            ->assertDownload('test.xlsx');
-    }
-
-    public function test_completed_async_export_cannot_be_downloaded_by_non_owner(): void
-    {
-        Storage::fake('local');
-        Storage::disk('local')->put('exports/scan-results/test.xlsx', 'xlsx');
-        $otherAdmin = User::factory()->admin()->create();
-
-        $exportRequest = $this->createExportRequest([
-            'status' => ExportRequest::STATUS_COMPLETED,
-            'file_path' => 'exports/scan-results/test.xlsx',
-            'completed_at' => now(),
-        ]);
-
-        $response = $this->actingAs($otherAdmin)
-            ->get("/admin/export/scan-results/{$exportRequest->id}/download");
-
-        $response->assertForbidden();
-    }
-
     private function scanPayload(array $override = []): array
     {
         return array_merge([
@@ -325,12 +248,12 @@ class ArchitectureRequirementsTest extends TestCase
     private function createScan(User $user, string $qr = 'RF1H059-00960099B|ST2605|1', array $override = []): ScanResult
     {
         $barcodeMaterial = explode('|', $qr)[0];
-        $location = !empty($override['location_id'])
+        $location = ! empty($override['location_id'])
             ? Location::findOrFail($override['location_id'])
             : ($user->is($this->scanner)
             ? $this->location
             : Location::firstOrCreate(
-                ['plant_id' => $override['plant_id'] ?? $this->plant->id, 'name' => 'Rack ' . $user->id],
+                ['plant_id' => $override['plant_id'] ?? $this->plant->id, 'name' => 'Rack '.$user->id],
                 ['is_active' => true]
             ));
 

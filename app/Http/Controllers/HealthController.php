@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use Throwable;
 
 class HealthController extends Controller
@@ -15,7 +14,6 @@ class HealthController extends Controller
             'app' => $this->checkApp(),
             'database' => $this->checkDatabase(),
             'storage' => $this->checkStorage(),
-            'queue' => $this->checkQueue(),
         ];
 
         $healthy = collect($checks)->every(fn (array $check) => $check['status'] === 'ok');
@@ -59,26 +57,5 @@ class HealthController extends Controller
         return is_dir($path) && is_readable($path) && is_writable($path)
             ? ['status' => 'ok']
             : ['status' => 'failed'];
-    }
-
-    private function checkQueue(): array
-    {
-        try {
-            $connection = config('queue.default');
-            $configExists = is_array(config("queue.connections.{$connection}"));
-            $driver = config("queue.connections.{$connection}.driver");
-
-            if (!$configExists) {
-                return ['status' => 'failed', 'connection' => $connection];
-            }
-
-            if ($driver === 'database' && !Schema::hasTable(config("queue.connections.{$connection}.table", 'jobs'))) {
-                return ['status' => 'failed', 'connection' => $connection, 'driver' => $driver];
-            }
-
-            return ['status' => 'ok', 'connection' => $connection, 'driver' => $driver];
-        } catch (Throwable) {
-            return ['status' => 'failed'];
-        }
     }
 }

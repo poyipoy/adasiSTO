@@ -7,12 +7,6 @@ use Illuminate\Support\Facades\Log;
 
 class BarcodeParserService
 {
-    private const SHAPES = [
-        'RF' => 'Flat',
-        'RR' => 'Round',
-        'RH' => 'Hollow',
-    ];
-
     public function parse(string $qr): array
     {
         $rawQr = $qr;
@@ -42,11 +36,11 @@ class BarcodeParserService
             return $this->invalid('Format barcode tidak valid (Ada bagian kosong).', $rawQr);
         }
 
-        if (!ctype_digit($qty) || (int) $qty <= 0) {
+        if (! ctype_digit($qty) || (int) $qty <= 0) {
             return $this->invalid('Qty tidak valid.', $rawQr);
         }
 
-        if (!preg_match('/^(RF|RR|RH)([A-Z0-9]{2})(\d{3})-(\d{8})([A-Z])$/', $barcodeMaterial, $matches)) {
+        if (! preg_match('/^(RF|RR|RH)([A-Z0-9]{2})(\d{3})-(\d{8})([A-Z])$/', $barcodeMaterial, $matches)) {
             return $this->invalid('Format barcode tidak valid (Pola Material Code).', $rawQr);
         }
 
@@ -57,13 +51,12 @@ class BarcodeParserService
 
         $material = MasterMaterial::findByCode($materialCode);
 
-        if (!$material) {
+        if (! $material) {
             return $this->invalid('Kode material tidak ditemukan di Master Material.', $rawQr);
         }
 
         $firstSecondary = (int) substr($secondary, 0, 4);
         $length = (int) substr($secondary, 4, 4);
-
 
         $result = [
             'valid' => true,
@@ -71,7 +64,7 @@ class BarcodeParserService
             'lot_number' => $lotNumber,
             'qty' => (int) $qty,
             'shape_code' => $shapeCode,
-            'shape_name' => self::SHAPES[$shapeCode],
+            'shape_name' => ShapeFormatter::name($shapeCode),
             'material_code' => $materialCode,
             'material_name' => $material->material_name,
             'thickness' => null,
@@ -113,7 +106,7 @@ class BarcodeParserService
 
         return [
             'valid' => false,
-            'message' => 'Format barcode tidak valid.',
+            'message' => $message,
         ];
     }
 
@@ -130,10 +123,10 @@ class BarcodeParserService
         $normalized = preg_replace('/\s+/', ' ', $search);
         $normalized = preg_replace('/\s*\|\s*/', ' | ', $normalized);
         $normalized = trim($normalized);
-        
+
         $parts = explode('|', $normalized);
         $firstPart = trim($parts[0]);
-        
+
         return [
             'original' => $search,
             'normalized' => $normalized,

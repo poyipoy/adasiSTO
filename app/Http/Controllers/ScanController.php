@@ -11,12 +11,15 @@ use App\Models\Location;
 use App\Models\Plant;
 use App\Models\ScanResult;
 use App\Services\ActiveStoService;
+use App\Services\BarcodeParserService;
+use App\Services\LocationService;
 use App\Services\OverviewService;
 use App\Services\ScanService;
+use App\Services\ShapeFormatter;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 
 class ScanController extends Controller
@@ -27,8 +30,8 @@ class ScanController extends Controller
         private ScanService $scanService,
         private ActiveStoService $activeStoService,
         private OverviewService $overviewService,
-    ) {
-    }
+        private LocationService $locationService,
+    ) {}
 
     public function overview(Request $request): View
     {
@@ -83,10 +86,11 @@ class ScanController extends Controller
     {
         $activeSto = $this->activeStoService->active();
 
-        if (!$activeSto) {
+        if (! $activeSto) {
             if ($request->wantsJson()) {
                 return response()->json(['success' => false, 'message' => ActiveStoService::NO_ACTIVE_STO_MESSAGE], 422);
             }
+
             return back()->with('error', ActiveStoService::NO_ACTIVE_STO_MESSAGE);
         }
 
@@ -109,11 +113,11 @@ class ScanController extends Controller
         $activeSto = $this->activeStoService->active();
         $scanContext = session('scan_context');
 
-        if (!$activeSto) {
+        if (! $activeSto) {
             return view('scan.no-session', ['message' => ActiveStoService::NO_ACTIVE_STO_MESSAGE]);
         }
 
-        if (!$scanContext) {
+        if (! $scanContext) {
             return view('scan.no-session', ['message' => 'Silakan setup STO terlebih dahulu sebelum memulai scan.']);
         }
 
@@ -160,7 +164,7 @@ class ScanController extends Controller
 
         $search = $request->input('search.value');
         if ($search) {
-            $searchData = \App\Services\BarcodeParserService::normalizeSearch($search);
+            $searchData = BarcodeParserService::normalizeSearch($search);
             $normalizedSearch = str_replace(['%', '_'], ['\\%', '\\_'], $searchData['normalized']);
             $firstPartSearch = str_replace(['%', '_'], ['\\%', '\\_'], $searchData['first_part']);
             $rawSearch = str_replace(['%', '_'], ['\\%', '\\_'], $search);
@@ -175,7 +179,7 @@ class ScanController extends Controller
             });
         }
 
-        $filteredRecords = \Illuminate\Support\Facades\DB::query()
+        $filteredRecords = DB::query()
             ->fromSub((clone $query), 'scanner_material_summary_count')
             ->count();
 
@@ -228,7 +232,7 @@ class ScanController extends Controller
                     'material_name' => $item->material_name,
                     'plant' => $item->plant_name ?? '-',
                     'location' => $item->location_name ?? '-',
-                    'shape_name' => $item->shape_name,
+                    'shape_name' => ShapeFormatter::name($item->shape_code, $item->shape_name),
                     'size' => $size,
                     'qty_total' => (int) $item->qty_total,
                     'scan_count' => (int) $item->scan_count,
@@ -256,12 +260,11 @@ class ScanController extends Controller
 
     public function storeLocation(StoreLocationRequest $request): JsonResponse
     {
-        $location = Location::create([
+        $location = $this->locationService->create($request->user(), [
             'plant_id' => $request->integer('plant_id'),
             'name' => $request->string('name')->toString(),
             'is_active' => true,
-            'created_by_user_id' => $request->user()->id,
-        ]);
+        ], 'location.created_from_scanner_setup');
 
         return response()->json([
             'success' => true,
@@ -278,14 +281,14 @@ class ScanController extends Controller
     {
         $location = Location::findOrFail($id);
 
-        if (ScanResult::where('location_id', $location->id)->exists()) {
+        if ((int) $location->created_by_user_id !== (int) $request->user()->id) {
             return response()->json([
                 'success' => false,
-                'message' => 'Tidak bisa menghapus lokasi karena sudah digunakan untuk scan.',
-            ], 422);
+                'message' => 'Anda tidak memiliki akses untuk menghapus Location/Rack ini.',
+            ], 403);
         }
 
-        $location->delete();
+        $this->locationService->delete($request->user(), $location, 'location.deleted_from_scanner_setup');
 
         return response()->json([
             'success' => true,
@@ -297,7 +300,7 @@ class ScanController extends Controller
     {
         $result = $this->scanService->preview($request->string('qr')->toString());
 
-        if (!$result['valid']) {
+        if (! $result['valid']) {
             return response()->json([
                 'success' => false,
                 'message' => $result['message'],
@@ -316,7 +319,7 @@ class ScanController extends Controller
     {
         $activeSto = $this->activeStoService->active();
 
-        if (!$activeSto) {
+        if (! $activeSto) {
             return response()->json([
                 'success' => false,
                 'message' => ActiveStoService::NO_ACTIVE_STO_MESSAGE,
@@ -336,7 +339,7 @@ class ScanController extends Controller
     {
         $result = $this->scanService->store($request->user(), $request->validated());
 
-        if (!$result['success']) {
+        if (! $result['success']) {
             return response()->json(
                 collect($result)->except('status')->all(),
                 $result['status'] ?? 422
@@ -358,7 +361,7 @@ class ScanController extends Controller
         return response()->json([
             'success' => true,
             'data' => $paginator->getCollection()
-                ->map(fn(ScanResult $scanResult) => $this->scanService->serializeScan($scanResult))
+                ->map(fn (ScanResult $scanResult) => $this->scanService->serializeScan($scanResult))
                 ->values(),
             'meta' => [
                 'page' => $paginator->currentPage(),
@@ -378,14 +381,14 @@ class ScanController extends Controller
         $paginator = $this->recentScanPaginator($request->user()->id, (int) $request->input('page', 1), $plantId, $locationId);
         $totalToday = ScanResult::forUser($request->user()->id)
             ->today()
-            ->when($plantId, fn($q) => $q->where('plant_id', $plantId))
-            ->when($locationId, fn($q) => $q->where('location_id', $locationId))
+            ->when($plantId, fn ($q) => $q->where('plant_id', $plantId))
+            ->when($locationId, fn ($q) => $q->where('location_id', $locationId))
             ->count();
 
         return response()->json([
             'success' => true,
             'data' => $paginator->getCollection()
-                ->map(fn(ScanResult $scanResult) => $this->scanService->serializeScan($scanResult))
+                ->map(fn (ScanResult $scanResult) => $this->scanService->serializeScan($scanResult))
                 ->values(),
             'meta' => $this->recentScanMeta($paginator),
             'total_today' => $totalToday,
@@ -415,8 +418,8 @@ class ScanController extends Controller
             ->with(['plant', 'location'])
             ->forUser($userId)
             ->today()
-            ->when($plantId, fn($query) => $query->where('plant_id', $plantId))
-            ->when($locationId, fn($query) => $query->where('location_id', $locationId))
+            ->when($plantId, fn ($query) => $query->where('plant_id', $plantId))
+            ->when($locationId, fn ($query) => $query->where('location_id', $locationId))
             ->latestFirst()
             ->paginate(self::RECENT_SCAN_PER_PAGE, ['*'], 'page', max($page, 1));
     }

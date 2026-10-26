@@ -15,8 +15,9 @@ use App\Models\Plant;
 use App\Models\ScanResult;
 use App\Models\StoCode;
 use App\Models\User;
-use App\Services\ActivityLogService;
 use App\Services\ActiveStoService;
+use App\Services\ActivityLogService;
+use App\Services\LocationService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -28,8 +29,8 @@ class MasterController extends Controller
     public function __construct(
         private ActiveStoService $activeStoService,
         private ActivityLogService $activityLog,
-    ) {
-    }
+        private LocationService $locationService,
+    ) {}
 
     public function sto(): View
     {
@@ -67,7 +68,7 @@ class MasterController extends Controller
             StoCode::query(),
             $request,
             ['code', 'description'],
-            fn(StoCode $stoCode, int $no) => [
+            fn (StoCode $stoCode, int $no) => [
                 'no' => $no,
                 'id' => $stoCode->id,
                 'code' => $stoCode->code,
@@ -157,7 +158,7 @@ class MasterController extends Controller
             Plant::query(),
             $request,
             ['name'],
-            fn(Plant $plant, int $no) => [
+            fn (Plant $plant, int $no) => [
                 'no' => $no,
                 'id' => $plant->id,
                 'name' => $plant->name,
@@ -204,7 +205,7 @@ class MasterController extends Controller
             MasterMaterial::query(),
             $request,
             ['material_code', 'material_name'],
-            fn(MasterMaterial $material, int $no) => [
+            fn (MasterMaterial $material, int $no) => [
                 'no' => $no,
                 'id' => $material->id,
                 'material_code' => $material->material_code,
@@ -252,7 +253,7 @@ class MasterController extends Controller
             MasterKeterangan::query(),
             $request,
             ['name'],
-            fn(MasterKeterangan $keterangan, int $no) => [
+            fn (MasterKeterangan $keterangan, int $no) => [
                 'no' => $no,
                 'id' => $keterangan->id,
                 'name' => $keterangan->name,
@@ -299,7 +300,7 @@ class MasterController extends Controller
             User::query(),
             $request,
             ['name', 'username', 'role'],
-            fn(User $user, int $no) => [
+            fn (User $user, int $no) => [
                 'no' => $no,
                 'id' => $user->id,
                 'name' => $user->name,
@@ -329,7 +330,7 @@ class MasterController extends Controller
     {
         $data = $request->validated();
 
-        if (!empty($data['password'])) {
+        if (! empty($data['password'])) {
             $data['pass'] = $data['password'];
             $data['password'] = Hash::make($data['password']);
         } else {
@@ -394,7 +395,7 @@ class MasterController extends Controller
             $query,
             $request,
             ['name', 'old_location_name', 'description', 'warehouse'],
-            fn(Location $location, int $no) => [
+            fn (Location $location, int $no) => [
                 'no' => $no,
                 'id' => $location->id,
                 'name' => $location->name,
@@ -426,17 +427,14 @@ class MasterController extends Controller
             return response()->json(['success' => false, 'message' => 'Lokasi dengan nama tersebut sudah ada untuk plant ini.'], 422);
         }
 
-        $location = Location::create([
+        $location = $this->locationService->create($request->user(), [
             'name' => $data['name'],
             'old_location_name' => $data['old_location_name'] ?? null,
             'description' => $data['description'] ?? null,
             'warehouse' => $data['warehouse'] ?? null,
             'plant_id' => $data['plant_id'],
             'is_active' => $request->boolean('is_active', true),
-            'created_by_user_id' => $request->user()->id,
         ]);
-
-        $this->activityLog->record($request->user(), 'master.location.created', $location, newValues: $location->toArray());
 
         return $this->success('Lokasi berhasil ditambahkan.');
     }
@@ -483,12 +481,7 @@ class MasterController extends Controller
     {
         $location = Location::findOrFail($id);
 
-        if ($location->scanResults()->exists()) {
-            return response()->json(['success' => false, 'message' => 'Lokasi tidak dapat dihapus karena sudah digunakan untuk scan.'], 422);
-        }
-
-        $this->activityLog->record(request()->user(), 'master.location.deleted', $location, oldValues: $location->toArray());
-        $location->delete();
+        $this->locationService->delete(request()->user(), $location, 'master.location.deleted');
 
         return $this->success('Lokasi berhasil dihapus.');
     }
@@ -515,7 +508,7 @@ class MasterController extends Controller
             ->skip($start)
             ->take($length)
             ->get()
-            ->map(fn($item, int $index) => $map($item, $filteredRecords - $start - $index))
+            ->map(fn ($item, int $index) => $map($item, $filteredRecords - $start - $index))
             ->values();
 
         return response()->json([
@@ -612,7 +605,7 @@ class MasterController extends Controller
                         'options' => [
                             ['value' => 'admin', 'label' => 'Admin'],
                             ['value' => 'scanner', 'label' => 'Scanner'],
-                        ]
+                        ],
                     ],
                     ['name' => 'is_validator', 'label' => 'Validator', 'type' => 'switch'],
                     ['name' => 'is_active', 'label' => 'Active', 'type' => 'switch', 'default' => 1],
@@ -641,8 +634,8 @@ class MasterController extends Controller
                         'name' => 'plant_id',
                         'label' => 'Plant',
                         'type' => 'select',
-                        'options' => Plant::orderBy('name')->get()->map(fn($p) => ['value' => $p->id, 'label' => $p->name])->toArray(),
-                        'required' => true
+                        'options' => Plant::orderBy('name')->get()->map(fn ($p) => ['value' => $p->id, 'label' => $p->name])->toArray(),
+                        'required' => true,
                     ],
                     ['name' => 'is_active', 'label' => 'Active', 'type' => 'switch', 'default' => 1],
                 ],
@@ -651,19 +644,19 @@ class MasterController extends Controller
                         'name' => 'plant_id',
                         'label' => 'Plant',
                         'type' => 'select',
-                        'options' => Plant::orderBy('name')->get()->map(fn($p) => ['value' => $p->id, 'label' => $p->name])->toArray()
+                        'options' => Plant::orderBy('name')->get()->map(fn ($p) => ['value' => $p->id, 'label' => $p->name])->toArray(),
                     ],
                     [
                         'name' => 'warehouse',
                         'label' => 'Warehouse',
                         'type' => 'select',
-                        'options' => Location::whereNotNull('warehouse')->where('warehouse', '!=', '')->distinct()->orderBy('warehouse')->pluck('warehouse')->map(fn($w) => ['value' => $w, 'label' => $w])->toArray()
+                        'options' => Location::whereNotNull('warehouse')->where('warehouse', '!=', '')->distinct()->orderBy('warehouse')->pluck('warehouse')->map(fn ($w) => ['value' => $w, 'label' => $w])->toArray(),
                     ],
                     [
                         'name' => 'pic',
                         'label' => 'PIC',
                         'type' => 'select',
-                        'options' => User::orderBy('name')->get()->map(fn($u) => ['value' => $u->id, 'label' => $u->name])->toArray()
+                        'options' => User::orderBy('name')->get()->map(fn ($u) => ['value' => $u->id, 'label' => $u->name])->toArray(),
                     ],
                     [
                         'name' => 'is_active',
@@ -672,7 +665,7 @@ class MasterController extends Controller
                         'options' => [
                             ['value' => '1', 'label' => 'Active'],
                             ['value' => '0', 'label' => 'Inactive'],
-                        ]
+                        ],
                     ],
                     [
                         'name' => 'date_from',
@@ -684,7 +677,7 @@ class MasterController extends Controller
                         'label' => 'Date To',
                         'type' => 'date',
                     ],
-                ]
+                ],
             ],
         ];
 

@@ -6,6 +6,7 @@ use App\Http\Controllers\Admin\GenerateBarcodeController;
 use App\Http\Controllers\Admin\MasterController;
 use App\Http\Controllers\Admin\MaterialDoubleController;
 use App\Http\Controllers\Admin\RackConfirmationController;
+use App\Http\Controllers\BarcodeDeleteHistoryController;
 use App\Http\Controllers\BarcodeRequestController;
 use App\Http\Controllers\HealthController;
 use App\Http\Controllers\ScanController;
@@ -17,7 +18,7 @@ use Illuminate\Support\Facades\Route;
 |--------------------------------------------------------------------------
 | System & Authentication Routes
 |--------------------------------------------------------------------------
-| Menangani check status server, redirector halaman utama, 
+| Menangani check status server, redirector halaman utama,
 | serta proses login/logout.
 */
 // Rute untuk mengecek status nyala-tidaknya server (health check)
@@ -26,7 +27,7 @@ Route::get('/health', HealthController::class)->name('health');
 // Redirect awal aplikasi. Jika belum login akan dialihkan ke halaman login.
 // Jika sudah login, akan diarahkan sesuai perannya (Admin ke dashboard, Scanner ke setup).
 Route::get('/', function () {
-    if (!Auth::check()) {
+    if (! Auth::check()) {
         return redirect()->to(route('login'));
     }
 
@@ -37,7 +38,7 @@ Route::get('/', function () {
 
 Route::middleware('guest')->group(function () {
     // Halaman antarmuka/form untuk login
-    Route::get('/login', fn() => view('auth.login'))->name('login');
+    Route::get('/login', fn () => view('auth.login'))->name('login');
 
     // Memproses data form login (validasi kredensial username & password)
     Route::post('/login', function (Request $request) {
@@ -46,13 +47,13 @@ Route::middleware('guest')->group(function () {
             'password' => ['required', 'string'],
         ]);
 
-        if (!Auth::attempt($credentials, $request->boolean('remember'))) {
+        if (! Auth::attempt($credentials, $request->boolean('remember'))) {
             return back()->withErrors([
                 'username' => 'Username atau password salah.',
             ])->onlyInput('username');
         }
 
-        if (!Auth::user()->is_active) {
+        if (! Auth::user()->is_active) {
             Auth::logout();
 
             return back()->withErrors([
@@ -88,7 +89,7 @@ Route::post('/logout', function (Request $request) {
 | Scanner User Routes
 |--------------------------------------------------------------------------
 | Rute-rute ini hanya bisa diakses oleh user dengan role 'scanner'.
-| Menangani halaman scanner utama, histori scan, serta endpoint API 
+| Menangani halaman scanner utama, histori scan, serta endpoint API
 | untuk memproses data dari alat scanner barcode.
 */
 Route::middleware(['auth', 'role:scanner'])->group(function () {
@@ -141,6 +142,17 @@ Route::middleware(['auth', 'role:scanner'])->group(function () {
     Route::delete('/api/scan/{id}', [ScanController::class, 'destroy'])->middleware('throttle:scan-write')->name('api.scan.destroy');
 });
 
+Route::middleware('auth')->group(function () {
+    Route::get('/history/delete-barcode', [BarcodeDeleteHistoryController::class, 'index'])
+        ->name('history.delete-barcode');
+    Route::get('/api/history/delete-barcode', [BarcodeDeleteHistoryController::class, 'datatable'])
+        ->middleware('throttle:datatable')
+        ->name('api.history.delete-barcode');
+    Route::get('/api/history/delete-barcode/{history}', [BarcodeDeleteHistoryController::class, 'show'])
+        ->middleware('throttle:datatable')
+        ->name('api.history.delete-barcode.show');
+});
+
 /*
 |--------------------------------------------------------------------------
 | Material Double Validation Routes
@@ -159,6 +171,8 @@ Route::middleware(['auth', 'material-double-access'])
         Route::get('/api/material-double', [MaterialDoubleController::class, 'datatable'])->middleware('throttle:datatable')->name('api.material-double');
         // Melihat deretan data mentah dari satu barcode yang sama (di-scan siapa saja, kapan, dsb)
         Route::get('/api/material-double/detail', [MaterialDoubleController::class, 'showDuplicateDetail'])->middleware('throttle:datatable')->name('api.material-double.detail');
+        Route::get('/api/material-double/locations', [MaterialDoubleController::class, 'locations'])
+            ->middleware('throttle:datatable')->name('api.material-double.locations');
 
         // Aksi menyetujui salah satu (atau beberapa) baris duplikat sebagai data valid
         Route::post('/api/material-double/validate', [MaterialDoubleController::class, 'validateDuplicate'])->name('api.material-double.validate');
@@ -175,12 +189,56 @@ Route::middleware(['auth', 'material-double-access'])
             ->name('api.material-double.export.excel');
     });
 
+Route::middleware(['auth', 'generate-barcode-access'])
+    ->prefix('admin')
+    ->name('admin.')
+    ->group(function () {
+        Route::get('/generate-barcode', [GenerateBarcodeController::class, 'index'])->name('generate-barcode');
+        Route::get('/api/generate-barcode', [GenerateBarcodeController::class, 'datatable'])
+            ->middleware('throttle:datatable')->name('api.generate-barcode');
+        Route::get('/api/generate-barcode/locations', [GenerateBarcodeController::class, 'locations'])
+            ->middleware('throttle:datatable')->name('api.generate-barcode.locations');
+        Route::post('/api/generate-barcode', [GenerateBarcodeController::class, 'store'])
+            ->middleware(['role:admin', 'throttle:scan-write'])->name('api.generate-barcode.store');
+        Route::post('/api/generate-barcode/{barcodeRequest}/validate', [GenerateBarcodeController::class, 'validateData'])
+            ->name('api.generate-barcode.validate');
+        Route::post('/api/generate-barcode/{barcodeRequest}/generate', [GenerateBarcodeController::class, 'generate'])
+            ->middleware('throttle:scan-write')->name('api.generate-barcode.generate');
+        Route::post('/api/generate-barcode/{barcodeRequest}/reject', [GenerateBarcodeController::class, 'reject'])
+            ->middleware('throttle:scan-write')->name('api.generate-barcode.reject');
+        Route::post('/api/generate-barcode/batch-generate', [BulkGenerateBarcodeController::class, 'batchGenerate'])
+            ->middleware('throttle:scan-write')->name('api.generate-barcode.batch-generate');
+        Route::get('/generate-barcode/{barcodeRequest}/label', [GenerateBarcodeController::class, 'label'])
+            ->middleware('throttle:export')->name('generate-barcode.label');
+        Route::post('/generate-barcode/label-bulk', [GenerateBarcodeController::class, 'labelBulk'])
+            ->middleware('throttle:export')->name('generate-barcode.label-bulk');
+    });
+
+Route::middleware(['auth', 'rack-confirmation-access'])
+    ->prefix('admin')
+    ->name('admin.')
+    ->group(function () {
+        Route::get('/rack-confirmation', [RackConfirmationController::class, 'index'])->name('rack-confirmation');
+        Route::get('/rack-confirmation/export', [RackConfirmationController::class, 'export'])
+            ->middleware(['role:admin', 'throttle:export'])->name('rack-confirmation.export');
+        Route::get('/api/rack-confirmation', [RackConfirmationController::class, 'datatable'])
+            ->middleware('throttle:datatable')->name('api.rack-confirmation');
+        Route::post('/api/rack-confirmation/{location}/finish', [RackConfirmationController::class, 'finish'])
+            ->middleware('throttle:scan-write')->name('api.rack-confirmation.finish');
+        Route::post('/api/rack-confirmation/{location}/validate', [RackConfirmationController::class, 'validateRack'])
+            ->middleware('throttle:scan-write')->name('api.rack-confirmation.validate');
+        Route::post('/api/rack-confirmation/{location}/confirm', [RackConfirmationController::class, 'confirm'])
+            ->middleware('throttle:scan-write')->name('api.rack-confirmation.confirm');
+        Route::post('/api/rack-confirmation/{location}/cancel', [RackConfirmationController::class, 'cancel'])
+            ->middleware('throttle:scan-write')->name('api.rack-confirmation.cancel');
+    });
+
 /*
 |--------------------------------------------------------------------------
 | Admin Portal Routes
 |--------------------------------------------------------------------------
 | Rute-rute ini hanya bisa diakses oleh user dengan role 'admin'.
-| Menangani dashboard utama, rekapitulasi data, ekspor laporan, 
+| Menangani dashboard utama, rekapitulasi data, ekspor laporan,
 | serta manajemen data master (Master STO, Plant, Material, User, dll).
 */
 Route::middleware(['auth', 'role:admin'])
@@ -261,42 +319,4 @@ Route::middleware(['auth', 'role:admin'])
         Route::put('/api/users/{id}', [MasterController::class, 'updateUser'])->name('api.users.update');
         Route::delete('/api/users/{id}', [MasterController::class, 'destroyUser'])->name('api.users.destroy');
 
-        // --- GENERATE BARCODE (Admin memproses Request QR/Barcode dari Scanner) ---
-        Route::get('/generate-barcode', [GenerateBarcodeController::class, 'index'])->name('generate-barcode');
-        Route::get('/api/generate-barcode', [GenerateBarcodeController::class, 'datatable'])
-            ->middleware('throttle:datatable')
-            ->name('api.generate-barcode');
-        Route::post('/api/generate-barcode/{barcodeRequest}/validate', [GenerateBarcodeController::class, 'validateData'])
-            ->name('api.generate-barcode.validate');
-        Route::post('/api/generate-barcode/{barcodeRequest}/generate', [GenerateBarcodeController::class, 'generate'])
-            ->middleware('throttle:scan-write')
-            ->name('api.generate-barcode.generate');
-        Route::post('/api/generate-barcode/{barcodeRequest}/reject', [GenerateBarcodeController::class, 'reject'])
-            ->middleware('throttle:scan-write')
-            ->name('api.generate-barcode.reject');
-        Route::post('/api/generate-barcode/batch-generate', [BulkGenerateBarcodeController::class, 'batchGenerate'])
-            ->middleware('throttle:scan-write')
-            ->name('api.generate-barcode.batch-generate');
-        Route::post('/generate-barcode/batch-print-grid', [BulkGenerateBarcodeController::class, 'batchPrintA4Grid'])
-            ->name('generate-barcode.batch-print-grid');
-        Route::get('/generate-barcode/{barcodeRequest}/label', [GenerateBarcodeController::class, 'label'])
-            ->name('generate-barcode.label');
-        Route::post('/generate-barcode/label-bulk', [GenerateBarcodeController::class, 'labelBulk'])
-            ->name('generate-barcode.label-bulk');
-
-        // --- RACK CONFIRMATION (Admin konfirmasi rak secara fisik) ---
-        Route::get('/rack-confirmation', [RackConfirmationController::class, 'index'])
-            ->name('rack-confirmation');
-        Route::get('/rack-confirmation/export', [RackConfirmationController::class, 'export'])
-            ->middleware('throttle:export')
-            ->name('rack-confirmation.export');
-        Route::get('/api/rack-confirmation', [RackConfirmationController::class, 'datatable'])
-            ->middleware('throttle:datatable')
-            ->name('api.rack-confirmation');
-        Route::post('/api/rack-confirmation/{location}/confirm', [RackConfirmationController::class, 'confirm'])
-            ->middleware('throttle:scan-write')
-            ->name('api.rack-confirmation.confirm');
-        Route::post('/api/rack-confirmation/{location}/cancel', [RackConfirmationController::class, 'cancel'])
-            ->middleware('throttle:scan-write')
-            ->name('api.rack-confirmation.cancel');
     });

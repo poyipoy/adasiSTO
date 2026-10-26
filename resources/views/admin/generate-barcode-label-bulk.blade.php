@@ -79,7 +79,7 @@
         @php
             $request = $item['request'];
             // Construct the detail string: "HP4MA FLAT 45 X 30 X 405"
-            $detail = trim(strtoupper($request->material_name . ' ' . $request->label_description));
+            $detail = trim($request->material_name . ' ' . $request->label_description);
         @endphp
         <div class="label">
             <div class="company">{{ $company }}</div>

@@ -8,12 +8,10 @@ use App\Models\MasterMaterial;
 use App\Models\MaterialDoubleValidation;
 use App\Models\Plant;
 use App\Models\ScanResult;
-use App\Models\ScanResultLog;
 use App\Models\StoCode;
 use App\Models\User;
 use App\Services\ScanService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\RateLimiter;
 use Tests\TestCase;
 
@@ -22,10 +20,15 @@ class ScanFlowTest extends TestCase
     use RefreshDatabase;
 
     private User $scanner;
+
     private User $otherScanner;
+
     private User $admin;
+
     private Plant $plant;
+
     private Location $location;
+
     private StoCode $stoCode;
 
     protected function setUp(): void
@@ -37,7 +40,7 @@ class ScanFlowTest extends TestCase
         $this->admin = User::factory()->admin()->create();
         $this->stoCode = StoCode::create(['code' => 'STO2606', 'is_active' => true]);
         $this->plant = Plant::create(['name' => 'Cikarang', 'is_active' => true]);
-        $this->location = Location::create(['user_id' => $this->scanner->id, 'plant_id' => $this->plant->id, 'name' => 'CT01', 'is_active' => true]);
+        $this->location = Location::create(['created_by_user_id' => $this->scanner->id, 'plant_id' => $this->plant->id, 'name' => 'CT01', 'is_active' => true]);
         MasterMaterial::create(['material_code' => '1H', 'material_name' => 'SKD11', 'is_active' => true]);
         MasterMaterial::create(['material_code' => '2P', 'material_name' => 'SKD61', 'is_active' => true]);
         foreach (['OK', 'Lot Salah', 'Size Salah', 'Material Salah'] as $name) {
@@ -138,6 +141,7 @@ class ScanFlowTest extends TestCase
             'plant_id' => $this->plant->id,
             'name' => 'Temporary Rack',
             'is_active' => true,
+            'created_by_user_id' => $this->scanner->id,
         ]);
 
         $response = $this->actingAs($this->scanner)->deleteJson("/api/locations/{$location->id}");
@@ -148,19 +152,20 @@ class ScanFlowTest extends TestCase
         $this->assertDatabaseMissing('locations', ['id' => $location->id]);
     }
 
-    public function test_scanner_can_delete_unused_shared_location_rack(): void
+    public function test_scanner_cannot_delete_unused_location_owned_by_another_user(): void
     {
         $sharedLocation = Location::create([
             'plant_id' => $this->plant->id,
             'name' => 'Shared Temporary Rack',
             'is_active' => true,
+            'created_by_user_id' => $this->otherScanner->id,
         ]);
 
         $response = $this->actingAs($this->scanner)->deleteJson("/api/locations/{$sharedLocation->id}");
 
-        $response->assertOk()
-            ->assertJsonPath('success', true);
-        $this->assertDatabaseMissing('locations', ['id' => $sharedLocation->id]);
+        $response->assertForbidden()
+            ->assertJsonPath('success', false);
+        $this->assertDatabaseHas('locations', ['id' => $sharedLocation->id]);
     }
 
     public function test_scanner_cannot_delete_location_rack_used_by_scan(): void
@@ -286,11 +291,8 @@ class ScanFlowTest extends TestCase
     public function test_admin_can_edit_all_scan_result_columns_manually(): void
     {
         $scan = $this->createScan($this->scanner);
-        $newSto = StoCode::create(['code' => 'STO2607', 'is_active' => false]);
-
         $response = $this->actingAs($this->admin)->putJson("/admin/api/scan-results/{$scan->id}", $this->adminPayload([
             'user_id' => $this->otherScanner->id,
-            'sto_code_id' => $newSto->id,
             'location_name' => 'Round Rack',
             'barcode_raw' => 'RR2P051-00000835B|LOTEDIT|7',
             'barcode_material' => 'RR2P051-00000835B',
@@ -314,8 +316,8 @@ class ScanFlowTest extends TestCase
         $this->assertDatabaseHas('scan_results', [
             'id' => $scan->id,
             'user_id' => $this->otherScanner->id,
-            'sto_code_id' => $newSto->id,
-            'sto_code' => 'STO2607',
+            'sto_code_id' => $this->stoCode->id,
+            'sto_code' => 'STO2606',
             'barcode_raw' => 'RR2P051-00000835B|LOTEDIT|7',
             'barcode_material' => 'RR2P051-00000835B',
             'lot_number' => 'LOTEDIT',
@@ -323,7 +325,7 @@ class ScanFlowTest extends TestCase
             'material_code' => '2P',
             'material_name' => 'SKD61',
             'shape_code' => 'RR',
-            'shape_name' => 'Round',
+            'shape_name' => 'ROUND',
             'thickness' => null,
             'width' => null,
             'diameter' => 51,
@@ -492,10 +494,10 @@ class ScanFlowTest extends TestCase
             ->assertSee('BarcodeDetector')
             ->assertSee('tap label barcode')
             ->assertSee('recent-action-meta', false)
-            ->assertSee('CT01 &bull; ' . $newerAt->format('H:i:s'), false)
+            ->assertSee('CT01 &bull; '.$newerAt->format('H:i:s'), false)
             ->assertSeeInOrder([
                 $newerScan->barcode_material,
-                'SKD11 - Flat - 59 x 96 x 99 - 1 pcs - ST2605',
+                'SKD11 - FLAT - 59 x 96 x 99 - 1 pcs - ST2605',
                 'OK',
                 $newerAt->format('H:i:s'),
                 $olderScan->barcode_material,
@@ -503,7 +505,7 @@ class ScanFlowTest extends TestCase
             ])
             ->assertDontSee($newerAt->format('Y-m-d H:i:s'))
             ->assertDontSee('recent-time', false)
-            ->assertDontSee('Lot ST2605 - ' . $newerAt->format('Y-m-d H:i:s'));
+            ->assertDontSee('Lot ST2605 - '.$newerAt->format('Y-m-d H:i:s'));
     }
 
     public function test_recent_scan_endpoint_paginates_today_results_for_current_user(): void
@@ -546,7 +548,7 @@ class ScanFlowTest extends TestCase
         $other = $this->createScan($this->scanner, 'RF1H059-00960002B|OTHER|1');
 
         $response = $this->actingAs($this->scanner)
-            ->getJson('/api/scan/history?barcode_material=' . urlencode($match->barcode_material));
+            ->getJson('/api/scan/history?barcode_material='.urlencode($match->barcode_material));
 
         $response->assertOk()
             ->assertJsonFragment(['id' => $match->id])
@@ -590,7 +592,7 @@ class ScanFlowTest extends TestCase
         $other = $this->createScan($this->scanner, 'RF1H059-00960002B|OTHER|1');
 
         $response = $this->actingAs($this->scanner)
-            ->getJson('/api/scan/history?location_id=' . $secondLocation->id);
+            ->getJson('/api/scan/history?location_id='.$secondLocation->id);
 
         $response->assertOk()
             ->assertJsonFragment(['id' => $match->id])
@@ -615,7 +617,7 @@ class ScanFlowTest extends TestCase
         $other = $this->createScan($this->scanner, 'RF1H059-00960002B|OTHER|1');
 
         $response = $this->actingAs($this->scanner)
-            ->getJson('/api/scan/history?plant_id=' . $secondPlant->id);
+            ->getJson('/api/scan/history?plant_id='.$secondPlant->id);
 
         $response->assertOk()
             ->assertJsonFragment(['id' => $match->id])
@@ -734,6 +736,7 @@ class ScanFlowTest extends TestCase
         $this->createScan($this->otherScanner, 'RF1H059-00960099B|LOT004|1', ['location_id' => $secondLocation->id]);
 
         MaterialDoubleValidation::create([
+            'sto_code_id' => $this->stoCode->id,
             'barcode_material' => 'RF1H059-00960099B',
             'plant_id' => $this->plant->id,
             'location_id' => $this->location->id,
@@ -741,6 +744,7 @@ class ScanFlowTest extends TestCase
             'validated_at' => now(),
         ]);
         MaterialDoubleValidation::create([
+            'sto_code_id' => $this->stoCode->id,
             'barcode_material' => 'RF1H059-00960099B',
             'plant_id' => $this->plant->id,
             'location_id' => $secondLocation->id,
@@ -1089,21 +1093,26 @@ class ScanFlowTest extends TestCase
 
         $delete->assertOk()
             ->assertJsonPath('deleted_count', 1)
-            ->assertJsonPath('message', 'Data duplicate terpilih berhasil dihapus dan duplicate QR berhasil diverifikasi.');
+            ->assertJsonPath('message', 'Data duplicate terpilih berhasil dihapus. Status tetap Need Check sampai tombol Valid digunakan.');
 
         $this->assertDatabaseMissing('scan_results', ['id' => $targetOne->id]);
         $this->assertDatabaseHas('scan_results', ['id' => $targetTwo->id]);
         $this->assertDatabaseHas('scan_results', ['id' => $otherGroup->id]);
-        $this->assertDatabaseHas('material_double_validations', [
+        $this->assertDatabaseMissing('material_double_validations', [
             'barcode_material' => 'RF1H059-00960099B',
             'plant_id' => $this->plant->id,
             'location_id' => $this->location->id,
-            'validated_by' => $this->admin->id,
         ]);
         $this->assertDatabaseHas('scan_result_logs', [
             'scan_result_id' => $targetOne->id,
             'user_id' => $this->admin->id,
             'action' => 'deleted',
+        ]);
+        $this->assertDatabaseHas('barcode_delete_histories', [
+            'original_scan_result_id' => $targetOne->id,
+            'deleted_by_user_id' => $this->admin->id,
+            'original_user_id' => $this->scanner->id,
+            'deletion_source' => 'material_double',
         ]);
     }
 
@@ -1150,11 +1159,16 @@ class ScanFlowTest extends TestCase
             'user_id' => $validator->id,
             'action' => 'deleted',
         ]);
-        $this->assertDatabaseHas('material_double_validations', [
+        $this->assertDatabaseMissing('material_double_validations', [
             'barcode_material' => 'RF1H059-00960099B',
             'plant_id' => $this->plant->id,
             'location_id' => $this->location->id,
-            'validated_by' => $validator->id,
+        ]);
+        $this->assertDatabaseHas('barcode_delete_histories', [
+            'original_scan_result_id' => $targetOne->id,
+            'deleted_by_user_id' => $validator->id,
+            'original_user_id' => $this->scanner->id,
+            'deletion_source' => 'material_double',
         ]);
 
         $this->actingAs($validator)
@@ -1285,18 +1299,17 @@ class ScanFlowTest extends TestCase
         ]))->assertStatus(429);
     }
 
-    public function test_export_queue_endpoint_is_rate_limited(): void
+    public function test_synchronous_export_endpoint_is_rate_limited(): void
     {
-        Queue::fake();
         config(['sto.rate_limits.export_per_minute' => 1]);
         RateLimiter::clear("export:{$this->admin->id}");
 
         $this->actingAs($this->admin)
-            ->postJson('/admin/export/scan-results/excel')
-            ->assertStatus(202);
+            ->get('/admin/export/scan-results/excel')
+            ->assertOk();
 
         $this->actingAs($this->admin)
-            ->postJson('/admin/export/scan-results/excel')
+            ->get('/admin/export/scan-results/excel')
             ->assertStatus(429);
     }
 
@@ -1343,6 +1356,7 @@ class ScanFlowTest extends TestCase
         $excludedTwo->forceFill(['created_at' => '2026-06-12 08:05:00', 'updated_at' => '2026-06-12 08:05:00'])->save();
 
         MaterialDoubleValidation::create([
+            'sto_code_id' => $this->stoCode->id,
             'barcode_material' => 'RF1H059-00960099B',
             'plant_id' => $this->plant->id,
             'location_id' => $this->location->id,
@@ -1350,6 +1364,7 @@ class ScanFlowTest extends TestCase
             'validated_at' => '2026-06-11 09:00:00',
         ]);
         MaterialDoubleValidation::create([
+            'sto_code_id' => $this->stoCode->id,
             'barcode_material' => 'RF1H060-00960098B',
             'plant_id' => $this->plant->id,
             'location_id' => $this->location->id,
@@ -1497,7 +1512,7 @@ class ScanFlowTest extends TestCase
 
         $this->assertSame('59 x 96 x 99', $service->serializeScan($flat)['display_size']);
         $this->assertSame('⌀51 x 835', $service->serializeScan($round)['display_size']);
-        $this->assertStringContainsString('SKD61 - Round - ⌀51 x 835 - Lot ST2605 - ', $service->serializeScan($round)['recent_detail']);
+        $this->assertStringContainsString('SKD61 - ROUND - ⌀51 x 835 - Lot ST2605 - ', $service->serializeScan($round)['recent_detail']);
         $this->assertMatchesRegularExpression('/\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $service->serializeScan($round)['recent_detail']);
     }
 
@@ -1550,12 +1565,12 @@ class ScanFlowTest extends TestCase
     private function createScan(User $user, string $qr = 'RF1H059-00960099B|ST2605|1', array $override = []): ScanResult
     {
         $barcodeMaterial = explode('|', $qr)[0];
-        $location = !empty($override['location_id'])
+        $location = ! empty($override['location_id'])
             ? Location::findOrFail($override['location_id'])
             : ($user->is($this->scanner)
             ? $this->location
             : Location::firstOrCreate(
-                ['plant_id' => $override['plant_id'] ?? $this->plant->id, 'name' => 'Rack ' . $user->id],
+                ['plant_id' => $override['plant_id'] ?? $this->plant->id, 'name' => 'Rack '.$user->id],
                 ['is_active' => true]
             ));
 

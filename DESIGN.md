@@ -183,6 +183,7 @@ STO Result
 ??? All Scan Results
 ??? Material Summary
 ??? Material Double
+??? Konfirmasi Rak
 ??? Generate Barcode
 
 Master Data
@@ -191,7 +192,6 @@ Master Data
 ??? Master Material
 ??? Master Keterangan
 ??? Master Location
-??? Konfirmasi Rak
 ??? User Management
 ```
 
@@ -208,6 +208,8 @@ Scan Material
 ```
 
 `Material Double` ditambahkan untuk scanner hanya ketika flag validator aktif. Admin selalu memiliki kemampuan validator dan flag tersebut tidak dapat dinonaktifkan selama role-nya admin.
+
+Menu admin `STO Result` juga memuat `History Delete Barcode` dan `Konfirmasi Rak`. Seluruh scanner melihat `History Delete Barcode` dan `Rack Confirmation`. Scanner validator mendapat tambahan `Generate Barcode` dan `Material Double`; scanner biasa tidak melihat kedua menu tersebut.
 
 ### 6.3 Navigation state
 
@@ -240,6 +242,7 @@ Button wajib memiliki `default`, `hover`, `focus`, `disabled`, dan `loading` sta
 - Tinggi kontrol desktop `32-36px`; touch control minimal `40px`.
 - Dropdown memakai arrow di sisi kanan field dan tidak menimpa value.
 - Searchable dropdown dipakai untuk option set panjang.
+- Seluruh dropdown Location wajib searchable. Option tetap berasal dari `<select>` canonical, mengikuti filter Plant, dan daftar pencarian ikut diperbarui ketika option dimuat atau diubah melalui AJAX.
 - Switch dipakai untuk boolean seperti Active atau Validator; checkbox untuk multi-select.
 - Readonly terlihat berbeda dari disabled dan nilainya tetap memiliki contrast yang cukup.
 - Unit atau format harus dekat dengan input terkait.
@@ -301,6 +304,7 @@ Pagination server-side menampilkan Previous, `Page x / y`, Next, dan jumlah row.
 | State | Warna | Label minimum |
 |---|---|---|
 | OK / Valid / Approved / Confirmed | Success | Teks status + icon opsional |
+| Printed / Finished / Validated | Success/info | Tahap workflow yang eksplisit |
 | Duplicate / Need Check | Warning | Teks warning yang eksplisit |
 | Invalid / Error / Rejected | Danger | Alasan bila tersedia |
 | Pending | Warning/neutral | Tahap proses saat ini |
@@ -328,9 +332,12 @@ Angka dimensi tidak menampilkan trailing `.00`. Desimal non-zero tetap dipertaha
 | Shape | Format | Contoh |
 |---|---|---|
 | Flat | `thickness x width x length` | `59 x 96 x 99` |
-| Round | `?diameter x length` | `?51 x 835` |
+| Round | `⌀diameter x length` | `⌀51 x 835` |
+| Hollow | `thickness x width x length` | `10 x 20 x 30` |
 
-Jangan menampilkan thickness/width untuk Round atau diameter untuk Flat. Gunakan simbol `?` secara konsisten.
+Jangan menampilkan thickness/width untuk Round atau diameter untuk Flat/Hollow. Gunakan simbol `⌀` secara konsisten.
+
+Hollow memakai format `thickness x width x length`, sama seperti Flat, dengan label canonical `HOLLOW`. Nama shape baru selalu uppercase: `FLAT`, `ROUND`, atau `HOLLOW`. Round menggunakan simbol diameter `⌀`.
 
 ### 8.5 Ordering dan overflow
 
@@ -394,7 +401,7 @@ Tabel mengelompokkan duplicate sesuai kontrak backend dan memiliki filter STO, P
 - Tidak Valid: buka detail modal, pilih row, lalu Delete Selected.
 - Scan: buka modal kamera/input manual dengan Plant dan Location dari group sebagai readonly.
 
-Detail modal memuat checkbox, No, QR Code, Material, Shape, Size, dan waktu scan bila diperlukan untuk membedakan row. Delete Selected memerlukan konfirmasi, hard delete + audit, lalu menandai group valid sesuai flow aktif dan memperbarui tabel terkait. Feedback sukses harus menjelaskan kedua hasil tersebut.
+Detail modal memuat checkbox, No, QR Code, Material, Shape, Size, dan waktu scan bila diperlukan untuk membedakan row. Delete Selected memerlukan konfirmasi dan menjalankan partial hard delete + audit secara atomic. Minimal satu row utama wajib tersisa. Delete Selected tidak menandai group Valid; validasi lama dibersihkan dan group tersisa berstatus `Need Check` sampai user menekan tombol Valid. Feedback sukses harus menyebut jumlah row terhapus dan status `Need Check`.
 
 ### 9.8 Master Data
 
@@ -404,13 +411,21 @@ Master Location admin menampilkan Location, PIC, Created At, Status, Action. Use
 
 ### 9.9 Barcode, Rack Confirmation, export, dan print
 
-Request QR/Barcode dan Generate Barcode harus membedakan input, preview, hasil, dan command download/print. Preview bukan pengganti validasi backend.
+Request QR/Barcode dan Generate Barcode harus membedakan input, preview, hasil, dan command download/print. Preview bukan pengganti validasi backend. Form request dan Add Barcode memiliki input `print_count`; payload QR tetap berakhir `|1`. State aktif tampil sebagai `Pending`, `Approved`, dan `Printed`. Row Printed menyediakan action `Reprint`; data Rejected legacy tetap dapat difilter tetapi tidak memiliki action Reject baru.
 
-Rack Confirmation menampilkan identitas rack, user/PIC, status, waktu, dan action dengan vocabulary yang sama seperti bagian 8.
+Generate Barcode tersedia untuk admin dan scanner validator. Tombol Add Barcode hanya tampil untuk admin. Print single dan bulk harus menggunakan jumlah label per request dan tidak boleh mengubah status sebelum PDF selesai dirender.
+
+Rack Confirmation menampilkan identitas rack, total scan valid, actor, waktu, status, dan action dengan vocabulary yang sama seperti bagian 8. Action mengikuti urutan `Pending -> Finished -> Validated -> Confirmed`; scanner melakukan Finish, validator melakukan Validate, dan admin melakukan Confirm. Admin dapat Cancel status non-pending ke Pending dengan alasan wajib. Status selalu scoped ke Active STO.
 
 Export selalu mengikuti filter aktif dan saat ini berjalan secara synchronous dalam request HTTP. UI wajib menampilkan loading yang jelas, menonaktifkan double submit, dan mempertahankan state filter sampai file diterima atau request gagal. Queue worker belum menjadi bagian dari runtime/deployment aktif; migrasi ke queued export adalah pekerjaan arsitektur terpisah.
 
 Print label dikecualikan dari application shell. Gunakan putih/hitam high-contrast, ukuran fisik eksplisit, barcode tidak terdistorsi, area aman printer, dan `@media print` yang menyembunyikan control.
+
+### 9.10 History Delete Barcode
+
+History Delete Barcode adalah halaman read-only server-side. Tabel memprioritaskan barcode, material, owner asli, Plant, Location, actor delete, source, waktu scan asli, dan waktu delete. Action Detail membuka snapshot lengkap tanpa tombol edit, restore, atau delete.
+
+Admin melihat seluruh history. Scanner/validator hanya melihat delete yang dilakukan olehnya atau scan asli miliknya. Source ditampilkan sebagai `Scan History`, `All Scan Results`, atau `Material Double`. Empty state dan filter harus mengikuti scope authorization tersebut.
 
 ## 10. Responsive and Accessibility Rules
 
@@ -496,6 +511,9 @@ Sebuah perubahan UI selesai hanya jika seluruh item relevan berikut terpenuhi:
 ## 14. Implementation References
 
 - `AGENTS.md` - engineering rules, authorization, dan business constraints.
+- `DATABASE.md` - kontrak schema, lifecycle, dan audit persistence.
+- `API_SPECIFICATION.md` - endpoint dan response aktif.
+- `AUTHORIZATION_MATRIX.md` - capability per role.
 - `resources/views/components/layouts/app.blade.php` - application shell canonical.
 - `resources/views/scan/scanner.blade.php` - pola scanner mobile dan recent scan.
 - `resources/views/scan/results.blade.php` - pola Scan History.

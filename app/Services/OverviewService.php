@@ -13,14 +13,12 @@ use Illuminate\Support\Facades\DB;
 
 class OverviewService
 {
-    public function __construct(private MaterialDoubleQueryService $materialDoubleQuery)
-    {
-    }
+    public function __construct(private MaterialDoubleQueryService $materialDoubleQuery) {}
 
     public function scanOverview(?User $scopeUser = null, array $filters = []): array
     {
         $activeStoId = app(ActiveStoService::class)->active()?->id;
-        $cacheKey = 'scan_overview:' . ($scopeUser?->id ?? 'all') . ':' . md5(serialize($filters)) . ':' . $activeStoId;
+        $cacheKey = 'scan_overview:'.($scopeUser?->id ?? 'all').':'.md5(serialize($filters)).':'.$activeStoId;
 
         return Cache::remember($cacheKey, 15, function () use ($scopeUser, $filters) {
             $baseQuery = $this->scanQuery($scopeUser, $filters);
@@ -44,7 +42,7 @@ class OverviewService
             ->groupBy('scan_results.user_id', 'users.name')
             ->orderByDesc('total')
             ->get()
-            ->map(fn($item) => [
+            ->map(fn ($item) => [
                 'name' => $item->name ?? 'Unknown',
                 'total' => (int) $item->total,
             ]);
@@ -58,7 +56,7 @@ class OverviewService
             ->groupBy('date')
             ->orderBy('date')
             ->get()
-            ->map(fn($item) => [
+            ->map(fn ($item) => [
                 'date' => $item->date,
                 'total' => (int) $item->total,
             ]);
@@ -73,7 +71,7 @@ class OverviewService
         unset($filters['status']);
 
         $activeStoId = app(ActiveStoService::class)->active()?->id;
-        $cacheKey = 'validator_overview:' . md5(serialize($filters)) . ':' . $activeStoId;
+        $cacheKey = 'validator_overview:'.md5(serialize($filters)).':'.$activeStoId;
 
         return Cache::remember($cacheKey, 30, function () use ($filters) {
             $groups = $this->materialDoubleQuery->duplicateGroupQuery($filters);
@@ -99,7 +97,7 @@ class OverviewService
         unset($filters['status']);
 
         $activeStoId = app(ActiveStoService::class)->active()?->id;
-        $cacheKey = 'validation_by_scanner:' . md5(serialize($filters)) . ':' . $activeStoId;
+        $cacheKey = 'validation_by_scanner:'.md5(serialize($filters)).':'.$activeStoId;
 
         return Cache::remember($cacheKey, 30, function () use ($filters) {
             $groups = $this->materialDoubleQuery->duplicateGroupQuery($filters);
@@ -123,7 +121,7 @@ class OverviewService
                 ->groupBy('users.id', 'users.name')
                 ->orderByDesc('total');
 
-            return $query->get()->map(fn($item) => [
+            return $query->get()->map(fn ($item) => [
                 'name' => $item->name,
                 'total' => (int) $item->total,
             ]);
@@ -135,20 +133,20 @@ class OverviewService
         $query = $this->scanQuery($scopeUser, $filters)
             ->leftJoin('plants', 'scan_results.plant_id', '=', 'plants.id')
             ->leftJoin('locations', 'scan_results.location_id', '=', 'locations.id')
-            ->selectRaw('barcode_material, material_code, material_name, shape_code, shape_name, thickness, width, diameter, length, scan_results.plant_id, scan_results.location_id, plants.name as plant_name, locations.name as location_name, SUM(qty) as qty_total, COUNT(*) as scan_count, MAX(scan_results.created_at) as max_created_at')
-            ->groupBy('barcode_material', 'material_code', 'material_name', 'shape_code', 'shape_name', 'thickness', 'width', 'diameter', 'length', 'scan_results.plant_id', 'scan_results.location_id', 'plants.name', 'locations.name');
+            ->selectRaw('barcode_material, material_code, material_name, shape_code, MAX(UPPER(shape_name)) as shape_name, thickness, width, diameter, length, scan_results.plant_id, scan_results.location_id, plants.name as plant_name, locations.name as location_name, SUM(qty) as qty_total, COUNT(*) as scan_count, MAX(scan_results.created_at) as max_created_at')
+            ->groupBy('barcode_material', 'material_code', 'material_name', 'shape_code', 'thickness', 'width', 'diameter', 'length', 'scan_results.plant_id', 'scan_results.location_id', 'plants.name', 'locations.name');
 
-        if (!empty($filters['material_code'])) {
+        if (! empty($filters['material_code'])) {
             $searchMatCode = str_replace(['%', '_'], ['\\%', '\\_'], $filters['material_code']);
-            $query->where('material_code', 'like', '%' . $searchMatCode . '%');
+            $query->where('material_code', 'like', '%'.$searchMatCode.'%');
         }
 
-        if (!empty($filters['material_name'])) {
+        if (! empty($filters['material_name'])) {
             $searchMatName = str_replace(['%', '_'], ['\\%', '\\_'], $filters['material_name']);
-            $query->where('material_name', 'like', '%' . $searchMatName . '%');
+            $query->where('material_name', 'like', '%'.$searchMatName.'%');
         }
 
-        if (!empty($filters['shape_code'])) {
+        if (! empty($filters['shape_code'])) {
             $query->where('shape_code', $filters['shape_code']);
         }
 
@@ -163,19 +161,19 @@ class OverviewService
             $query->where('scan_results.user_id', $scopeUser->id);
         }
 
-        if (!empty($filters['plant_id'])) {
+        if (! empty($filters['plant_id'])) {
             $query->where('scan_results.plant_id', $filters['plant_id']);
         }
 
-        if (!empty($filters['location_id'])) {
+        if (! empty($filters['location_id'])) {
             $query->where('scan_results.location_id', $filters['location_id']);
         }
 
-        if (!empty($filters['date_from'])) {
+        if (! empty($filters['date_from'])) {
             $query->where('scan_results.created_at', '>=', Carbon::parse($filters['date_from'])->startOfDay());
         }
 
-        if (!empty($filters['date_to'])) {
+        if (! empty($filters['date_to'])) {
             $query->where('scan_results.created_at', '<=', Carbon::parse($filters['date_to'])->endOfDay());
         }
 

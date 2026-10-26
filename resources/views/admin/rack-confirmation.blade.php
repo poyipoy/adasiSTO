@@ -1,346 +1,438 @@
-<x-layouts.app :title="'Konfirmasi Rak'">
+<x-layouts.app :title="'Konfirmasi Rack'">
+
+@push('styles')
+<style>
+    .rack-action-list {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px;
+        min-width: 132px;
+    }
+    .rack-action-list .btn {
+        min-height: 28px;
+        padding: 4px 9px;
+        white-space: nowrap;
+    }
+    .rack-action-list .btn:disabled {
+        cursor: not-allowed;
+        opacity: 0.5;
+    }
+    .rack-disabled-action {
+        display: inline-flex;
+    }
+    .rack-action-modal {
+        width: min(440px, calc(100vw - 24px));
+        max-width: 440px;
+    }
+    .rack-action-info {
+        padding: 11px 12px;
+        margin-bottom: 12px;
+        border: 1px solid #bfd3ec;
+        border-left: 3px solid var(--primary);
+        background: #f3f7fc;
+        color: var(--text);
+        font-size: 12px;
+        line-height: 1.5;
+    }
+    .rack-action-info strong {
+        display: block;
+        margin-bottom: 2px;
+        font-size: 13px;
+    }
+    .rack-cancel-message {
+        margin: 0 0 12px;
+        color: var(--text-secondary);
+        font-size: 12px;
+        line-height: 1.5;
+    }
+    .rack-form-error {
+        display: none;
+        margin-top: 8px;
+        color: var(--danger);
+        font-size: 12px;
+        line-height: 1.4;
+    }
+</style>
+@endpush
 
 <div class="enterprise-toolbar">
-    <button class="btn btn-icon" type="button" onclick="reloadTable()" title="Refresh">Refresh</button>
-    <button class="btn btn-icon" type="button" onclick="resetFilters()" title="Reset">Reset</button>
-    <button class="btn btn-secondary" type="button" onclick="exportExcel()" title="Export Laporan CSV/Excel">
-        <i class='bx bx-export'></i> Export CSV/Excel
-    </button>
+    <button class="btn btn-icon" type="button" onclick="reloadTable()">Refresh</button>
+    <button class="btn btn-icon" type="button" onclick="resetFilters()">Reset</button>
+    @if(auth()->user()->isAdmin())
+        <button class="btn btn-secondary" type="button" onclick="exportReport()">Export CSV</button>
+    @endif
 </div>
 
-{{-- ─── Filters ─── --}}
+@if(!$activeSto)
+    <div class="card" style="border-left:3px solid var(--danger);color:var(--danger);">
+        {{ \App\Services\ActiveStoService::NO_ACTIVE_STO_MESSAGE }}
+    </div>
+@endif
+
 <div class="card" style="border-top:0;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
-    <div style="width:160px;">
+    <div style="width:180px;">
         <label class="form-label">Plant</label>
         <select id="filterPlant" class="form-control">
             <option value="">All Plant</option>
-            @foreach($plants as $plant)
-                <option value="{{ $plant->id }}">{{ $plant->name }}</option>
-            @endforeach
+            @foreach($plants as $plant)<option value="{{ $plant->id }}">{{ $plant->name }}</option>@endforeach
         </select>
     </div>
-    <div style="width:160px;">
-        <label class="form-label">Status Konfirmasi</label>
+    <div style="width:180px;">
+        <label class="form-label">Status</label>
         <select id="filterStatus" class="form-control">
             <option value="">All Status</option>
-            <option value="confirmed">Terkonfirmasi</option>
-            <option value="unconfirmed">Belum Dikonfirmasi</option>
+            <option value="pending">Pending</option>
+            <option value="finished">Finished</option>
+            <option value="validated">Validated</option>
+            <option value="confirmed">Confirmed</option>
         </select>
     </div>
     <button class="btn btn-primary" type="button" onclick="reloadTable()">Filter</button>
 </div>
 
-{{-- ─── DataTable ─── --}}
 <div class="table-container" style="border-top:0;">
     <table id="rackConfirmationTable" class="table-enterprise" style="width:100%;">
-        <thead>
-            <tr>
-                <th>No</th>
-                <th>Lokasi</th>
-                <th>Plant</th>
-                <th>Total Barcode</th>
-                <th>Status Konfirmasi</th>
-                <th>Dikonfirmasi Oleh</th>
-                <th>Waktu Konfirmasi</th>
-                <th>Catatan</th>
-                <th>Aksi</th>
-            </tr>
-        </thead>
+        <thead><tr>
+            <th>No</th><th>Location</th><th>Plant</th><th>Total Scan</th><th>Status</th>
+            <th>Action By</th><th>Action At</th><th>Note</th><th>Action</th>
+        </tr></thead>
     </table>
 </div>
 
-{{-- ─── MODAL: Konfirmasi Rak ─── --}}
-<div class="modal-overlay" id="confirmModal">
-    <div class="modal-content" style="max-width:440px;">
+<div class="modal-overlay" id="transitionModal">
+    <div class="modal-content rack-action-modal" role="dialog" aria-modal="true" aria-labelledby="transitionTitle">
         <div class="modal-header">
-            <strong>Konfirmasi Rak</strong>
-            <button class="btn-icon" type="button" onclick="closeModal('confirmModal')">
-                <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
-                </svg>
-            </button>
+            <strong id="transitionTitle">Aksi Rack</strong>
+            <button class="btn-icon" type="button" onclick="closeRackModal('transitionModal')" aria-label="Tutup modal">&times;</button>
         </div>
         <div class="modal-body">
-            {{-- Info box: acuan admin di lapangan --}}
-            <div id="confirmInfo" style="
-                background: #f0f7ff;
-                border: 1px solid #c3d6f7;
-                border-radius: 4px;
-                padding: 12px 14px;
-                margin-bottom: 14px;
-            ">
-                <div style="font-size:12px;color:var(--text-secondary);margin-bottom:4px;">Nama Lokasi</div>
-                <div id="confirmLocationName" style="font-size:14px;font-weight:700;color:var(--primary);"></div>
-                <div style="margin-top:10px;padding-top:10px;border-top:1px solid #dde6f7;">
-                    <div style="font-size:11px;color:var(--text-secondary);">Menurut sistem, lokasi ini seharusnya memiliki:</div>
-                    <div id="confirmBarcodeCount" style="font-size:20px;font-weight:800;color:var(--primary);margin-top:2px;"></div>
-                    <div style="font-size:11px;color:var(--text-secondary);">barcode &mdash; pastikan sudah dicek fisik sebelum konfirmasi.</div>
-                </div>
-            </div>
-            <div class="form-group">
-                <label class="form-label" for="inputConfirmNote">Catatan Cek Fisik <span style="color:var(--text-secondary);font-weight:400;">(opsional)</span></label>
-                <textarea id="inputConfirmNote" class="form-control" rows="3" placeholder="Misal: Sesuai, semua barang ada di rak..." style="resize:vertical;"></textarea>
-            </div>
-            <div id="confirmModalError" style="display:none;color:var(--danger);font-size:12px;margin-top:6px;"></div>
+            <div id="transitionInfo" class="rack-action-info"></div>
+            <div class="form-group"><label class="form-label">Note (opsional)</label><textarea id="transitionNote" class="form-control" rows="3" maxlength="500"></textarea></div>
+            <div id="transitionError" class="rack-form-error" role="alert"></div>
         </div>
         <div class="modal-footer">
-            <button class="btn" type="button" onclick="closeModal('confirmModal')">Batal</button>
-            <button class="btn btn-primary" type="button" id="btnDoConfirm" onclick="doConfirm()">
-                <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width:14px;height:14px;vertical-align:middle;margin-right:3px;">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
-                </svg>
-                Konfirmasi Rak
-            </button>
+            <button class="btn" type="button" onclick="closeRackModal('transitionModal')">Batal</button>
+            <button class="btn btn-primary" id="btnTransition" type="button" onclick="submitTransition()">Simpan</button>
         </div>
     </div>
 </div>
 
-{{-- ─── MODAL: Batalkan Konfirmasi ─── --}}
-<div class="modal-overlay" id="cancelModal">
-    <div class="modal-content" style="max-width:420px;">
+<div class="modal-overlay" id="cancelRackModal">
+    <div class="modal-content rack-action-modal" role="dialog" aria-modal="true" aria-labelledby="cancelRackTitle">
         <div class="modal-header">
-            <strong>Batalkan Konfirmasi</strong>
-            <button class="btn-icon" type="button" onclick="closeModal('cancelModal')">
-                <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
-                </svg>
-            </button>
+            <strong id="cancelRackTitle">Batalkan Konfirmasi Rack</strong>
+            <button class="btn-icon" type="button" onclick="closeRackModal('cancelRackModal')" aria-label="Tutup modal">&times;</button>
         </div>
         <div class="modal-body">
-            <div id="cancelInfo" style="font-size:13px;margin-bottom:12px;color:var(--text-secondary);">
-                Batalkan konfirmasi untuk lokasi: <strong id="cancelLocationName" style="color:var(--danger);"></strong>
-            </div>
-            <div class="form-group">
-                <label class="form-label" for="inputCancelNote">
-                    Alasan Pembatalan / Catatan Selisih <span style="color:var(--danger);">*</span>
-                </label>
-                <textarea id="inputCancelNote" class="form-control" rows="3" placeholder="Wajib diisi (min. 5 karakter). Misal: Ada selisih 2 pcs pada pengecekan ulang..." style="resize:vertical;"></textarea>
-            </div>
-            <div id="cancelModalError" style="display:none;color:var(--danger);font-size:12px;margin-top:6px;"></div>
+            <p id="cancelRackInfo" class="rack-cancel-message"></p>
+            <div class="form-group"><label class="form-label">Alasan <span style="color:var(--danger);">*</span></label><textarea id="cancelRackNote" class="form-control" rows="3" minlength="5" maxlength="500"></textarea></div>
+            <div id="cancelRackError" class="rack-form-error" role="alert"></div>
         </div>
         <div class="modal-footer">
-            <button class="btn" type="button" onclick="closeModal('cancelModal')">Batal</button>
-            <button class="btn btn-danger" type="button" id="btnDoCancel" onclick="doCancel()">
-                <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width:14px;height:14px;vertical-align:middle;margin-right:3px;">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
-                </svg>
-                Batalkan Konfirmasi
-            </button>
+            <button class="btn" type="button" onclick="closeRackModal('cancelRackModal')">Batal</button>
+            <button class="btn btn-danger" id="btnCancelRack" type="button" onclick="submitCancel()">Ya, Batalkan</button>
         </div>
     </div>
 </div>
 
 @push('scripts')
 <script>
-const ROUTES = {
-    datatable : '{{ route('admin.api.rack-confirmation') }}',
-    export    : '{{ route('admin.rack-confirmation.export') }}',
-    confirm   : (id) => `{{ url('admin/api/rack-confirmation') }}/${id}/confirm`,
-    cancel    : (id) => `{{ url('admin/api/rack-confirmation') }}/${id}/cancel`,
+const RACK_ROUTES = {
+    datatable: '{{ route('admin.api.rack-confirmation') }}',
+    export: '{{ route('admin.rack-confirmation.export') }}',
+    finish: id => `{{ url('admin/api/rack-confirmation') }}/${id}/finish`,
+    validate: id => `{{ url('admin/api/rack-confirmation') }}/${id}/validate`,
+    confirm: id => `{{ url('admin/api/rack-confirmation') }}/${id}/confirm`,
+    cancel: id => `{{ url('admin/api/rack-confirmation') }}/${id}/cancel`,
 };
-const CSRF = document.querySelector('meta[name="csrf-token"]')?.content ?? '';
+const RACK_IS_ADMIN = @json(auth()->user()->isAdmin());
+const RACK_CSRF_TOKEN = document.querySelector('meta[name="csrf-token"]')?.content || '';
+const RACK_ACTION_COPY = {
+    finish: { title: 'Finished Rack', submit: 'Finished' },
+    validate: { title: 'Validate Rack', submit: 'Validate' },
+    confirm: { title: 'Konfirmasi Rack', submit: 'Konfirmasi' },
+};
+let rackTable;
+let rackAction = null;
+let rackLocationId = null;
 
-// --- Helpers ---
-function openModal(id) {
-    document.getElementById(id).classList.add('active');
-}
-function closeModal(id) {
-    document.getElementById(id).classList.remove('active');
-}
-function showModalError(id, msg) {
-    const el = document.getElementById(id);
-    el.textContent = msg;
-    el.style.display = 'block';
-}
-function confirmAction(message, callback) {
-    const swal = window.top?.Swal ?? window.Swal;
-    if (swal) {
-        swal.fire({
-            title: 'Konfirmasi',
-            text: message,
-            icon: 'warning',
-            showCancelButton: true,
-            confirmButtonText: 'Ya, Lanjutkan',
-            cancelButtonText: 'Batal',
-            reverseButtons: true,
-            confirmButtonColor: '#1F5FA6'
-        }).then((result) => {
-            if (result.isConfirmed) callback();
-        });
-    } else {
-        if (confirm(message)) callback();
-    }
-}
-
-let rcTable       = null;
-let currentLocId  = null;
-
-// ─── DataTable Init ───
-document.addEventListener('DOMContentLoaded', function () {
-    rcTable = $('#rackConfirmationTable').DataTable({
-        processing   : true,
-        serverSide   : true,
-        ajax         : {
-            url  : ROUTES.datatable,
-            type : 'GET',
-            data : function (d) {
-                d.filter_plant   = document.getElementById('filterPlant').value;
-                d.filter_status  = document.getElementById('filterStatus').value;
-            },
-        },
+document.addEventListener('DOMContentLoaded', () => {
+    rackTable = $('#rackConfirmationTable').DataTable({
+        processing: true,
+        serverSide: true,
+        ajax: { url: RACK_ROUTES.datatable, data: d => {
+            d.filter_plant = document.getElementById('filterPlant').value;
+            d.filter_status = document.getElementById('filterStatus').value;
+        }},
         columns: [
-            { data: 'DT_RowIndex', name: 'DT_RowIndex', orderable: false, searchable: false,
-              render: (d, t, r, m) => m.settings._iDisplayStart + m.row + 1 },
-            { data: 'name',          name: 'locations.name' },
-            { data: 'plant_name',    name: 'plants.name',      orderable: false, searchable: false },
-            { data: 'total_barcode', name: 'total_barcode',    orderable: false, searchable: false,
-              render: (d) => `<strong style="font-size:15px;">${d}</strong> <span style="font-size:10px;color:var(--text-secondary);">barcode</span>` },
-            { data: 'status_badge',  name: 'is_confirmed',     orderable: false, searchable: false },
-            { data: 'confirmed_by_name',  name: 'confirmed_by_name', orderable: false, searchable: false },
-            { data: 'confirmed_at_fmt',   name: 'confirmed_at',      orderable: false, searchable: false },
-            { data: 'confirmation_note_val', name: 'confirmation_note_val', orderable: false, searchable: false,
-              render: (d) => d && d !== '-'
-                ? `<span style="font-size:11px;color:var(--text-secondary);">${escHtml(d)}</span>`
-                : '-' },
-            { 
-                data: null, 
-                name: 'id',
-                orderable: false, 
-                searchable: false,
-                render: function (row) {
-                    const safeName = escHtml(row.name);
-                    const totalBarcode = parseInt(row.total_barcode || 0);
-                    if (!row.is_confirmed) {
-                        return `<button class="btn btn-primary"
-                            style="font-size:11px;padding:2px 8px;"
-                            onclick="openConfirm(${row.id}, '${safeName}', ${totalBarcode})"
-                        >Konfirmasi</button>`;
-                    }
-                    return `<button class="btn btn-danger"
-                        style="font-size:11px;padding:2px 8px;"
-                        onclick="openCancel(${row.id}, '${safeName}')"
-                    >Batalkan</button>`;
-                }
-            },
+            { data: null, orderable: false, searchable: false, render: (d,t,r,m) => m.settings._iDisplayStart + m.row + 1 },
+            { data: 'name', name: 'locations.name' },
+            { data: 'plant_name', name: 'plants.name' },
+            { data: 'total_barcode', orderable: false, searchable: false },
+            { data: 'status_badge', orderable: false, searchable: false },
+            { data: 'actor_name', orderable: false, searchable: false },
+            { data: 'action_at', orderable: false, searchable: false, render: d => d || '-' },
+            { data: 'note', orderable: false, searchable: false, render: d => escapeHtml(d || '-') },
+            { data: null, orderable: false, searchable: false, render: (data, type, row) => actionButtons(row) },
         ],
-        order     : [[1, 'asc']],
         pageLength: 25,
-        language  : { processing: '<div class="loading-equalizer"><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div></div>' },
+        order: [[1, 'asc']],
+    });
+
+    document.getElementById('rackConfirmationTable').addEventListener('click', event => {
+        const button = event.target.closest('[data-rack-action]');
+        if (!button || button.disabled) {
+            return;
+        }
+
+        const action = button.dataset.rackAction;
+        const id = Number(button.dataset.id);
+        const name = button.dataset.name || '-';
+        const total = Number(button.dataset.total || 0);
+
+        if (action === 'cancel') {
+            openCancel(id, name);
+            return;
+        }
+
+        openTransition(action, id, name, total);
     });
 });
 
-function reloadTable() {
-    if (rcTable) rcTable.ajax.reload(null, false);
+function actionButtons(row) {
+    const actions = row.allowed_actions || {};
+    const status = String(row.rack_status || 'pending').toLowerCase();
+    const buttons = [];
+
+    if (actions.finish) {
+        buttons.push(rackActionButton(row, 'finish', 'Finished', 'btn-primary'));
+    }
+    if (actions.validate) {
+        buttons.push(rackActionButton(row, 'validate', 'Validate', 'btn-primary'));
+    }
+
+    if (RACK_IS_ADMIN) {
+        if (actions.cancel) {
+            buttons.push(rackActionButton(row, 'cancel', 'Batalkan', 'btn-danger'));
+        }
+        if (actions.confirm) {
+            buttons.push(rackActionButton(row, 'confirm', 'Konfirmasi', 'btn-primary'));
+        } else if (status === 'pending' || status === 'finished') {
+            const waitingMessage = status === 'pending'
+                ? 'Menunggu scanner menandai Finished.'
+                : 'Menunggu scanner validator melakukan Validate.';
+            buttons.push(rackActionButton(row, 'confirm', 'Konfirmasi', 'btn-primary', true, waitingMessage));
+        }
+    }
+
+    return buttons.length ? `<div class="rack-action-list">${buttons.join('')}</div>` : '-';
 }
 
-function resetFilters() {
-    document.getElementById('filterPlant').value  = '';
-    document.getElementById('filterStatus').value = '';
-    reloadTable();
+function rackActionButton(row, action, label, variant, disabled = false, title = '') {
+    const disabledAttributes = disabled ? ' disabled aria-disabled="true"' : '';
+    const button = `
+        <button
+            class="btn ${variant}"
+            type="button"
+            data-rack-action="${escapeAttribute(action)}"
+            data-id="${Number(row.id)}"
+            data-name="${escapeAttribute(row.name || '-')}"
+            data-total="${Number(row.total_barcode || 0)}"
+            ${disabledAttributes}
+        >${escapeHtml(label)}</button>
+    `;
+
+    if (disabled && title) {
+        return `<span class="rack-disabled-action" tabindex="0" title="${escapeAttribute(title)}">${button}</span>`;
+    }
+
+    return button;
 }
 
-function exportExcel() {
-    const plant  = document.getElementById('filterPlant').value;
-    const status = document.getElementById('filterStatus').value;
-    const url    = `${ROUTES.export}?filter_plant=${encodeURIComponent(plant)}&filter_status=${encodeURIComponent(status)}`;
-    window.location.href = url;
-}
-
-function escHtml(s) {
-    return String(s ?? '')
-        .replace(/'/g, "\\'")
-        .replace(/"/g, '&quot;');
-}
-
-// ─── Confirm Modal ───
-function openConfirm(locationId, locationName, totalBarcode) {
-    currentLocId = locationId;
-    document.getElementById('confirmLocationName').textContent = locationName;
-    document.getElementById('confirmBarcodeCount').textContent = totalBarcode;
-    document.getElementById('inputConfirmNote').value          = '';
-    document.getElementById('confirmModalError').style.display = 'none';
-    document.getElementById('btnDoConfirm').disabled           = false;
-    openModal('confirmModal');
-}
-
-function doConfirm() {
-    const note = document.getElementById('inputConfirmNote').value.trim();
-    const errEl = document.getElementById('confirmModalError');
-    errEl.style.display = 'none';
-
-    confirmAction('Konfirmasi rak ini setelah pengecekan fisik?', function () {
-        document.getElementById('btnDoConfirm').disabled = true;
-
-        fetch(ROUTES.confirm(currentLocId), {
-            method  : 'POST',
-            headers : { 'X-CSRF-TOKEN': CSRF, 'Content-Type': 'application/json', 'Accept': 'application/json' },
-            body    : JSON.stringify({ note }),
-        })
-            .then(r => r.json())
-            .then(data => {
-                document.getElementById('btnDoConfirm').disabled = false;
-                if (data.success) {
-                    closeModal('confirmModal');
-                    Swal.fire({ icon: 'success', title: 'Berhasil', text: data.message, showConfirmButton: false, timer: 2000 });
-                    reloadTable();
-                } else {
-                    showModalError('confirmModalError', data.message || 'Konfirmasi gagal.');
-                }
-            })
-            .catch(() => {
-                document.getElementById('btnDoConfirm').disabled = false;
-                showModalError('confirmModalError', 'Terjadi error. Silakan coba lagi.');
-            });
-    });
-}
-
-// ─── Cancel Modal ───
-function openCancel(locationId, locationName) {
-    currentLocId = locationId;
-    document.getElementById('cancelLocationName').textContent = locationName;
-    document.getElementById('inputCancelNote').value          = '';
-    document.getElementById('cancelModalError').style.display = 'none';
-    document.getElementById('btnDoCancel').disabled           = false;
-    openModal('cancelModal');
-}
-
-function doCancel() {
-    const note = document.getElementById('inputCancelNote').value.trim();
-    const errEl = document.getElementById('cancelModalError');
-    errEl.style.display = 'none';
-
-    if (!note || note.length < 5) {
-        errEl.textContent    = 'Alasan pembatalan wajib diisi (minimal 5 karakter).';
-        errEl.style.display  = 'block';
+function openTransition(action, id, name, total) {
+    const copy = RACK_ACTION_COPY[action];
+    if (!copy || !RACK_ROUTES[action]) {
         return;
     }
 
-    confirmAction('Batalkan konfirmasi rak ini? Alasan/catatan selisih akan disimpan.', function () {
-        document.getElementById('btnDoCancel').disabled = true;
+    rackAction = action;
+    rackLocationId = id;
+    document.getElementById('transitionTitle').textContent = copy.title;
+    document.getElementById('transitionInfo').innerHTML = `<strong>${escapeHtml(name)}</strong><br>${total} scan valid pada STO aktif`;
+    document.getElementById('transitionNote').value = '';
+    document.getElementById('btnTransition').textContent = copy.submit;
+    hideRackError('transitionError');
+    openRackModal('transitionModal');
+}
 
-        fetch(ROUTES.cancel(currentLocId), {
-            method  : 'POST',
-            headers : { 'X-CSRF-TOKEN': CSRF, 'Content-Type': 'application/json', 'Accept': 'application/json' },
-            body    : JSON.stringify({ note }),
-        })
-            .then(r => r.json())
-            .then(data => {
-                document.getElementById('btnDoCancel').disabled = false;
-                if (data.success) {
-                    closeModal('cancelModal');
-                    Swal.fire({ icon: 'success', title: 'Berhasil', text: data.message, showConfirmButton: false, timer: 2000 });
-                    reloadTable();
-                } else {
-                    showModalError('cancelModalError', data.message || 'Pembatalan gagal.');
-                }
-            })
-            .catch(() => {
-                document.getElementById('btnDoCancel').disabled = false;
-                showModalError('cancelModalError', 'Terjadi error. Silakan coba lagi.');
-            });
+async function submitTransition() {
+    if (!rackAction || !rackLocationId || !RACK_ROUTES[rackAction]) {
+        showRackError('transitionError', { message: 'Aksi Rack tidak valid.' });
+        return;
+    }
+
+    const button = document.getElementById('btnTransition');
+    const originalLabel = button.textContent;
+    setRackButtonLoading(button, true);
+
+    try {
+        await postRack(RACK_ROUTES[rackAction](rackLocationId), { note: document.getElementById('transitionNote').value.trim() });
+        closeRackModal('transitionModal');
+        rackTable.ajax.reload(null, false);
+    } catch (error) {
+        showRackError('transitionError', error);
+    } finally {
+        setRackButtonLoading(button, false, originalLabel);
+    }
+}
+
+function openCancel(id, name) {
+    rackLocationId = id;
+    document.getElementById('cancelRackInfo').textContent =
+        `Workflow Rack ${name} akan dibatalkan dan dikembalikan ke status Pending. Seluruh proses Finished, Validate, dan Konfirmasi harus dilakukan kembali.`;
+    document.getElementById('cancelRackNote').value = '';
+    hideRackError('cancelRackError');
+    openRackModal('cancelRackModal');
+}
+
+async function submitCancel() {
+    const note = document.getElementById('cancelRackNote').value.trim();
+    if (note.length < 5) {
+        showRackError('cancelRackError', { message: 'Alasan minimal 5 karakter.' });
+        return;
+    }
+
+    const button = document.getElementById('btnCancelRack');
+    const originalLabel = button.textContent;
+    setRackButtonLoading(button, true);
+
+    try {
+        await postRack(RACK_ROUTES.cancel(rackLocationId), { note });
+        closeRackModal('cancelRackModal');
+        rackTable.ajax.reload(null, false);
+    } catch (error) {
+        showRackError('cancelRackError', error);
+    } finally {
+        setRackButtonLoading(button, false, originalLabel);
+    }
+}
+
+async function postRack(url, payload) {
+    const response = await fetch(url, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+            'X-CSRF-TOKEN': RACK_CSRF_TOKEN,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+        },
+        body: JSON.stringify(payload),
     });
+    const responseText = await response.text();
+    let data = {};
+
+    if (responseText) {
+        try {
+            data = JSON.parse(responseText);
+        } catch (error) {
+            data = {};
+        }
+    }
+
+    if (!response.ok) {
+        const requestError = new Error(
+            rackResponseMessage(data, `Aksi Rack gagal diproses (HTTP ${response.status}).`),
+        );
+        requestError.status = response.status;
+        requestError.errors = data.errors || {};
+        throw requestError;
+    }
+
+    notifyRackSuccess(data.message || 'Aksi Rack berhasil diproses.');
+
+    return data;
+}
+
+function showRackError(id, error) {
+    const element = document.getElementById(id);
+    element.textContent = rackResponseMessage(error, 'Aksi Rack gagal diproses.');
+    element.style.display = 'block';
+}
+
+function hideRackError(id) {
+    const element = document.getElementById(id);
+    element.textContent = '';
+    element.style.display = 'none';
+}
+
+function rackResponseMessage(payload, fallback) {
+    if (payload?.message) {
+        return payload.message;
+    }
+
+    if (payload?.errors && typeof payload.errors === 'object') {
+        const firstError = Object.values(payload.errors).flat().find(Boolean);
+        if (firstError) {
+            return firstError;
+        }
+    }
+
+    return fallback;
+}
+
+function setRackButtonLoading(button, loading, originalLabel = '') {
+    button.disabled = loading;
+    button.textContent = loading ? 'Memproses...' : originalLabel;
+}
+
+function openRackModal(id) {
+    const modal = document.getElementById(id);
+    if (modal) {
+        modal.classList.add('active');
+    }
+}
+
+function closeRackModal(id) {
+    const modal = document.getElementById(id);
+    if (modal) {
+        modal.classList.remove('active');
+    }
+}
+
+function notifyRackSuccess(message) {
+    if (typeof showToast === 'function') {
+        showToast(message, 'success');
+        return;
+    }
+
+    if (typeof Swal !== 'undefined') {
+        Swal.fire({
+            icon: 'success',
+            title: 'Berhasil',
+            text: message,
+            timer: 2200,
+            showConfirmButton: false,
+        });
+    }
+}
+
+function reloadTable() { rackTable?.ajax.reload(null, false); }
+function resetFilters() { document.getElementById('filterPlant').value=''; document.getElementById('filterStatus').value=''; reloadTable(); }
+function exportReport() {
+    const plant = document.getElementById('filterPlant').value;
+    const status = document.getElementById('filterStatus').value;
+    window.location.href = `${RACK_ROUTES.export}?filter_plant=${encodeURIComponent(plant)}&filter_status=${encodeURIComponent(status)}`;
+}
+function escapeHtml(value) { const element = document.createElement('div'); element.textContent = value ?? ''; return element.innerHTML; }
+function escapeAttribute(value) {
+    return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;');
 }
 </script>
 @endpush
-
 </x-layouts.app>

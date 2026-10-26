@@ -3,12 +3,14 @@
 namespace App\Services;
 
 use App\Models\Location;
+use App\Models\MaterialDoubleValidation;
 use App\Models\ScanResult;
 use App\Models\ScanResultLog;
 use App\Models\StoCode;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
@@ -20,6 +22,8 @@ class ScanService
         private BarcodeParserService $barcodeParser,
         private ActiveStoService $activeStoService,
         private ActivityLogService $activityLog,
+        private BarcodeDeleteHistoryService $deleteHistory,
+        private LocationService $locationService,
     ) {}
 
     public function preview(string $qr): array
@@ -36,11 +40,11 @@ class ScanService
     {
         $query = ScanResult::query()
             ->where('barcode_material', strtoupper(trim($barcodeMaterial)));
-            
+
         if ($plantId !== null) {
             $query->where('plant_id', $plantId);
         }
-        
+
         if ($locationId !== null) {
             $query->where('location_id', $locationId);
         }
@@ -52,7 +56,7 @@ class ScanService
     {
         $activeSto = $this->activeStoService->active();
 
-        if (!$activeSto) {
+        if (! $activeSto) {
             return [
                 'success' => false,
                 'status' => 422,
@@ -64,7 +68,7 @@ class ScanService
             $result = DB::transaction(function () use ($user, $payload, $activeSto) {
                 $parsed = $this->barcodeParser->parse($payload['qr']);
 
-                if (!$parsed['valid']) {
+                if (! $parsed['valid']) {
                     return [
                         'success' => false,
                         'status' => 422,
@@ -106,8 +110,13 @@ class ScanService
 
                 $this->logSnapshot($scanResult, $user->id, 'created', newValue: $scanResult->toArray());
                 $this->activityLog->record($user, 'scan.created', $scanResult, newValues: $this->auditValues($scanResult));
-                
-                $this->clearMaterialDoubleValidation($parsed['barcode_material'], $payload['plant_id'], $payload['location_id']);
+
+                $this->clearMaterialDoubleValidation(
+                    $parsed['barcode_material'],
+                    $payload['plant_id'],
+                    $payload['location_id'],
+                    $activeSto->id,
+                );
 
                 return [
                     'success' => true,
@@ -125,7 +134,7 @@ class ScanService
             throw $exception;
         }
 
-        if (!$result['success']) {
+        if (! $result['success']) {
             return $result;
         }
 
@@ -133,7 +142,7 @@ class ScanService
 
         // Bust the history filter-options cache so the next history page load
         // always shows freshly added barcodes/materials in the filter dropdowns.
-        \Illuminate\Support\Facades\Cache::forget("user_{$user->id}_history_filters");
+        Cache::forget("user_{$user->id}_history_filters");
 
         return [
             'success' => true,
@@ -149,33 +158,33 @@ class ScanService
             ->forUser($user->id)
             ->latestFirst();
 
-        if (!empty($filters['date_from'])) {
+        if (! empty($filters['date_from'])) {
             $query->where('scan_results.created_at', '>=', Carbon::parse($filters['date_from'])->startOfDay());
         }
 
-        if (!empty($filters['date_to'])) {
+        if (! empty($filters['date_to'])) {
             $query->where('scan_results.created_at', '<=', Carbon::parse($filters['date_to'])->endOfDay());
         }
 
-        if (!empty($filters['barcode_material'])) {
+        if (! empty($filters['barcode_material'])) {
             $query->where('scan_results.barcode_material', strtoupper(trim($filters['barcode_material'])));
         }
 
-        if (!empty($filters['material_code'])) {
+        if (! empty($filters['material_code'])) {
             $query->where('scan_results.material_code', strtoupper(trim($filters['material_code'])));
         }
 
-        if (!empty($filters['plant_id'])) {
+        if (! empty($filters['plant_id'])) {
             $query->where('scan_results.plant_id', (int) $filters['plant_id']);
         }
 
-        if (!empty($filters['location_id'])) {
+        if (! empty($filters['location_id'])) {
             $query->where('scan_results.location_id', (int) $filters['location_id']);
         }
 
-        if (!empty($filters['search'])) {
+        if (! empty($filters['search'])) {
             $search = $filters['search'];
-            $searchData = \App\Services\BarcodeParserService::normalizeSearch($search);
+            $searchData = BarcodeParserService::normalizeSearch($search);
             $normalizedSearch = $searchData['normalized'];
             $firstPartSearch = $searchData['first_part'];
 
@@ -195,7 +204,7 @@ class ScanService
     {
         $limit = max((int) config('sto.scan_history_filter_limit', 250), 1);
 
-        return \Illuminate\Support\Facades\Cache::remember("user_{$user->id}_history_filters", 300, function () use ($user, $limit) {
+        return Cache::remember("user_{$user->id}_history_filters", 300, function () use ($user, $limit) {
             return [
                 'barcodes' => ScanResult::query()
                     ->forUser($user->id)
@@ -268,7 +277,11 @@ class ScanService
         $scanResult = ScanResult::findOrFail($id);
         Gate::forUser($user)->authorize('delete', $scanResult);
 
-        $this->deleteWithAudit($scanResult, $user->id);
+        $this->deleteWithAudit(
+            $scanResult,
+            $user,
+            BarcodeDeleteHistoryService::SOURCE_SCAN_HISTORY,
+        );
     }
 
     public function updateByAdmin(User $admin, int $id, array $payload): ScanResult
@@ -279,10 +292,10 @@ class ScanService
 
             $oldValues = $this->auditValues($scanResult);
             $stoCode = $this->activeStoService->active();
-            if (!$stoCode) {
+            if (! $stoCode) {
                 throw new \Exception(ActiveStoService::NO_ACTIVE_STO_MESSAGE);
             }
-            $location = $this->resolveLocation($payload['plant_id'], $payload['location_name']);
+            $location = $this->resolveLocation($admin, $payload['plant_id'], $payload['location_name']);
 
             $scanResult->forceFill($this->manualScanAttributes($payload, $stoCode, $location));
             $scanResult->created_at = Carbon::parse($payload['created_at']);
@@ -302,17 +315,27 @@ class ScanService
 
             if ($hasChanges) {
                 $this->activityLog->record($admin, 'scan.updated', $scanResult, $oldValues, $newValues);
-                
+
                 // Jika barcode/plant/location berubah, hapus validasi di kombinasi lama dan baru
                 if (
                     $oldValues['barcode_material'] !== $newValues['barcode_material'] ||
                     $oldValues['plant_id'] !== $newValues['plant_id'] ||
                     $oldValues['location_id'] !== $newValues['location_id']
                 ) {
-                    $this->clearMaterialDoubleValidation($oldValues['barcode_material'], $oldValues['plant_id'], $oldValues['location_id']);
+                    $this->clearMaterialDoubleValidation(
+                        $oldValues['barcode_material'],
+                        $oldValues['plant_id'],
+                        $oldValues['location_id'],
+                        $oldValues['sto_code_id'],
+                    );
                 }
-                
-                $this->clearMaterialDoubleValidation($newValues['barcode_material'], $newValues['plant_id'], $newValues['location_id']);
+
+                $this->clearMaterialDoubleValidation(
+                    $newValues['barcode_material'],
+                    $newValues['plant_id'],
+                    $newValues['location_id'],
+                    $newValues['sto_code_id'],
+                );
             }
 
             return $scanResult->refresh();
@@ -322,7 +345,7 @@ class ScanService
     public function storeByAdmin(User $admin, array $payload): array
     {
         $stoCode = $this->activeStoService->active();
-        if (!$stoCode) {
+        if (! $stoCode) {
             return [
                 'success' => false,
                 'status' => 422,
@@ -333,7 +356,7 @@ class ScanService
 
         $duplicateCount = $this->duplicateCount($barcodeMaterial, $payload['plant_id'] ?? null, $payload['location_id'] ?? null);
         if ($duplicateCount > 0 && empty($payload['force_save'])) {
-            $parsed = $this->barcodeParser->parse($payload['barcode_raw'] ?? $barcodeMaterial . '|LOT|1');
+            $parsed = $this->barcodeParser->parse($payload['barcode_raw'] ?? $barcodeMaterial.'|LOT|1');
             $matName = $parsed['valid'] ? $parsed['material_name'] : '-';
 
             return [
@@ -345,7 +368,7 @@ class ScanService
         }
 
         $scanResult = DB::transaction(function () use ($admin, $payload, $stoCode, $barcodeMaterial) {
-            $location = $this->resolveLocation($payload['plant_id'], $payload['location_name']);
+            $location = $this->resolveLocation($admin, $payload['plant_id'], $payload['location_name']);
             $scanResult = new ScanResult($this->manualScanAttributes($payload, $stoCode, $location));
             $scanResult->created_at = Carbon::parse($payload['created_at']);
             $scanResult->updated_at = now();
@@ -353,8 +376,13 @@ class ScanService
 
             $this->logSnapshot($scanResult, $admin->id, 'created', newValue: $scanResult->toArray());
             $this->activityLog->record($admin, 'scan.created', $scanResult, newValues: $this->auditValues($scanResult));
-            
-            $this->clearMaterialDoubleValidation($barcodeMaterial, $payload['plant_id'], $location->id);
+
+            $this->clearMaterialDoubleValidation(
+                $barcodeMaterial,
+                $payload['plant_id'],
+                $location->id,
+                $stoCode->id,
+            );
 
             return $scanResult;
         });
@@ -370,7 +398,7 @@ class ScanService
     {
         $activeSto = $this->activeStoService->active();
 
-        if (!$activeSto) {
+        if (! $activeSto) {
             return [
                 'success' => false,
                 'status' => 422,
@@ -380,7 +408,7 @@ class ScanService
 
         $parsed = $this->barcodeParser->parse($payload['qr']);
 
-        if (!$parsed['valid']) {
+        if (! $parsed['valid']) {
             return [
                 'success' => false,
                 'status' => 422,
@@ -439,8 +467,13 @@ class ScanService
 
             $this->logSnapshot($scanResult, $admin->id, 'created', newValue: $scanResult->toArray());
             $this->activityLog->record($admin, 'scan.created', $scanResult, newValues: $this->auditValues($scanResult));
-            
-            $this->clearMaterialDoubleValidation($parsed['barcode_material'], $payload['plant_id'], $location->id);
+
+            $this->clearMaterialDoubleValidation(
+                $parsed['barcode_material'],
+                $payload['plant_id'],
+                $location->id,
+                $activeSto->id,
+            );
 
             return $scanResult;
         });
@@ -457,7 +490,11 @@ class ScanService
         $scanResult = ScanResult::findOrFail($id);
         Gate::forUser($admin)->authorize('delete', $scanResult);
 
-        $this->deleteWithAudit($scanResult, $admin->id);
+        $this->deleteWithAudit(
+            $scanResult,
+            $admin,
+            BarcodeDeleteHistoryService::SOURCE_ADMIN_SCAN_RESULTS,
+        );
     }
 
     public function deleteFromMaterialDouble(User $validator, int $id): void
@@ -465,7 +502,11 @@ class ScanService
         $scanResult = ScanResult::findOrFail($id);
         Gate::forUser($validator)->authorize('deleteFromMaterialDouble', $scanResult);
 
-        $this->deleteWithAudit($scanResult, $validator->id);
+        $this->deleteWithAudit(
+            $scanResult,
+            $validator,
+            BarcodeDeleteHistoryService::SOURCE_MATERIAL_DOUBLE,
+        );
     }
 
     public function serializeScan(ScanResult $scanResult): array
@@ -522,34 +563,43 @@ class ScanService
         ];
     }
 
-    private function deleteWithAudit(ScanResult $scanResult, int $userId): void
-    {
-        DB::transaction(function () use ($scanResult, $userId) {
+    private function deleteWithAudit(
+        ScanResult $scanResult,
+        User $actor,
+        string $source,
+        ?string $reason = null,
+    ): void {
+        DB::transaction(function () use ($scanResult, $actor, $source, $reason) {
+            $scanResult = ScanResult::withoutGlobalScope('active_sto')
+                ->with(['user', 'plant', 'location'])
+                ->lockForUpdate()
+                ->findOrFail($scanResult->id);
             $oldValues = $scanResult->toArray();
 
-            $this->logSnapshot($scanResult, $userId, 'deleted', oldValue: $oldValues);
-            $this->activityLog->record(User::find($userId), 'scan.deleted', $scanResult, oldValues: $oldValues);
+            $this->deleteHistory->create($scanResult, $actor, $source, $reason);
+            $this->logSnapshot($scanResult, $actor->id, 'deleted', oldValue: $oldValues);
+            $this->activityLog->recordOrFail(
+                $actor,
+                'scan.deleted',
+                $scanResult,
+                oldValues: $oldValues,
+                metadata: ['deletion_source' => $source, 'deletion_reason' => $reason],
+            );
             $scanResult->delete();
         });
     }
 
-    private function resolveLocation(int $plantId, string $locationName): Location
+    private function resolveLocation(User $actor, int $plantId, string $locationName): Location
     {
-        return Location::updateOrCreate(
-            [
-                'plant_id' => $plantId,
-                'name' => trim($locationName),
-            ],
-            ['is_active' => true]
-        );
+        return $this->locationService->resolveForScan($actor, $plantId, $locationName);
     }
 
     private function manualScanAttributes(array $payload, StoCode $stoCode, Location $location): array
     {
         $shapeCode = $payload['shape_code'];
-        $shapeName = $payload['shape_name'];
+        $shapeName = ShapeFormatter::name($shapeCode, $payload['shape_name'] ?? null);
 
-        return array_merge($payload, [
+        return [
             'user_id' => $payload['user_id'],
             'sto_code_id' => $stoCode->id,
             'plant_id' => $payload['plant_id'],
@@ -569,7 +619,7 @@ class ScanService
             'length' => $payload['length'],
             'keterangan' => $payload['keterangan'],
             'scan_source' => $payload['scan_source'] ?? 'admin',
-        ]);
+        ];
     }
 
     private function auditValues(ScanResult $scanResult): array
@@ -632,9 +682,14 @@ class ScanService
         return (string) config('sto.default_keterangan', 'OK');
     }
 
-    private function clearMaterialDoubleValidation(string $barcodeMaterial, int $plantId, int $locationId): void
-    {
-        \App\Models\MaterialDoubleValidation::query()
+    private function clearMaterialDoubleValidation(
+        string $barcodeMaterial,
+        int $plantId,
+        int $locationId,
+        int $stoCodeId,
+    ): void {
+        MaterialDoubleValidation::query()
+            ->where('sto_code_id', $stoCodeId)
             ->where('barcode_material', strtoupper(trim($barcodeMaterial)))
             ->where('plant_id', $plantId)
             ->where('location_id', $locationId)

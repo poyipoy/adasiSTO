@@ -25,7 +25,7 @@ class AdminUpsertScanResultRequest extends FormRequest
             'material_code' => ['required', 'string', Rule::exists('master_materials', 'material_code')->where('is_active', true)],
             'material_name' => ['required', 'string', 'max:255'],
             'shape_code' => ['required', 'string', Rule::in(['RF', 'RR', 'RH'])],
-            'shape_name' => ['required', 'string', Rule::in(['Flat', 'Round', 'Hollow'])],
+            'shape_name' => ['required', 'string', Rule::in(['FLAT', 'ROUND', 'HOLLOW'])],
             'thickness' => ['nullable', 'integer', 'min:1'],
             'width' => ['nullable', 'integer', 'min:1'],
             'diameter' => ['nullable', 'integer', 'min:1'],
@@ -43,24 +43,24 @@ class AdminUpsertScanResultRequest extends FormRequest
             $shapeCode = $this->input('shape_code');
             $shapeName = $this->input('shape_name');
 
-            if ($shapeCode === 'RF' && $shapeName !== 'Flat') {
-                $validator->errors()->add('shape_name', 'Shape RF harus menggunakan nama Flat.');
+            if ($shapeCode === 'RF' && $shapeName !== 'FLAT') {
+                $validator->errors()->add('shape_name', 'Shape RF harus menggunakan nama FLAT.');
             }
 
-            if ($shapeCode === 'RH' && $shapeName !== 'Hollow') {
-                $validator->errors()->add('shape_name', 'Shape RH harus menggunakan nama Hollow.');
+            if ($shapeCode === 'RH' && $shapeName !== 'HOLLOW') {
+                $validator->errors()->add('shape_name', 'Shape RH harus menggunakan nama HOLLOW.');
             }
 
-            if ($shapeCode === 'RR' && $shapeName !== 'Round') {
-                $validator->errors()->add('shape_name', 'Shape RR harus menggunakan nama Round.');
+            if ($shapeCode === 'RR' && $shapeName !== 'ROUND') {
+                $validator->errors()->add('shape_name', 'Shape RR harus menggunakan nama ROUND.');
             }
 
             if (in_array($shapeCode, ['RF', 'RH'])) {
-                if (!$this->filled('thickness')) {
+                if (! $this->filled('thickness')) {
                     $validator->errors()->add('thickness', "Thickness wajib diisi untuk shape {$shapeName}.");
                 }
 
-                if (!$this->filled('width')) {
+                if (! $this->filled('width')) {
                     $validator->errors()->add('width', "Width wajib diisi untuk shape {$shapeName}.");
                 }
 
@@ -70,7 +70,7 @@ class AdminUpsertScanResultRequest extends FormRequest
             }
 
             if ($shapeCode === 'RR') {
-                if (!$this->filled('diameter')) {
+                if (! $this->filled('diameter')) {
                     $validator->errors()->add('diameter', 'Diameter wajib diisi untuk shape Round.');
                 }
 
@@ -95,7 +95,7 @@ class AdminUpsertScanResultRequest extends FormRequest
             'material_code' => strtoupper(trim((string) $this->input('material_code'))),
             'material_name' => trim((string) $this->input('material_name')),
             'shape_code' => strtoupper(trim((string) $this->input('shape_code'))),
-            'shape_name' => trim((string) $this->input('shape_name')),
+            'shape_name' => strtoupper(trim((string) $this->input('shape_name'))),
             'scan_source' => trim((string) ($this->input('scan_source') ?: 'admin')),
         ]);
     }

@@ -109,7 +109,7 @@
                 <th>Shape</th>
                 <th>Size</th>
                 <th>Qty Total</th>
-                <th>Scan Count</th>
+                <th>Total Scan Count</th>
             </tr>
         </thead>
     </table>

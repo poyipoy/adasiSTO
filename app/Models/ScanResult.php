@@ -3,7 +3,9 @@
 namespace App\Models;
 
 use App\Services\ActiveStoService;
+use App\Services\ShapeFormatter;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -109,16 +111,23 @@ class ScanResult extends Model
     {
         if (in_array($this->shape_code, ['RF', 'RH'])) {
             return $this->formatDimension($this->thickness)
-                . ' x ' . $this->formatDimension($this->width)
-                . ' x ' . $this->formatDimension($this->length);
+                .' x '.$this->formatDimension($this->width)
+                .' x '.$this->formatDimension($this->length);
         }
 
         if ($this->shape_code === 'RR') {
-            return '⌀' . $this->formatDimension($this->diameter)
-                . ' x ' . $this->formatDimension($this->length);
+            return '⌀'.$this->formatDimension($this->diameter)
+                .' x '.$this->formatDimension($this->length);
         }
 
         return '-';
+    }
+
+    protected function shapeName(): Attribute
+    {
+        return Attribute::make(
+            get: fn ($value) => ShapeFormatter::name($this->shape_code, $value),
+        );
     }
 
     public function getRecentDetailAttribute(): string

@@ -30,7 +30,7 @@ class Location extends Model
     protected function casts(): array
     {
         return [
-            'is_active'    => 'boolean',
+            'is_active' => 'boolean',
             'is_confirmed' => 'boolean',
             'confirmed_at' => 'datetime',
         ];
@@ -54,6 +54,16 @@ class Location extends Model
     public function scanResults(): HasMany
     {
         return $this->hasMany(ScanResult::class);
+    }
+
+    public function rackConfirmations(): HasMany
+    {
+        return $this->hasMany(RackConfirmation::class);
+    }
+
+    public function barcodeRequests(): HasMany
+    {
+        return $this->hasMany(BarcodeRequest::class);
     }
 
     public function scopeActive(Builder $query): Builder

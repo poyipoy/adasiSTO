@@ -2,13 +2,13 @@
 
 namespace Tests\Feature;
 
-use App\Models\User;
-use App\Models\Plant;
+use App\Models\BarcodeRequest;
 use App\Models\Location;
 use App\Models\MasterMaterial;
-use App\Models\BarcodeRequest;
+use App\Models\Plant;
+use App\Models\StoCode;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Foundation\Testing\WithFaker;
 use Tests\TestCase;
 
 class BarcodeRequestTest extends TestCase
@@ -18,11 +18,12 @@ class BarcodeRequestTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        
+
         // Setup user scanner and admin
         $this->scanner = User::factory()->create(['role' => 'scanner']);
         $this->admin = User::factory()->create(['role' => 'admin']);
-        
+        $this->stoCode = StoCode::create(['code' => 'STO-BARCODE-TEST', 'is_active' => true]);
+
         // Setup base data
         $this->plant = Plant::factory()->create();
         $this->location = Location::factory()->create(['plant_id' => $this->plant->id]);
@@ -52,6 +53,7 @@ class BarcodeRequestTest extends TestCase
             'lot_number' => 'LOT-RF-001',
             'plant_id' => $this->plant->id,
             'location_id' => $this->location->id,
+            'print_count' => 50,
         ];
 
         $response = $this->actingAs($this->scanner)->postJson(route('api.barcode-request.store'), $payload);
@@ -64,6 +66,8 @@ class BarcodeRequestTest extends TestCase
             'length' => 100,
             'diameter' => null,
             'status' => 'pending',
+            'qty' => 1,
+            'print_count' => 50,
         ]);
     }
 
@@ -77,6 +81,7 @@ class BarcodeRequestTest extends TestCase
             'lot_number' => 'LOT-RR-001',
             'plant_id' => $this->plant->id,
             'location_id' => $this->location->id,
+            'print_count' => 2,
         ];
 
         $response = $this->actingAs($this->scanner)->postJson(route('api.barcode-request.store'), $payload);
@@ -89,6 +94,8 @@ class BarcodeRequestTest extends TestCase
             'diameter' => 30,
             'length' => 150,
             'status' => 'pending',
+            'qty' => 1,
+            'print_count' => 2,
         ]);
     }
 
@@ -103,6 +110,7 @@ class BarcodeRequestTest extends TestCase
             'lot_number' => 'LOT-DUP',
             'plant_id' => $this->plant->id,
             'location_id' => $this->location->id,
+            'print_count' => 1,
         ];
 
         // First request should succeed
@@ -118,14 +126,19 @@ class BarcodeRequestTest extends TestCase
     {
         $request = BarcodeRequest::create([
             'user_id' => $this->scanner->id,
+            'sto_code_id' => $this->stoCode->id,
             'plant_id' => $this->plant->id,
             'location_id' => $this->location->id,
             'material_code' => $this->material->material_code,
+            'material_name' => $this->material->material_name,
             'shape_code' => 'RF',
+            'shape_name' => 'FLAT',
             'thickness' => 10,
             'width' => 20,
             'length' => 100,
             'lot_number' => 'LOT-CANCEL',
+            'qty' => 1,
+            'print_count' => 1,
             'status' => 'pending',
         ]);
 
@@ -137,17 +150,22 @@ class BarcodeRequestTest extends TestCase
     public function test_scanner_cannot_cancel_others_request()
     {
         $otherScanner = User::factory()->create(['role' => 'scanner']);
-        
+
         $request = BarcodeRequest::create([
             'user_id' => $otherScanner->id,
+            'sto_code_id' => $this->stoCode->id,
             'plant_id' => $this->plant->id,
             'location_id' => $this->location->id,
             'material_code' => $this->material->material_code,
+            'material_name' => $this->material->material_name,
             'shape_code' => 'RF',
+            'shape_name' => 'FLAT',
             'thickness' => 10,
             'width' => 20,
             'length' => 100,
             'lot_number' => 'LOT-OTHER',
+            'qty' => 1,
+            'print_count' => 1,
             'status' => 'pending',
         ]);
 

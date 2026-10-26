@@ -50,7 +50,7 @@
     <button class="btn btn-icon" type="button" onclick="reloadMaterialDouble()" title="Refresh">Refresh</button>
     <button class="btn btn-icon" type="button" onclick="resetMaterialDoubleFilters()" title="Reset">Reset</button>
     <div class="toolbar-sep"></div>
-    <button class="btn btn-success" type="button" id="exportExcel" onclick="queueExport()">Export Excel</button>
+    <button class="btn btn-success" type="button" id="exportExcel" onclick="downloadExport()">Export Excel</button>
 </div>
 
 <div class="card" style="border-top:0;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
@@ -67,11 +67,8 @@
         <label class="form-label">Location</label>
         <select id="filterLocation" style="display:none;">
             <option value="">All</option>
-            @foreach($locations as $location)
-                <option value="{{ $location->name }}" data-plant-id="{{ $location->plant_id }}">{{ $location->name }}</option>
-            @endforeach
         </select>
-        <button type="button" id="filterLocationTrigger" class="form-control srch-filter-trigger" onclick="openMdSrchFilter('location')">All</button>
+        <button type="button" id="filterLocationTrigger" class="form-control srch-filter-trigger" onclick="openMdSrchFilter('location')" disabled>All</button>
     </div>
     <div style="width:130px;">
         <label class="form-label">Material</label>
@@ -449,18 +446,13 @@
     const selectedDuplicateIds = new Set();
     const materialDoubleCsrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
     
-    let exportPollingTimer = null;
-    let exportPollingFailureCount = 0;
-    const maxExportPollingFailures = 3;
-    const pendingAutoDownloadExportIds = new Set();
-    const autoDownloadedExportIds = new Set();
-    
-      const directExportExcelUrl = '{{ route("admin.api.material-double.export.excel") }}';
+    const directExportExcelUrl = '{{ route("admin.api.material-double.export.excel") }}';
+    const materialDoubleLocationsUrl = '{{ route("admin.api.material-double.locations") }}';
 
     function materialDoubleFilters() {
         return {
             plant_id: $('#filterPlant').val(),
-            location_name: $('#filterLocation').val(),
+            location_id: $('#filterLocation').val(),
             material_code: $('#filterMaterial').val(),
             date_from: $('#filterDateFrom').val(),
             date_to: $('#filterDateTo').val(),
@@ -598,14 +590,53 @@
         _mdSrchFilterReset('location');
         _mdSrchFilterReset('material');
 
-        const locationSelect = document.getElementById('filterLocation');
-        if (locationSelect) {
-            Array.from(locationSelect.options).forEach(opt => opt.disabled = false);
-        }
+        replaceMaterialDoubleLocations([]);
 
         if (typeof materialDoubleTable !== 'undefined') {
             materialDoubleTable.search('').order([]);
             materialDoubleTable.ajax.reload(null, true);
+        }
+    }
+
+    function replaceMaterialDoubleLocations(locations) {
+        const select = document.getElementById('filterLocation');
+        const trigger = document.getElementById('filterLocationTrigger');
+
+        if (!select || !trigger) return;
+
+        select.innerHTML = '<option value="">All</option>';
+        locations.forEach(location => {
+            const option = document.createElement('option');
+            option.value = String(location.id);
+            option.textContent = location.name;
+            select.appendChild(option);
+        });
+
+        _mdSrchFilterReset('location');
+        trigger.disabled = locations.length === 0;
+    }
+
+    async function loadMaterialDoubleLocations(plantId) {
+        replaceMaterialDoubleLocations([]);
+        if (!plantId) return;
+
+        const trigger = document.getElementById('filterLocationTrigger');
+        if (trigger) {
+            trigger.disabled = true;
+            trigger.textContent = 'Loading...';
+        }
+
+        try {
+            const response = await fetch(`${materialDoubleLocationsUrl}?plant_id=${encodeURIComponent(plantId)}`, {
+                headers: { Accept: 'application/json' }
+            });
+            const payload = await response.json();
+            if (!response.ok) throw payload;
+
+            replaceMaterialDoubleLocations(payload.data || []);
+        } catch (error) {
+            replaceMaterialDoubleLocations([]);
+            Swal.fire('Gagal', error.message || 'Location gagal dimuat.', 'error');
         }
     }
 
@@ -785,7 +816,7 @@
                 .then(payload => {
                     Swal.fire({
                         title: 'Berhasil!',
-                        text: payload.message || 'Data duplicate terpilih berhasil dihapus dan duplicate QR berhasil diverifikasi.',
+                        text: payload.message || 'Data duplicate terpilih berhasil dihapus. Status tetap Need Check sampai tombol Valid ditekan.',
                         icon: 'success',
                         timer: 1500,
                         showConfirmButton: false
@@ -1259,145 +1290,14 @@
         // Export is synchronous via direct link, no polling needed
     }
 
-    function queueExport() {
+    function downloadExport() {
         const query = new URLSearchParams(materialDoubleFilters()).toString();
         window.location.href = query ? `${directExportExcelUrl}?${query}` : directExportExcelUrl;
     }
 
-    function refreshExportStatus() {
-        fetch(exportStatusUrl, { headers: { Accept: 'application/json' } })
-            .then(async response => {
-                const payload = await response.json();
-                if (!response.ok) throw payload;
-                return payload;
-            })
-            .then(payload => {
-                exportPollingFailureCount = 0;
-                const exports = payload.data || [];
-                triggerAutoDownloads(exports);
-
-                const waitingForAutoDownload = exports.some(item => {
-                    const id = Number(item.id);
-
-                    return pendingAutoDownloadExportIds.has(id)
-                        && ['queued', 'processing'].includes(item.status);
-                });
-
-                if (waitingForAutoDownload) {
-                    startExportPolling();
-                } else {
-                    stopExportPolling();
-                }
-            })
-            .catch(() => handleExportPollingFailure());
-    }
-
-    function handleExportPollingFailure() {
-        if (pendingAutoDownloadExportIds.size === 0) {
-            stopExportPolling();
-            return;
-        }
-
-        exportPollingFailureCount++;
-
-        if (exportPollingFailureCount < maxExportPollingFailures) {
-            return;
-        }
-
-        stopExportPolling();
-        pendingAutoDownloadExportIds.clear();
-        exportPollingFailureCount = 0;
-        Swal.fire({
-            toast: true,
-            position: 'bottom-end',
-            showConfirmButton: false,
-            timer: 3000,
-            icon: 'error',
-            title: 'Status export gagal dimuat. Silakan coba export ulang.'
-        });
-    }
-
-    function triggerAutoDownloads(exports) {
-        exports.forEach(item => {
-            const id = Number(item.id);
-
-            if (!pendingAutoDownloadExportIds.has(id)) {
-                return;
-            }
-
-            if (item.status === 'failed') {
-                pendingAutoDownloadExportIds.delete(id);
-                Swal.fire({
-                    toast: true,
-                    position: 'bottom-end',
-                    showConfirmButton: false,
-                    timer: 3000,
-                    icon: 'error',
-                    title: item.message || 'Export gagal diproses.'
-                });
-                return;
-            }
-
-            if (item.status !== 'completed' || !item.download_url || autoDownloadedExportIds.has(id)) {
-                return;
-            }
-
-            pendingAutoDownloadExportIds.delete(id);
-            autoDownloadedExportIds.add(id);
-            autoDownloadExport(item.download_url);
-            Swal.fire({
-                toast: true,
-                position: 'bottom-end',
-                showConfirmButton: false,
-                timer: 3000,
-                icon: 'success',
-                title: 'Export selesai. Download dimulai.'
-            });
-        });
-    }
-
-    function autoDownloadExport(downloadUrl) {
-        let frame = document.getElementById('exportAutoDownloadFrame');
-
-        if (!frame) {
-            frame = document.createElement('iframe');
-            frame.id = 'exportAutoDownloadFrame';
-            frame.hidden = true;
-            frame.style.display = 'none';
-            document.body.appendChild(frame);
-        }
-
-        frame.src = downloadUrl;
-    }
-
-    function startExportPolling() {
-        if (exportPollingTimer) return;
-        exportPollingTimer = setInterval(() => refreshExportStatus(), 3000);
-    }
-
-    function stopExportPolling() {
-        if (!exportPollingTimer) return;
-        clearInterval(exportPollingTimer);
-        exportPollingTimer = null;
-    }
-
-    function setExportButtonsDisabled(disabled) {
-        const btn = document.getElementById('exportExcel');
-        if (btn) btn.disabled = disabled;
-    }
-
     $(document).ready(function() {
         $('#filterPlant').on('change', function() {
-            const plantId = $(this).val();
-            const locationSelect = document.getElementById('filterLocation');
-            if (locationSelect) {
-                _mdSrchFilterReset('location');
-                Array.from(locationSelect.options).forEach(opt => {
-                    if (opt.value === '') return;
-                    const optPlantId = opt.getAttribute('data-plant-id');
-                    opt.disabled = !!(plantId && optPlantId && optPlantId !== plantId);
-                });
-            }
+            loadMaterialDoubleLocations($(this).val());
         });
 
         materialDoubleTable = $('#materialDoubleTable').DataTable({

@@ -27,7 +27,7 @@ class BarcodeParserServiceTest extends TestCase
         $result = $this->parser->parse('RF1H059-00960099B|ST2605|1');
 
         $this->assertTrue($result['valid']);
-        $this->assertSame('Flat', $result['shape_name']);
+        $this->assertSame('FLAT', $result['shape_name']);
         $this->assertSame('1H', $result['material_code']);
         $this->assertSame(59, $result['thickness']);
         $this->assertSame(96, $result['width']);
@@ -41,12 +41,25 @@ class BarcodeParserServiceTest extends TestCase
         $result = $this->parser->parse('RR2P051-00000835B|ST2605|1');
 
         $this->assertTrue($result['valid']);
-        $this->assertSame('Round', $result['shape_name']);
+        $this->assertSame('ROUND', $result['shape_name']);
         $this->assertSame('2P', $result['material_code']);
         $this->assertNull($result['thickness']);
         $this->assertNull($result['width']);
         $this->assertSame(51, $result['diameter']);
         $this->assertSame(835, $result['length']);
+    }
+
+    public function test_parse_rh_valid(): void
+    {
+        $result = $this->parser->parse('RH1H010-00200030B|ST2605|1');
+
+        $this->assertTrue($result['valid']);
+        $this->assertSame('RH', $result['shape_code']);
+        $this->assertSame('HOLLOW', $result['shape_name']);
+        $this->assertSame(10, $result['thickness']);
+        $this->assertSame(20, $result['width']);
+        $this->assertNull($result['diameter']);
+        $this->assertSame(30, $result['length']);
     }
 
     public function test_reject_unknown_shape(): void

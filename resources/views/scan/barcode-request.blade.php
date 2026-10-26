@@ -126,6 +126,12 @@
             <input type="text" id="lot_number" name="lot_number" class="form-control" required maxlength="255">
             <div id="lotNumberSuggestionBox" style="display:none; margin-top: 8px; background: #f0f7ff; border: 1px solid #cce3ff; border-radius: 8px; padding: 10px 12px;"></div>
         </div>
+
+        <div class="form-group">
+            <label class="form-label" for="print_count">Jumlah Barcode Dicetak</label>
+            <input type="number" id="print_count" name="print_count" class="form-control" value="1" min="1" required>
+            <small style="color:var(--text-muted);">Jumlah label yang dicetak. Qty di dalam QR tetap 1.</small>
+        </div>
         
         <div class="form-group">
             <label class="form-label" for="plant_id">Plant</label>
@@ -161,6 +167,7 @@
                     <th>Jenis</th>
                     <th>Dimensi</th>
                     <th>Lot Number</th>
+                    <th>Jumlah Label</th>
                     <th>Plant</th>
                     <th>Lokasi</th>
                     <th>Status</th>
@@ -557,7 +564,7 @@
             processing: true,
             serverSide: true,
             ajax: '{{ route("api.barcode-request") }}',
-            order: [[7, 'desc']],
+            order: [[8, 'desc']],
             columns: [
                 { data: 'material_info', name: 'material_name' },
                 { data: 'shape_name', name: 'shape_name' },
@@ -567,11 +574,12 @@
                     return '-';
                 }},
                 { data: 'lot_number', name: 'lot_number' },
+                { data: 'print_count', name: 'print_count' },
                 { data: 'plant_name', name: 'plant.name' },
                 { data: 'location_name', name: 'location.name' },
                 { data: 'status', name: 'status', render: function(data) {
-                    let badgeClass = data === 'pending' ? 'badge-warning' : (data === 'approved' ? 'badge-success' : 'badge-danger');
-                    return `<span class="badge ${badgeClass}" style="padding: 4px 8px; border-radius: 4px;">${data}</span>`;
+                    let badgeClass = data === 'pending' ? 'badge-warning' : (data === 'approved' || data === 'printed' ? 'badge-success' : 'badge-danger');
+                    return `<span class="badge ${badgeClass}" style="padding: 4px 8px; border-radius: 4px;">${String(data).toUpperCase()}</span>`;
                 }},
                 { data: 'created_at', name: 'created_at' },
                 { data: null, searchable: false, orderable: false, render: function(data, type, row) {

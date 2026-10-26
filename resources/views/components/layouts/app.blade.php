@@ -486,6 +486,11 @@
             overflow: hidden;
         }
 
+        .page-tab.has-counter {
+            grid-template-columns: minmax(0, 1fr) auto 16px;
+            gap: 6px;
+        }
+
         .page-tab.active {
             color: var(--text);
             background: var(--tab-active-bg);
@@ -496,9 +501,28 @@
             background: var(--row-hover);
         }
 
-        .page-tab>span:first-of-type {
+        .page-tab-label {
             min-width: 0;
             overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .workspace-tab-counter {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            justify-self: end;
+            min-width: 18px;
+            max-width: 42px;
+            height: 18px;
+            padding: 0 5px;
+            overflow: hidden;
+            color: #fff;
+            background: var(--danger);
+            border-radius: 9px;
+            font-size: 10px;
+            font-weight: 700;
+            line-height: 18px;
             text-overflow: ellipsis;
         }
 
@@ -1510,6 +1534,47 @@
         </div>
     </header>
 
+    <?php
+        $sidebarBadges = [
+            'pending_barcode' => 0,
+            'unconfirmed_rak' => 0,
+        ];
+
+        if (auth()->user()->isAdmin()) {
+            $sidebarBadges = \Illuminate\Support\Facades\Cache::remember('sidebar_badges', 15, function () {
+                try {
+                    return [
+                        'pending_barcode' => \App\Models\BarcodeRequest::where('status', 'pending')->count(),
+                        'unconfirmed_rak' => (function () {
+                            $activeStoId = app(\App\Services\ActiveStoService::class)->active()?->id;
+                            if (! $activeStoId) {
+                                return 0;
+                            }
+
+                            return \App\Models\Location::active()
+                                ->whereDoesntHave('rackConfirmations', fn ($query) => $query
+                                    ->where('sto_code_id', $activeStoId)
+                                    ->where('status', \App\Models\RackConfirmation::STATUS_CONFIRMED))
+                                ->count();
+                        })(),
+                    ];
+                } catch (\Throwable $exception) {
+                    return [
+                        'pending_barcode' => 0,
+                        'unconfirmed_rak' => 0,
+                    ];
+                }
+            });
+        }
+
+        $activeWorkspaceCounter = match (true) {
+            request()->routeIs('admin.rack-confirmation*') => (int) ($sidebarBadges['unconfirmed_rak'] ?? 0),
+            request()->routeIs('admin.generate-barcode*') => (int) ($sidebarBadges['pending_barcode'] ?? 0),
+            default => 0,
+        };
+        $activeWorkspaceCounterLabel = $activeWorkspaceCounter > 999 ? '999+' : (string) $activeWorkspaceCounter;
+    ?>
+
     <div class="workspace-headbar">
         <button class="hamburger" type="button" onclick="toggleSidebar()" title="Menu">
             <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -1524,11 +1589,15 @@
                 </svg>
                 <span>Recent</span>
             </div>
-            <div class="page-tab active"
+            <div class="page-tab active {{ $activeWorkspaceCounter > 0 ? 'has-counter' : '' }}"
                 data-id="tab-{{ substr(preg_replace('/[^a-zA-Z0-9]/', '', request()->getRequestUri()), -20) }}"
                 data-url="{{ request()->getRequestUri() }}"
                 id="tab-{{ substr(preg_replace('/[^a-zA-Z0-9]/', '', request()->getRequestUri()), -20) }}">
-                <span>{{ $title ?? 'Workspace' }}</span>
+                <span class="page-tab-label">{{ $title ?? 'Workspace' }}</span>
+                @if($activeWorkspaceCounter > 0)
+                    <span class="workspace-tab-counter"
+                        title="{{ number_format($activeWorkspaceCounter) }} notifikasi">{{ $activeWorkspaceCounterLabel }}</span>
+                @endif
                 <span class="tab-close" title="Close">
                     <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path>
@@ -1542,21 +1611,6 @@
     <aside class="sidebar" id="sidebar">
         <nav class="sidebar-menu" aria-label="Main navigation">
             @if(auth()->user()->isAdmin())
-                        <?php
-                $sidebarBadges = \Illuminate\Support\Facades\Cache::remember('sidebar_badges', 15, function () {
-                    try {
-                        return [
-                            'pending_barcode' => \App\Models\BarcodeRequest::where('status', 'pending')->count(),
-                            'unconfirmed_rak' => \App\Models\Location::where('is_confirmed', false)->count(),
-                        ];
-                    } catch (\Throwable $e) {
-                        return [
-                            'pending_barcode' => 0,
-                            'unconfirmed_rak' => 0,
-                        ];
-                    }
-                });
-                            ?>
                         <div class="sidebar-section {{ request()->routeIs('admin.dashboard') ? 'is-open has-active' : '' }}">
                             <button type="button" class="sidebar-section-toggle" data-sidebar-toggle title="Dashboard">
                                 <svg class="sidebar-section-icon" fill="none" stroke="currentColor" stroke-width="2"
@@ -1585,7 +1639,7 @@
                             </div>
                         </div>
                         <div
-                            class="sidebar-section {{ request()->routeIs('admin.scan-results*') || request()->routeIs('admin.material-summary*') || request()->routeIs('admin.material-double*') || request()->routeIs('admin.generate-barcode*') ? 'is-open has-active' : '' }}">
+                            class="sidebar-section {{ request()->routeIs('admin.scan-results*') || request()->routeIs('admin.material-summary*') || request()->routeIs('admin.material-double*') || request()->routeIs('admin.generate-barcode*') || request()->routeIs('admin.rack-confirmation*') || request()->routeIs('history.delete-barcode') ? 'is-open has-active' : '' }}">
                             <button type="button" class="sidebar-section-toggle" data-sidebar-toggle title="STO Result">
                                 <svg class="sidebar-section-icon" fill="none" stroke="currentColor" stroke-width="2"
                                     viewBox="0 0 24 24">
@@ -1608,6 +1662,14 @@
                                         </svg>
                                         <span>All Scan Results</span>
                                     </a>
+                                    <a href="{{ route('history.delete-barcode') }}"
+                                        class="nav-item {{ request()->routeIs('history.delete-barcode') ? 'active' : '' }}"
+                                        title="History Delete Barcode">
+                                        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M5 8h14M9 8V5h6v3m-8 0 1 12h8l1-12M10 12v5m4-5v5"></path>
+                                        </svg>
+                                        <span>History Delete Barcode</span>
+                                    </a>
                                     <a href="{{ route('admin.material-summary') }}"
                                         class="nav-item {{ request()->routeIs('admin.material-summary*') ? 'active' : '' }}"
                                         title="Material Summary">
@@ -1628,6 +1690,18 @@
                                         </svg>
                                         <span>Material Double</span>
                                     </a>
+                                    <a href="{{ route('admin.rack-confirmation') }}"
+                                        class="nav-item {{ request()->routeIs('admin.rack-confirmation*') ? 'active' : '' }}"
+                                        title="Konfirmasi Rak"><svg fill="none" stroke="currentColor" stroke-width="2"
+                                            viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round"
+                                                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z">
+                                            </path>
+                                        </svg> <span>Konfirmasi Rak</span>
+                                        @if(($sidebarBadges['unconfirmed_rak'] ?? 0) > 0)
+                                            <span class="sidebar-counter counter-danger">{{ $sidebarBadges['unconfirmed_rak'] }}</span>
+                                        @endif
+                                    </a>
                                     <a href="{{ route('admin.generate-barcode') }}"
                                         class="nav-item {{ request()->routeIs('admin.generate-barcode*') ? 'active' : '' }}"
                                         title="Generate Barcode">
@@ -1645,7 +1719,7 @@
                             </div>
                         </div>
                         <div
-                            class="sidebar-section {{ request()->routeIs('admin.master-sto') || request()->routeIs('admin.master-plant') || request()->routeIs('admin.master-material') || request()->routeIs('admin.master-keterangan') || request()->routeIs('admin.master-location') || request()->routeIs('admin.users') || request()->routeIs('admin.rack-confirmation') ? 'is-open has-active' : '' }}">
+                            class="sidebar-section {{ request()->routeIs('admin.master-sto') || request()->routeIs('admin.master-plant') || request()->routeIs('admin.master-material') || request()->routeIs('admin.master-keterangan') || request()->routeIs('admin.master-location') || request()->routeIs('admin.users') ? 'is-open has-active' : '' }}">
                             <button type="button" class="sidebar-section-toggle" data-sidebar-toggle title="Master Data">
                                 <svg class="sidebar-section-icon" fill="none" stroke="currentColor" stroke-width="2"
                                     viewBox="0 0 24 24">
@@ -1701,18 +1775,6 @@
                                                 d="M15 11a3 3 0 11-6 0 3 3 0 016 0z">
                                             </path>
                                         </svg> <span>Master Location</span></a>
-                                    <a href="{{ route('admin.rack-confirmation') }}"
-                                        class="nav-item {{ request()->routeIs('admin.rack-confirmation') ? 'active' : '' }}"
-                                        title="Konfirmasi Rak"><svg fill="none" stroke="currentColor" stroke-width="2"
-                                            viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round"
-                                                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z">
-                                            </path>
-                                        </svg> <span>Konfirmasi Rak</span>
-                                        @if(($sidebarBadges['unconfirmed_rak'] ?? 0) > 0)
-                                            <span class="sidebar-counter counter-danger">{{ $sidebarBadges['unconfirmed_rak'] }}</span>
-                                        @endif
-                                    </a>
                                     <a href="{{ route('admin.users') }}"
                                         class="nav-item {{ request()->routeIs('admin.users') ? 'active' : '' }}"
                                         title="User Management"><svg fill="none" stroke="currentColor" stroke-width="2"
@@ -1726,7 +1788,7 @@
                         </div>
             @else
                 <div
-                    class="sidebar-section {{ request()->routeIs('scan.overview') || request()->routeIs('scan.setup') || request()->routeIs('scan.scanner') || request()->routeIs('scan.history') || request()->routeIs('scan.barcode-request') || request()->routeIs('scan.material-summary') || request()->routeIs('admin.material-double*') ? 'is-open has-active' : '' }}">
+                    class="sidebar-section {{ request()->routeIs('scan.overview') || request()->routeIs('scan.setup') || request()->routeIs('scan.scanner') || request()->routeIs('scan.history') || request()->routeIs('scan.barcode-request') || request()->routeIs('scan.material-summary') || request()->routeIs('admin.material-double*') || request()->routeIs('admin.generate-barcode*') || request()->routeIs('admin.rack-confirmation*') || request()->routeIs('history.delete-barcode') ? 'is-open has-active' : '' }}">
                     <button type="button" class="sidebar-section-toggle" data-sidebar-toggle title="Scan Material">
                         <svg class="sidebar-section-icon" fill="none" stroke="currentColor" stroke-width="2"
                             viewBox="0 0 24 24">
@@ -1781,6 +1843,14 @@
                                     <path stroke-linecap="round" stroke-linejoin="round"
                                         d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                                 </svg> <span>Scan History</span></a>
+                            <a href="{{ route('history.delete-barcode') }}"
+                                class="nav-item {{ request()->routeIs('history.delete-barcode') ? 'active' : '' }}"
+                                title="History Delete Barcode">
+                                <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M5 8h14M9 8V5h6v3m-8 0 1 12h8l1-12M10 12v5m4-5v5"></path>
+                                </svg>
+                                <span>History Delete Barcode</span>
+                            </a>
                             <a href="{{ route('scan.material-summary') }}"
                                 class="nav-item {{ request()->routeIs('scan.material-summary') ? 'active' : '' }}"
                                 title="Material Summary"><svg fill="none" stroke="currentColor" stroke-width="2"
@@ -1789,6 +1859,22 @@
                                         d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707L13.293 3.293A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z">
                                     </path>
                                 </svg> <span>Material Summary</span></a>
+                            <a href="{{ route('admin.rack-confirmation') }}"
+                                class="nav-item {{ request()->routeIs('admin.rack-confirmation*') ? 'active' : '' }}"
+                                title="Konfirmasi Rack">
+                                <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                </svg><span>Konfirmasi Rack</span>
+                            </a>
+                            @if(auth()->user()->isScanner() && auth()->user()->is_validator)
+                                <a href="{{ route('admin.generate-barcode') }}"
+                                    class="nav-item {{ request()->routeIs('admin.generate-barcode*') ? 'active' : '' }}"
+                                    title="Generate Barcode">
+                                    <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 7h16M4 12h16M4 17h10"></path>
+                                    </svg><span>Generate Barcode</span>
+                                </a>
+                            @endif
                             @if(auth()->user()->canAccessMaterialDouble())
                                 <a href="{{ route('admin.material-double') }}"
                                     class="nav-item {{ request()->routeIs('admin.material-double*') ? 'active' : '' }}"
@@ -1960,6 +2046,51 @@
                     this.renderRecentMenu();
                 },
 
+                readMenuPresentation($menu) {
+                    const $label = $menu.children('span').not('.sidebar-counter').first();
+                    const title = ($label.text() || $menu.attr('title') || '').trim();
+                    const counter = this.normalizeCounter(
+                        $menu.children('.sidebar-counter').first().text()
+                    );
+
+                    return { title: title || 'Workspace', counter };
+                },
+
+                normalizeCounter(value) {
+                    const parsed = Number.parseInt(String(value ?? '').replace(/[^\d]/g, ''), 10);
+                    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+                },
+
+                formatCounter(value) {
+                    const counter = this.normalizeCounter(value);
+                    return counter > 999 ? '999+' : String(counter);
+                },
+
+                counterMarkup(value) {
+                    const counter = this.normalizeCounter(value);
+                    if (!counter) {
+                        return '';
+                    }
+
+                    return `<span class="workspace-tab-counter" title="${counter.toLocaleString('id-ID')} notifikasi">${this.formatCounter(counter)}</span>`;
+                },
+
+                updateTabPresentation(id, title, counter = 0) {
+                    const $tab = $(`#${id}`);
+                    if (!$tab.length) {
+                        return;
+                    }
+
+                    const normalizedCounter = this.normalizeCounter(counter);
+                    $tab.children('.page-tab-label').first().text(title || 'Workspace');
+                    $tab.children('.workspace-tab-counter').remove();
+                    $tab.toggleClass('has-counter', normalizedCounter > 0);
+
+                    if (normalizedCounter > 0) {
+                        $tab.children('.tab-close').before(this.counterMarkup(normalizedCounter));
+                    }
+                },
+
                 saveRecentMenu(menu) {
                     try {
                         let recent = JSON.parse(localStorage.getItem(recentMenusKey)) || [];
@@ -1998,21 +2129,31 @@
                     gridContainer.empty();
 
                     recents.forEach(r => {
+                        const $sourceMenu = this.findSidebarMenuByUrl(r.url);
+                        const presentation = $sourceMenu.length
+                            ? this.readMenuPresentation($sourceMenu)
+                            : {
+                                title: String(r.title || 'Workspace'),
+                                counter: this.normalizeCounter(r.counter),
+                            };
+                        const safeUrl = this.escapeAttribute(r.url);
+                        const safeTitle = this.escapeHtml(presentation.title);
+
                         // For dropdown
                         container.append(`
-                            <a href="${r.url}" class="recent-list-item" data-title="${r.title}">
+                            <a href="${safeUrl}" class="recent-list-item" data-title="${safeTitle}" data-counter="${presentation.counter}">
                                 ${r.iconSvg}
-                                <span>${r.title}</span>
+                                <span>${safeTitle}</span>
                             </a>
                         `);
 
                         // For grid
                         gridContainer.append(`
-                            <a href="${r.url}" class="recent-list-item-grid" data-title="${r.title}" style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px 16px; background: var(--surface); border: 1px solid var(--border-light); border-radius: 12px; text-decoration: none; color: var(--text); transition: all 0.2s; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+                            <a href="${safeUrl}" class="recent-list-item-grid" data-title="${safeTitle}" data-counter="${presentation.counter}" style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px 16px; background: var(--surface); border: 1px solid var(--border-light); border-radius: 12px; text-decoration: none; color: var(--text); transition: all 0.2s; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
                                 <div style="width: 48px; height: 48px; border-radius: 12px; background: rgba(0,114,206,0.1); color: var(--primary); display: flex; align-items: center; justify-content: center; margin-bottom: 16px;">
                                     ${r.iconSvg.replace('width="16"', 'width="24"').replace('height="16"', 'height="24"')}
                                 </div>
-                                <span style="font-weight: 600; font-size: 14px; text-align: center;">${r.title}</span>
+                                <span style="font-weight: 600; font-size: 14px; text-align: center;">${safeTitle}</span>
                             </a>
                         `);
                     });
@@ -2043,14 +2184,18 @@
                             const $body = $menu.find('.floating-menu-body').empty();
                             $items.each(function () {
                                 const $a = $(this);
-                                const text = $a.find('span').text() || $a.text();
+                                const presentation = tabManager.readMenuPresentation($a);
+                                const text = presentation.title;
                                 const href = $a.attr('href');
                                 const iconSvg = $a.find('svg').prop('outerHTML') || '';
 
-                                const newLink = $(`<a href="${href}" class="floating-menu-item" data-title="${text}"></a>`);
+                                const newLink = $('<a class="floating-menu-item"></a>')
+                                    .attr('href', href)
+                                    .attr('data-title', text)
+                                    .attr('data-counter', presentation.counter);
 
                                 newLink.html(`
-                                    <span class="floating-menu-text">${text}</span>
+                                    <span class="floating-menu-text">${tabManager.escapeHtml(text)}</span>
                                     <svg class="floating-menu-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"></path></svg>
                                 `);
 
@@ -2088,7 +2233,9 @@
                 bindSidebarLinks() {
                     $(document).on('click', '.sidebar a.nav-item', function (e) {
                         const url = tabManager.workspaceUrl($(this).attr('href'));
-                        const title = $(this).find('span').text().trim() || $(this).text().trim();
+                        const presentation = tabManager.readMenuPresentation($(this));
+                        const title = presentation.title;
+                        const counter = presentation.counter;
                         const iconSvg = $(this).find('svg').prop('outerHTML') || '<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>';
 
                         if (!url || url === '#' || url.startsWith('javascript:')) return;
@@ -2099,10 +2246,10 @@
                         if (safeIdStr.length > 20) safeIdStr = safeIdStr.substring(safeIdStr.length - 20);
                         const tabId = 'tab-' + safeIdStr;
 
-                        tabManager.saveRecentMenu({ title, url, iconSvg });
+                        tabManager.saveRecentMenu({ title, url, iconSvg, counter });
                         tabManager.renderRecentMenu();
 
-                        tabManager.openTab(tabId, title, url);
+                        tabManager.openTab(tabId, title, url, counter);
 
                         $('.sidebar a.nav-item').removeClass('active');
                         $(this).addClass('active');
@@ -2145,15 +2292,16 @@
                         e.preventDefault();
                         const url = tabManager.workspaceUrl($(this).attr('href'));
                         const title = $(this).data('title');
+                        const counter = tabManager.normalizeCounter($(this).data('counter'));
                         const iconSvg = $(this).find('svg').prop('outerHTML') || '';
 
                         let safeIdStr = url.replace(/[^a-zA-Z0-9]/g, '');
                         if (safeIdStr.length > 20) safeIdStr = safeIdStr.substring(safeIdStr.length - 20);
                         const tabId = 'tab-' + safeIdStr;
 
-                        tabManager.saveRecentMenu({ title, url, iconSvg });
+                        tabManager.saveRecentMenu({ title, url, iconSvg, counter });
                         tabManager.renderRecentMenu();
-                        tabManager.openTab(tabId, title, url);
+                        tabManager.openTab(tabId, title, url, counter);
 
                         $('.sidebar a.nav-item').removeClass('active');
                         const $targetMenu = tabManager.findSidebarMenuByUrl(url);
@@ -2166,15 +2314,16 @@
                         e.preventDefault();
                         const url = tabManager.workspaceUrl($(this).attr('href'));
                         const title = $(this).data('title');
+                        const counter = tabManager.normalizeCounter($(this).data('counter'));
                         const iconSvg = $(this).data('original-icon');
 
                         let safeIdStr = url.replace(/[^a-zA-Z0-9]/g, '');
                         if (safeIdStr.length > 20) safeIdStr = safeIdStr.substring(safeIdStr.length - 20);
                         const tabId = 'tab-' + safeIdStr;
 
-                        tabManager.saveRecentMenu({ title, url, iconSvg });
+                        tabManager.saveRecentMenu({ title, url, iconSvg, counter });
                         tabManager.renderRecentMenu();
-                        tabManager.openTab(tabId, title, url);
+                        tabManager.openTab(tabId, title, url, counter);
 
                         $('.sidebar a.nav-item').removeClass('active');
                         const $targetMenu = tabManager.findSidebarMenuByUrl(url);
@@ -2187,19 +2336,23 @@
                     });
                 },
 
-                openTab(id, title, url) {
+                openTab(id, title, url, counter = 0) {
                     const workspaceUrl = this.workspaceUrl(url);
 
                     if ($(`#${id}`).length) {
+                        this.updateTabPresentation(id, title, counter);
                         this.switchTo(id);
                         return;
                     }
 
                     const safeTitle = this.escapeHtml(title);
                     const safeUrl = this.escapeAttribute(workspaceUrl);
+                    const normalizedCounter = this.normalizeCounter(counter);
+                    const counterHtml = this.counterMarkup(normalizedCounter);
                     const tabHtml = `
-                        <div class="page-tab" id="${id}" data-id="${id}" data-url="${safeUrl}">
-                            <span>${safeTitle}</span>
+                        <div class="page-tab${normalizedCounter > 0 ? ' has-counter' : ''}" id="${id}" data-id="${id}" data-url="${safeUrl}">
+                            <span class="page-tab-label">${safeTitle}</span>
+                            ${counterHtml}
                             <span class="tab-close" title="Close">
                                 <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path></svg>
                             </span>
@@ -2369,17 +2522,22 @@
                     return;
                 }
 
+                const $targetMenu = tabManager.findSidebarMenuByUrl(url);
+                const presentation = $targetMenu.length
+                    ? tabManager.readMenuPresentation($targetMenu)
+                    : { title: title || 'Workspace', counter: 0 };
+                const resolvedTitle = title || presentation.title;
+                const counter = presentation.counter;
                 const defaultIconSvg = '<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01"></path></svg>';
                 let safeIdStr = url.replace(/[^a-zA-Z0-9]/g, '');
                 if (safeIdStr.length > 20) safeIdStr = safeIdStr.substring(safeIdStr.length - 20);
                 const tabId = 'tab-' + safeIdStr;
 
-                tabManager.saveRecentMenu({ title, url, iconSvg: iconSvg || defaultIconSvg });
+                tabManager.saveRecentMenu({ title: resolvedTitle, url, iconSvg: iconSvg || defaultIconSvg, counter });
                 tabManager.renderRecentMenu();
-                tabManager.openTab(tabId, title, url);
+                tabManager.openTab(tabId, resolvedTitle, url, counter);
 
                 $('.sidebar a.nav-item').removeClass('active');
-                const $targetMenu = tabManager.findSidebarMenuByUrl(url);
                 $targetMenu.addClass('active');
                 $('.sidebar-section').removeClass('has-active');
                 $targetMenu.closest('.sidebar-section').addClass('is-open has-active');
@@ -2468,6 +2626,7 @@
             });
         })();
     </script>
+    @include('components.searchable-location-select')
     @stack('scripts')
 
     @if(session('success'))

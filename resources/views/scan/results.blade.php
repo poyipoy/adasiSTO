@@ -48,7 +48,7 @@
     </div>
     <div class="filter-item">
         <label class="form-label">Location</label>
-        <select id="locationFilter" class="form-control">
+        <select id="locationFilter" class="form-control" data-searchable-location data-search-title="Filter Location">
             <option value="">All</option>
             @foreach(($filterOptions['locations'] ?? []) as $option)
                 <option value="{{ $option['value'] }}">{{ $option['label'] }}</option>

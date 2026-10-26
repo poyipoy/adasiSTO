@@ -18,7 +18,10 @@
         position: relative;
         overflow: hidden;
         background: #fff;
+        page-break-after: always;
     }
+
+    .label:last-child { page-break-after: auto; }
 
     .company {
         position: absolute;
@@ -70,16 +73,18 @@
 </style>
 </head>
 <body>
-    @php
-        // Construct the detail string: "HP4MA FLAT 45 X 30 X 405"
-        $detail = trim(strtoupper($request->material_name . ' ' . $request->label_description));
-    @endphp
-    <div class="label">
-        <div class="company">{{ $company }}</div>
-        <img class="qr-code" src="{{ $qrDataUri }}" alt="QR">
-        <div class="barcode-text">{{ $request->generated_barcode_material }}</div>
-        <div class="lot-text">{{ $request->lot_number }}</div>
-        <div class="detail-text">{{ $detail }}</div>
-    </div>
+    @foreach($items as $item)
+        @php
+            $request = $item['request'];
+            $detail = trim($request->material_name . ' ' . $request->label_description);
+        @endphp
+        <div class="label">
+            <div class="company">{{ $company }}</div>
+            <img class="qr-code" src="{{ $item['qrDataUri'] }}" alt="QR">
+            <div class="barcode-text">{{ $request->generated_barcode_material }}</div>
+            <div class="lot-text">{{ $request->lot_number }}</div>
+            <div class="detail-text">{{ $detail }}</div>
+        </div>
+    @endforeach
 </body>
 </html>

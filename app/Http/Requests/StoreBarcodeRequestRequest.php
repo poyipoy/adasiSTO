@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -12,13 +13,14 @@ class StoreBarcodeRequestRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return true; // Authenticated user is enough (role checked via middleware)
+        return $this->user() !== null
+            && ($this->user()->isAdmin() || $this->user()->isScanner());
     }
 
     /**
      * Get the validation rules that apply to the request.
      *
-     * @return array<string, \Illuminate\Contracts\Validation\ValidationRule|array<mixed>|string>
+     * @return array<string, ValidationRule|array<mixed>|string>
      */
     public function rules(): array
     {
@@ -26,29 +28,32 @@ class StoreBarcodeRequestRequest extends FormRequest
             'material_code' => [
                 'required',
                 'string',
-                Rule::exists('master_materials', 'material_code')->where('is_active', true)
+                Rule::exists('master_materials', 'material_code')->where('is_active', true),
             ],
             'shape_code' => ['required', 'string', Rule::in(['RF', 'RR', 'RH'])],
-            
+
             // RF (Flat) / RH (Hollow) dimensions
             'thickness' => ['required_if:shape_code,RF,RH', 'nullable', 'integer', 'min:1'],
             'width' => ['required_if:shape_code,RF,RH', 'nullable', 'integer', 'min:1'],
-            
+
             // RR (Round) dimensions (diameter)
             'diameter' => ['required_if:shape_code,RR', 'nullable', 'integer', 'min:1'],
-            
+
             // Length is required for both
             'length' => ['required', 'integer', 'min:1'],
-            
+
             'lot_number' => ['required', 'string', 'max:255'],
             'plant_id' => [
                 'required',
-                Rule::exists('plants', 'id')->where('is_active', true)
+                Rule::exists('plants', 'id')->where('is_active', true),
             ],
             'location_id' => [
                 'required',
-                Rule::exists('locations', 'id')->where('plant_id', $this->input('plant_id'))
+                Rule::exists('locations', 'id')->where(fn ($query) => $query
+                    ->where('plant_id', $this->input('plant_id'))
+                    ->where('is_active', true)),
             ],
+            'print_count' => ['required', 'integer', 'min:1'],
         ];
     }
 
@@ -99,6 +104,9 @@ class StoreBarcodeRequestRequest extends FormRequest
             'plant_id.exists' => 'Plant tidak valid atau tidak aktif.',
             'location_id.required' => 'Lokasi wajib dipilih.',
             'location_id.exists' => 'Lokasi tidak valid atau tidak sesuai dengan Plant yang dipilih.',
+            'print_count.required' => 'Jumlah barcode dicetak wajib diisi.',
+            'print_count.integer' => 'Jumlah barcode dicetak harus berupa angka bulat.',
+            'print_count.min' => 'Jumlah barcode dicetak minimal 1.',
         ];
     }
 }

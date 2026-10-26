@@ -2,11 +2,11 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Exports\MaterialDoubleExport;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\DeleteMaterialDoubleRequest;
 use App\Http\Requests\MaterialDoubleGroupRequest;
 use App\Http\Requests\MaterialDoubleScanRequest;
-use App\Models\ExportRequest;
 use App\Models\Location;
 use App\Models\MasterMaterial;
 use App\Models\MaterialDoubleValidation;
@@ -15,23 +15,20 @@ use App\Models\ScanResult;
 use App\Models\StoCode;
 use App\Services\ActiveStoService;
 use App\Services\ActivityLogService;
-use App\Services\ExportService;
 use App\Services\MaterialDoubleQueryService;
 use App\Services\ScanService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
-use Throwable;
+use Maatwebsite\Excel\Facades\Excel;
 
 class MaterialDoubleController extends Controller
 {
     public function __construct(
         private ScanService $scanService,
-        private ExportService $exportService,
         private ActivityLogService $activityLog,
         private MaterialDoubleQueryService $materialDoubleQuery,
     ) {}
@@ -42,7 +39,7 @@ class MaterialDoubleController extends Controller
 
         return view('admin.material-double', [
             'plants' => Plant::active()->orderBy('name')->limit($filterLimit)->get(),
-            'locations' => Location::active()->select('name')->distinct()->orderBy('name')->limit($filterLimit)->get(),
+            'locations' => collect(),
             'materials' => MasterMaterial::active()->orderBy('material_code')->limit($filterLimit)->get(),
             'stoCodes' => StoCode::orderByDesc('is_active')->orderByDesc('created_at')->limit($filterLimit)->pluck('code'),
         ]);
@@ -88,7 +85,7 @@ class MaterialDoubleController extends Controller
             'data' => $data->map(function ($item, int $index) use ($filteredRecords, $start) {
                 $size = in_array($item->shape_code, ['RF', 'RH'])
                     ? "{$item->thickness} x {$item->width} x {$item->length}"
-                    : "⌀{$item->diameter} x {$item->length}";
+                    : "\u{2300}{$item->diameter} x {$item->length}";
 
                 return [
                     'no' => $filteredRecords - $start - $index,
@@ -106,6 +103,21 @@ class MaterialDoubleController extends Controller
                     'validated_by_name' => $item->validated_by_name,
                 ];
             })->values(),
+        ]);
+    }
+
+    public function locations(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'plant_id' => ['required', 'integer', 'exists:plants,id'],
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'data' => Location::active()
+                ->where('plant_id', $validated['plant_id'])
+                ->orderBy('name')
+                ->get(['id', 'plant_id', 'name']),
         ]);
     }
 
@@ -175,38 +187,60 @@ class MaterialDoubleController extends Controller
         $payload = $request->validated();
         $requestedIds = collect($payload['ids'])->map(fn ($id) => (int) $id)->unique()->sort()->values();
 
-        $allowedIds = $this->detailQuery($payload)
-            ->whereIn('id', $requestedIds->all())
-            ->pluck('id')
-            ->map(fn ($id) => (int) $id)
-            ->sort()
-            ->values();
+        $result = DB::transaction(function () use ($requestedIds, $request, $payload) {
+            $groupIds = $this->detailQuery($payload)
+                ->lockForUpdate()
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->sort()
+                ->values();
+            $allowedIds = $groupIds->intersect($requestedIds)->sort()->values();
 
-        if ($requestedIds->all() !== $allowedIds->all()) {
+            if ($requestedIds->all() !== $allowedIds->all()) {
+                return ['error' => 'Data yang dipilih tidak sesuai dengan group duplicate ini.'];
+            }
+
+            if ($requestedIds->count() >= $groupIds->count()) {
+                return ['error' => 'Anda tidak bisa menghapus semua data sekaligus. Sisakan minimal 1 data utama.'];
+            }
+
+            foreach ($requestedIds as $scanResultId) {
+                $this->scanService->deleteFromMaterialDouble($request->user(), $scanResultId);
+            }
+
+            $activeStoId = app(ActiveStoService::class)->active()?->id;
+            $validation = MaterialDoubleValidation::query()
+                ->where('sto_code_id', $activeStoId)
+                ->where('barcode_material', $payload['barcode_material'])
+                ->where('plant_id', $payload['plant_id'])
+                ->where('location_id', $payload['location_id'])
+                ->first();
+
+            if ($validation) {
+                $oldValues = $validation->toArray();
+                $this->activityLog->recordOrFail(
+                    $request->user(),
+                    'material_double.validation_cleared',
+                    $validation,
+                    oldValues: $oldValues,
+                );
+                $validation->delete();
+            }
+
+            return ['deleted_count' => $requestedIds->count()];
+        });
+
+        if (isset($result['error'])) {
             return response()->json([
                 'success' => false,
-                'message' => 'Data yang dipilih tidak sesuai dengan group duplicate ini.',
+                'message' => $result['error'],
             ], 422);
         }
-
-        $totalInGroup = $this->detailQuery($payload)->count();
-        if ($requestedIds->count() >= $totalInGroup) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Anda tidak bisa menghapus semua data sekaligus. Sisakan minimal 1 data utama.',
-            ], 422);
-        }
-
-        foreach ($requestedIds as $scanResultId) {
-            $this->scanService->deleteFromMaterialDouble($request->user(), $scanResultId);
-        }
-
-        $this->markDuplicateValidated($request, $payload);
 
         return response()->json([
             'success' => true,
-            'message' => 'Data duplicate terpilih berhasil dihapus dan duplicate QR berhasil diverifikasi.',
-            'deleted_count' => $requestedIds->count(),
+            'message' => 'Data duplicate terpilih berhasil dihapus. Status tetap Need Check sampai tombol Valid digunakan.',
+            'deleted_count' => $result['deleted_count'],
         ]);
     }
 
@@ -214,7 +248,7 @@ class MaterialDoubleController extends Controller
     {
         $result = $this->scanService->storeMaterialDoubleScan($request->user(), $request->validated());
 
-        if (!$result['success']) {
+        if (! $result['success']) {
             return response()->json(
                 collect($result)->except('status')->all(),
                 $result['status'] ?? 422
@@ -226,79 +260,10 @@ class MaterialDoubleController extends Controller
 
     public function exportExcel(Request $request)
     {
-        $filters = $request->only(['plant_id', 'location_id', 'location_name', 'material_code', 'date_from', 'date_to', 'status']);
-        $fileName = 'Material_Double_' . now()->format('Ymd_His') . '.xlsx';
+        $filters = $request->only(['sto_code', 'plant_id', 'location_id', 'material_code', 'date_from', 'date_to', 'status']);
+        $fileName = 'Material_Double_'.now()->format('Ymd_His').'.xlsx';
 
-        return \Maatwebsite\Excel\Facades\Excel::download(new \App\Exports\MaterialDoubleExport($filters), $fileName);
-    }
-
-    public function queueExport(Request $request): JsonResponse
-    {
-        try {
-            $exportRequest = $this->exportService->queueMaterialDoubleExport($request->user(), 'excel', $request->all());
-
-            $this->activityLog->record($request->user(), 'export.material_double.requested', $exportRequest, metadata: [
-                'format' => $exportRequest->format,
-                'filters' => $exportRequest->filters,
-                'async' => true,
-            ]);
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Export sedang diproses. File akan tersedia saat status selesai.',
-                'data' => $this->exportService->serializeExportRequest($exportRequest),
-            ], 202);
-        } catch (\InvalidArgumentException $exception) {
-            return response()->json([
-                'success' => false,
-                'message' => $exception->getMessage(),
-            ], 422);
-        } catch (Throwable $exception) {
-            Log::error('Async material double export queue failed', [
-                'user_id' => $request->user()?->id,
-                'exception' => $exception::class,
-            ]);
-
-            $this->activityLog->record($request->user(), 'export.material_double.failed', metadata: [
-                'filters' => $this->exportService->exportFilters($request->all()),
-                'async' => true,
-                'exception' => $exception::class,
-            ]);
-
-            return response()->json([
-                'success' => false,
-                'message' => 'Export gagal dimulai.',
-            ], 500);
-        }
-    }
-
-    public function exportStatus(Request $request): JsonResponse
-    {
-        $exports = $this->exportService
-            ->recentMaterialDoubleExports($request->user())
-            ->map(fn (ExportRequest $exportRequest) => $this->exportService->serializeExportRequest($exportRequest))
-            ->values();
-
-        return response()->json([
-            'success' => true,
-            'data' => $exports,
-        ]);
-    }
-
-    public function downloadExport(Request $request, ExportRequest $exportRequest)
-    {
-        abort_unless($exportRequest->user_id === $request->user()->id, 403);
-        abort_unless($exportRequest->isCompleted(), 404);
-        abort_unless($exportRequest->file_path && Storage::disk($exportRequest->file_disk)->exists($exportRequest->file_path), 404);
-
-        /** @var \Illuminate\Filesystem\FilesystemAdapter $disk */
-        $disk = Storage::disk($exportRequest->file_disk);
-
-        return $disk->download(
-            $exportRequest->file_path,
-            $exportRequest->file_name,
-            ['Content-Type' => $exportRequest->mime_type ?: 'application/octet-stream'],
-        );
+        return Excel::download(new MaterialDoubleExport($filters), $fileName);
     }
 
     public function duplicateGroupQuery(array $filters): Builder
@@ -323,7 +288,7 @@ class MaterialDoubleController extends Controller
         $orderInfo = $request->input('order.0');
         $columns = $request->input('columns');
 
-        if (!$orderInfo || !isset($columns[$orderInfo['column']])) {
+        if (! $orderInfo || ! isset($columns[$orderInfo['column']])) {
             $query->orderByDesc('duplicate_count')->orderByDesc('scan_results.barcode_material');
 
             return;
@@ -352,26 +317,35 @@ class MaterialDoubleController extends Controller
     {
         $activeStoId = app(ActiveStoService::class)->active()?->id;
 
-        $validation = MaterialDoubleValidation::updateOrCreate(
-            [
-                'sto_code_id' => $activeStoId,
-                'barcode_material' => $payload['barcode_material'],
-                'plant_id' => $payload['plant_id'],
-                'location_id' => $payload['location_id'],
-            ],
-            [
-                'validated_by' => $request->user()->id,
-                'validated_at' => now(),
-            ]
-        );
+        return DB::transaction(function () use ($request, $payload, $activeStoId) {
+            $groupCount = $this->detailQuery($payload)->lockForUpdate()->count();
+            if ($groupCount < 2) {
+                throw ValidationException::withMessages([
+                    'barcode_material' => 'Group ini tidak lagi memiliki data duplicate untuk divalidasi.',
+                ]);
+            }
 
-        $this->activityLog->record($request->user(), 'material_double.validated', $validation, newValues: [
-            'barcode_material' => $validation->barcode_material,
-            'plant_id' => $validation->plant_id,
-            'location_id' => $validation->location_id,
-            'validated_at' => $validation->validated_at?->format('Y-m-d H:i:s'),
-        ]);
+            $validation = MaterialDoubleValidation::updateOrCreate(
+                [
+                    'sto_code_id' => $activeStoId,
+                    'barcode_material' => $payload['barcode_material'],
+                    'plant_id' => $payload['plant_id'],
+                    'location_id' => $payload['location_id'],
+                ],
+                [
+                    'validated_by' => $request->user()->id,
+                    'validated_at' => now(),
+                ]
+            );
 
-        return $validation;
+            $this->activityLog->recordOrFail($request->user(), 'material_double.validated', $validation, newValues: [
+                'barcode_material' => $validation->barcode_material,
+                'plant_id' => $validation->plant_id,
+                'location_id' => $validation->location_id,
+                'validated_at' => $validation->validated_at?->format('Y-m-d H:i:s'),
+            ]);
+
+            return $validation;
+        });
     }
 }

@@ -25,7 +25,7 @@ class MaterialDoubleQueryService
                 scan_results.barcode_material,
                 scan_results.material_name,
                 scan_results.shape_code,
-                scan_results.shape_name,
+                MAX(UPPER(scan_results.shape_name)) as shape_name,
                 scan_results.thickness,
                 scan_results.width,
                 scan_results.diameter,
@@ -43,7 +43,6 @@ class MaterialDoubleQueryService
                 'scan_results.barcode_material',
                 'scan_results.material_name',
                 'scan_results.shape_code',
-                'scan_results.shape_name',
                 'scan_results.thickness',
                 'scan_results.width',
                 'scan_results.diameter',
@@ -57,7 +56,7 @@ class MaterialDoubleQueryService
 
         $this->applyScanFilters($query, $filters, 'scan_results.');
 
-        if (!empty($filters['status'])) {
+        if (! empty($filters['status'])) {
             if ($filters['status'] === 'valid') {
                 $query->havingRaw('MAX(mdv.validated_at) IS NOT NULL');
             } elseif ($filters['status'] === 'need_check') {
@@ -71,27 +70,28 @@ class MaterialDoubleQueryService
     public function applyScanFilters($query, array $filters, string $tablePrefix = ''): void
     {
 
-
-        if (!empty($filters['plant_id'])) {
-            $query->where($tablePrefix . 'plant_id', $filters['plant_id']);
+        if (! empty($filters['plant_id'])) {
+            $query->where($tablePrefix.'plant_id', $filters['plant_id']);
         }
 
-        if (!empty($filters['location_name'])) {
-            $query->whereHas('location', function ($locationQuery) use ($filters) {
-                $locationQuery->where('name', $filters['location_name']);
-            });
+        if (! empty($filters['location_id'])) {
+            $query->where($tablePrefix.'location_id', $filters['location_id']);
         }
 
-        if (!empty($filters['material_code'])) {
-            $query->where($tablePrefix . 'material_code', $filters['material_code']);
+        if (! empty($filters['sto_code'])) {
+            $query->where($tablePrefix.'sto_code', $filters['sto_code']);
         }
 
-        if (!empty($filters['date_from'])) {
-            $query->where($tablePrefix . 'created_at', '>=', Carbon::parse($filters['date_from'])->startOfDay());
+        if (! empty($filters['material_code'])) {
+            $query->where($tablePrefix.'material_code', $filters['material_code']);
         }
 
-        if (!empty($filters['date_to'])) {
-            $query->where($tablePrefix . 'created_at', '<=', Carbon::parse($filters['date_to'])->endOfDay());
+        if (! empty($filters['date_from'])) {
+            $query->where($tablePrefix.'created_at', '>=', Carbon::parse($filters['date_from'])->startOfDay());
+        }
+
+        if (! empty($filters['date_to'])) {
+            $query->where($tablePrefix.'created_at', '<=', Carbon::parse($filters['date_to'])->endOfDay());
         }
     }
 }

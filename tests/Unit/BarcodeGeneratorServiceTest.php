@@ -6,6 +6,7 @@ use App\Models\MasterMaterial;
 use App\Services\BarcodeGeneratorService;
 use App\Services\BarcodeParserService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
@@ -21,49 +22,50 @@ class BarcodeGeneratorServiceTest extends TestCase
     use RefreshDatabase;
 
     private BarcodeGeneratorService $generator;
+
     private BarcodeParserService $parser;
 
     protected function setUp(): void
     {
         parent::setUp();
-        $this->generator = new BarcodeGeneratorService();
-        $this->parser    = new BarcodeParserService();
+        $this->generator = new BarcodeGeneratorService;
+        $this->parser = new BarcodeParserService;
 
         // Seed a master material for tests
         MasterMaterial::create([
             'material_code' => 'A1',
             'material_name' => 'Test Material RF',
-            'is_active'     => true,
+            'is_active' => true,
         ]);
         MasterMaterial::create([
             'material_code' => 'B2',
             'material_name' => 'Test Material RR',
-            'is_active'     => true,
+            'is_active' => true,
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function rf_barcode_round_trips_correctly(): void
     {
         $input = [
-            'shape_code'    => 'RF',
+            'shape_code' => 'RF',
             'material_code' => 'A1',
-            'thickness'     => 6,
-            'width'         => 50,
-            'diameter'      => null,
-            'length'        => 3000,
+            'thickness' => 6,
+            'width' => 50,
+            'diameter' => null,
+            'length' => 3000,
         ];
 
         $built = $this->generator->build($input);
 
-        $this->assertTrue($built['valid'], 'Generator should succeed for valid RF data. Errors: ' . implode(', ', $built['errors']));
+        $this->assertTrue($built['valid'], 'Generator should succeed for valid RF data. Errors: '.implode(', ', $built['errors']));
         $this->assertNotNull($built['barcode_material']);
 
         // Assemble full barcode string with lot + qty for parser
-        $fullBarcode = $built['barcode_material'] . ' | LOT001 | 5';
+        $fullBarcode = $built['barcode_material'].' | LOT001 | 5';
         $parsed = $this->parser->parse($fullBarcode);
 
-        $this->assertTrue($parsed['valid'], 'Parser should accept generator output. Message: ' . ($parsed['message'] ?? ''));
+        $this->assertTrue($parsed['valid'], 'Parser should accept generator output. Message: '.($parsed['message'] ?? ''));
         $this->assertEquals('RF', $parsed['shape_code']);
         $this->assertEquals('A1', $parsed['material_code']);
         $this->assertEquals(6, $parsed['thickness']);
@@ -74,24 +76,24 @@ class BarcodeGeneratorServiceTest extends TestCase
         $this->assertEquals(5, $parsed['qty']);
     }
 
-    /** @test */
+    #[Test]
     public function rr_barcode_round_trips_correctly(): void
     {
         $input = [
-            'shape_code'    => 'RR',
+            'shape_code' => 'RR',
             'material_code' => 'B2',
-            'thickness'     => null,
-            'width'         => null,
-            'diameter'      => 25,
-            'length'        => 6000,
+            'thickness' => null,
+            'width' => null,
+            'diameter' => 25,
+            'length' => 6000,
         ];
 
         $built = $this->generator->build($input);
 
-        $this->assertTrue($built['valid'], 'Generator should succeed for valid RR data. Errors: ' . implode(', ', $built['errors']));
+        $this->assertTrue($built['valid'], 'Generator should succeed for valid RR data. Errors: '.implode(', ', $built['errors']));
         $this->assertNotNull($built['barcode_material']);
 
-        $fullBarcode = $built['barcode_material'] . ' | LOTXYZ | 10';
+        $fullBarcode = $built['barcode_material'].' | LOTXYZ | 10';
         $parsed = $this->parser->parse($fullBarcode);
 
         $this->assertTrue($parsed['valid'], 'Parser should accept generator output for RR.');
@@ -103,16 +105,40 @@ class BarcodeGeneratorServiceTest extends TestCase
         $this->assertNull($parsed['width']);
     }
 
-    /** @test */
+    #[Test]
+    public function rh_barcode_round_trips_correctly(): void
+    {
+        $built = $this->generator->build([
+            'shape_code' => 'RH',
+            'material_code' => 'A1',
+            'thickness' => 10,
+            'width' => 20,
+            'diameter' => null,
+            'length' => 30,
+        ]);
+
+        $this->assertTrue($built['valid']);
+        $this->assertSame('RHA1010-00200030B', $built['barcode_material']);
+
+        $parsed = $this->parser->parse($built['barcode_material'].'|LOT-RH|1');
+        $this->assertTrue($parsed['valid']);
+        $this->assertSame('RH', $parsed['shape_code']);
+        $this->assertSame('HOLLOW', $parsed['shape_name']);
+        $this->assertSame(10, $parsed['thickness']);
+        $this->assertSame(20, $parsed['width']);
+        $this->assertSame(30, $parsed['length']);
+    }
+
+    #[Test]
     public function rf_barcode_has_correct_format(): void
     {
         $input = [
-            'shape_code'    => 'RF',
+            'shape_code' => 'RF',
             'material_code' => 'A1',
-            'thickness'     => 12,
-            'width'         => 100,
-            'diameter'      => null,
-            'length'        => 9000,
+            'thickness' => 12,
+            'width' => 100,
+            'diameter' => null,
+            'length' => 9000,
         ];
 
         $built = $this->generator->build($input);
@@ -121,22 +147,22 @@ class BarcodeGeneratorServiceTest extends TestCase
         // Expected: RFA1012-10009000B
         // ShapeCode=RF, MaterialCode=A1, Primary=012(3digit), -, width=0100(4digit)+length=9000(4digit), CheckLetter=B
         $this->assertMatchesRegularExpression(
-            '/^(RF|RR)[A-Z0-9]{2}\d{3}-\d{8}[A-Z]$/',
+            '/^(RF|RR|RH)[A-Z0-9]{2}\d{3}-\d{8}[A-Z]$/',
             $built['barcode_material'],
             'Barcode format must match pattern'
         );
     }
 
-    /** @test */
+    #[Test]
     public function rr_barcode_has_zero_width_in_secondary(): void
     {
         $input = [
-            'shape_code'    => 'RR',
+            'shape_code' => 'RR',
             'material_code' => 'B2',
-            'thickness'     => null,
-            'width'         => null,
-            'diameter'      => 50,
-            'length'        => 4000,
+            'thickness' => null,
+            'width' => null,
+            'diameter' => 50,
+            'length' => 4000,
         ];
 
         $built = $this->generator->build($input);
@@ -146,22 +172,22 @@ class BarcodeGeneratorServiceTest extends TestCase
         $this->assertStringContainsString('-00004000', $built['barcode_material']);
     }
 
-    /** @test */
+    #[Test]
     public function generator_rejects_inactive_material(): void
     {
         MasterMaterial::create([
             'material_code' => 'ZZ',
             'material_name' => 'Inactive Material',
-            'is_active'     => false,
+            'is_active' => false,
         ]);
 
         $input = [
-            'shape_code'    => 'RF',
+            'shape_code' => 'RF',
             'material_code' => 'ZZ',
-            'thickness'     => 5,
-            'width'         => 50,
-            'diameter'      => null,
-            'length'        => 3000,
+            'thickness' => 5,
+            'width' => 50,
+            'diameter' => null,
+            'length' => 3000,
         ];
 
         $result = $this->generator->build($input);
@@ -169,32 +195,32 @@ class BarcodeGeneratorServiceTest extends TestCase
         $this->assertNotEmpty($result['errors']);
     }
 
-    /** @test */
+    #[Test]
     public function generator_rejects_zero_thickness_for_rf(): void
     {
         $input = [
-            'shape_code'    => 'RF',
+            'shape_code' => 'RF',
             'material_code' => 'A1',
-            'thickness'     => 0,
-            'width'         => 50,
-            'diameter'      => null,
-            'length'        => 3000,
+            'thickness' => 0,
+            'width' => 50,
+            'diameter' => null,
+            'length' => 3000,
         ];
 
         $result = $this->generator->build($input);
         $this->assertFalse($result['valid']);
     }
 
-    /** @test */
+    #[Test]
     public function generator_rejects_zero_diameter_for_rr(): void
     {
         $input = [
-            'shape_code'    => 'RR',
+            'shape_code' => 'RR',
             'material_code' => 'B2',
-            'thickness'     => null,
-            'width'         => null,
-            'diameter'      => 0,
-            'length'        => 3000,
+            'thickness' => null,
+            'width' => null,
+            'diameter' => 0,
+            'length' => 3000,
         ];
 
         $result = $this->generator->build($input);

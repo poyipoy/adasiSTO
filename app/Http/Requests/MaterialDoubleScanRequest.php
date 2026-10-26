@@ -4,6 +4,7 @@ namespace App\Http\Requests;
 
 use App\Models\Location;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class MaterialDoubleScanRequest extends FormRequest
 {
@@ -16,8 +17,8 @@ class MaterialDoubleScanRequest extends FormRequest
     {
         return [
             'barcode_material' => ['required', 'string', 'max:255'],
-            'plant_id' => ['required', 'integer', \Illuminate\Validation\Rule::exists('plants', 'id')->where('is_active', true)],
-            'location_id' => ['required', 'integer', 'exists:locations,id'],
+            'plant_id' => ['required', 'integer', Rule::exists('plants', 'id')->where('is_active', true)],
+            'location_id' => ['required', 'integer', Rule::exists('locations', 'id')->where('is_active', true)],
             'qr' => ['required', 'string', 'max:150'],
             'scan_source' => ['nullable', 'string', 'in:camera,camera-select,scanner_gun,manual'],
             'force_save' => ['sometimes', 'boolean'],
@@ -27,7 +28,7 @@ class MaterialDoubleScanRequest extends FormRequest
     public function withValidator($validator): void
     {
         $validator->after(function ($validator) {
-            if (!$this->filled('plant_id') || !$this->filled('location_id')) {
+            if (! $this->filled('plant_id') || ! $this->filled('location_id')) {
                 return;
             }
 
@@ -36,7 +37,7 @@ class MaterialDoubleScanRequest extends FormRequest
                 ->where('plant_id', (int) $this->input('plant_id'))
                 ->exists();
 
-            if (!$locationMatchesPlant) {
+            if (! $locationMatchesPlant) {
                 $validator->errors()->add('location_id', 'Location tidak sesuai dengan Plant.');
             }
         });

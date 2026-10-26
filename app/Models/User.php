@@ -54,6 +54,11 @@ class User extends Authenticatable
         return $this->hasMany(ActivityLog::class);
     }
 
+    public function barcodeDeleteHistories(): HasMany
+    {
+        return $this->hasMany(BarcodeDeleteHistory::class, 'deleted_by_user_id');
+    }
+
     public function exportRequests(): HasMany
     {
         return $this->hasMany(ExportRequest::class);
